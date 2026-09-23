@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "prepare": "husky"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
@@ -15,6 +16,15 @@
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,css,md}": [
+      "prettier --write"
+    ]
+  },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
@@ -22,6 +32,8 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.5.1",
     "prettier": "^3.9.8",
     "prettier-plugin-tailwindcss": "^0.8.1",
     "tailwindcss": "^4",
