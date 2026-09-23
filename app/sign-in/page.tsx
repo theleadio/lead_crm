@@ -7,9 +7,11 @@ export default async function SignInPage() {
   if (user) redirect("/people");
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gray-50">
-      <div className="w-full max-w-sm rounded-lg border bg-white p-8 shadow-sm">
-        <h1 className="mb-6 text-xl font-semibold">LEAD CRM</h1>
+    <main className="bg-surface flex min-h-screen items-center justify-center">
+      <div className="border-line bg-surface-raised w-full max-w-sm rounded-md border p-8 shadow-sm">
+        <h1 className="bg-lead-yellow text-on-yellow mb-6 inline-block rounded-sm px-3 py-1.5 text-xl font-semibold">
+          LEAD CRM
+        </h1>
         <SignInForm />
       </div>
     </main>

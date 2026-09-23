@@ -34,7 +34,10 @@ export function SignInForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label htmlFor="email" className="mb-1 block text-sm font-medium">
+        <label
+          htmlFor="email"
+          className="text-ink mb-1 block text-sm font-medium"
+        >
           Email
         </label>
         <input
@@ -43,11 +46,14 @@ export function SignInForm() {
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-full rounded border px-3 py-2 text-sm"
+          className="border-line-strong bg-surface-raised text-ink focus-visible:outline-focus-ring w-full rounded-sm border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
         />
       </div>
       <div>
-        <label htmlFor="password" className="mb-1 block text-sm font-medium">
+        <label
+          htmlFor="password"
+          className="text-ink mb-1 block text-sm font-medium"
+        >
           Password
         </label>
         <input
@@ -56,14 +62,14 @@ export function SignInForm() {
           required
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded border px-3 py-2 text-sm"
+          className="border-line-strong bg-surface-raised text-ink focus-visible:outline-focus-ring w-full rounded-sm border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
         />
       </div>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-danger text-sm">{error}</p>}
       <button
         type="submit"
         disabled={saving}
-        className="w-full rounded bg-black py-2 text-sm font-medium text-white disabled:opacity-50"
+        className="bg-lead-yellow text-on-yellow focus-visible:outline-focus-ring w-full cursor-pointer rounded-sm py-2 text-sm font-medium hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-default disabled:opacity-50"
       >
         {saving ? "Signing in…" : "Sign in"}
       </button>

@@ -2,7 +2,7 @@ export default function ClassesPage() {
   return (
     <div>
       <h1 className="text-xl font-semibold">Classes</h1>
-      <p className="mt-2 text-sm text-gray-500">
+      <p className="text-ink-muted mt-2 text-sm">
         Screen not built yet — see spec Section 9.
       </p>
     </div>

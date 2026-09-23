@@ -269,7 +269,9 @@ Indexes: (start_date, is_public, status), course_id.
 
 **`enrolment`** — a person in a class. person_id, class_id, deal_id (nullable), booker_person_id (nullable — HR officer who registered them), status, payer_type (self, company), seat_reserved_until, onboarding_step int, price_paid_myr, certificate_no, completed_at, cancelled_reason, transferred_to_enrolment_id. **Unique on (person_id, class_id) where status not in (cancelled, refunded)** — stops double-booking.
 
-**`deal`** — pipeline, stage, person_id, company_id, course_id, class_id, headcount int (corporate), amount_myr, funding_type, hrdc_grant_ref, hrdc_approval_date, hrdc_deadline_date, lost_reason, owner_user_id, won_at, lost_at, stage_changed_at.
+**`deal`** — pipeline, stage, person_id, company_id, course_id, class_id, headcount int (corporate), amount_myr, funding_type, hrdc_grant_ref, hrdc_approval_date, hrdc_deadline_date, `lost_reason_id uuid → lost_reason.id` (nullable), owner_user_id, won_at, lost_at, stage_changed_at.
+
+**Fixed 23 Sep (Shawn):** FK points at `lost_reason.id`, not `code` — `code` is the stable value reports group by, but joining on the surrogate key lets a code be corrected later without rewriting historical deals. API responses nest it: `{ lostReason: { id, code, labelEn } }` — UI renders `labelEn`, reporting groups by `code`.
 
 **`deal_stage_history`** — deal_id, from_stage, to_stage, changed_by, changed_at. Written on every stage change; enables conversion reporting.
 
@@ -319,7 +321,7 @@ Only one `pending` notice per class at a time — a second edit while one is pen
 
 Permissions enforced server-side, in one place. UI hides what a user can't do, but that's not security — every API route checks independently.
 
-**Sign-in.** Email + password with MFA, or Google SSO if LEAD is on Google Workspace (open item O1). No shared accounts. Sessions expire after 8 hours inactivity. A deactivated `app_user` loses access on next request, not next login.
+**Sign-in.** Email + password with MFA, built behind an auth abstraction in `/lib/auth` so Google SSO can be added later as a provider swap (**decided 23 Sep** — see decision calendar in §15.3). No shared accounts. Sessions expire after 8 hours inactivity. A deactivated `app_user` loses access on next request, not next login.
 
 **Roles** (`role_code` on app_user, one per user): `super_admin`, `management`, `marketing`, `sales`, `support`, `operations`, `part_time`
 
@@ -386,7 +388,7 @@ REST under `/api`, JSON, session cookie auth. Shared zod schema validation (form
 | GET /api/deals                                | Pipeline board + list            | Zixuan | filter[pipeline], filter[stage], filter[owner]                                           |
 | POST /api/deals                               | Create                           | Zixuan |                                                                                          |
 | PATCH /api/deals/:id                          | Update fields                    | Zixuan |                                                                                          |
-| POST /api/deals/:id/stage                     | Move stage                       | Zixuan | body `{toStage, lostReason?}`; writes history + outbox event; 422 if lost without reason |
+| POST /api/deals/:id/stage                     | Move stage                       | Zixuan | body `{toStage, lostReasonId?}`; writes history + outbox event; 422 if lost without an active reason |
 | POST /api/deals/:id/checkout-link             | Generate Stripe link             | Shawn  | Returns `{url}`; Zixuan calls from deal screen                                           |
 | GET/POST/PATCH /api/courses[/:id]             | Course catalogue                 | Zixuan |                                                                                          |
 | GET /api/classes                              | List with seat counts            | Zixuan | Returns capacity, confirmedCount, reservedCount, seatsAvailable                          |
@@ -721,7 +723,7 @@ Any transition not on this diagram → 422. UI only offers legal next statuses �
 ### 12.5 Deal stages
 
 - Stage must belong to deal's pipeline. Corporate stage on individual deal → 422.
-- Moving to `lost` requires lost_reason from fixed list.
+- Moving to `lost` requires `lostReasonId` referencing an **active** `lost_reason` row — a deactivated reason can't be picked for a new loss.
 - Corporate deals can't pass `discovery` without company, headcount, funding type.
 - Every change writes deal_stage_history + raises DealStageChanged.
 - won_at/lost_at set by service, never by a form.
@@ -889,6 +891,25 @@ Everything else: manual UAT with Wei Ping, Ops and Sales during Sprint 5 (30 Nov
 | O8  | Who owns website deploy, does Zixuan have access?                                         | §10, all of it         | **Sprint 1** | Management             |
 | O9  | Corporate booking: one HR contact registering 10 staff — confirm Booker model matches Ops | Enrolment screens      | Sprint 3     | Operations             |
 | O10 | Certificate numbering format                                                              | Enrolment              | January      | Operations             |
+
+**Decision calendar (added 23 Sep).** Every open item now has a date. If an answer misses its date, the fallback in the last column is what gets built — nobody waits.
+
+| # | Decide by | Who decides | Fallback if the date passes |
+|---|---|---|---|
+| O8 website deploy access | **Fri 25 Sep** | Management | Blocker, not a fallback — escalate the same day; Sprint 3 cannot start without it |
+| O1 auth (SSO vs email+MFA) | Fri 2 Oct | Shawn | Email + password with MFA (see below) |
+| O2 store message bodies | Fri 9 Oct | Shawn + privacy review | Metadata only; no bodies stored |
+| O3 reservation expiry | Fri 16 Oct | Operations | 48 hours |
+| O9 corporate booker model | Fri 16 Oct | Operations | Build as specified in 12.2 |
+| O4 first-response SLA | Fri 30 Oct | Wei Ping | 1 business hour, configurable |
+| O5 waitlist in MVP | Fri 30 Oct | Client | Defer to January |
+| O6 refund/transfer policy | Fri 13 Nov | Finance | Transfer allowed to any future class; refunds handled manually in Stripe |
+| O7 HRDC lead time and claim window | Fri 13 Nov | Finance | Ship as editable settings with no default; Ops fills them in |
+| O10 certificate numbering | January | Operations | Out of MVP |
+
+The two that matter this week are **O8** and **O1**. O8 is the only item that can stop a whole sprint — Zixuan can't build Section 10 against a website she can't deploy to.
+
+**Auth — decided now, so nothing waits.** Build email + password with MFA behind an auth abstraction in `/lib/auth`. If LEAD turns out to be on Google Workspace, adding Google SSO later is a provider swap and a settings change, not a rewrite. Zixuan should not hold Sprint 1 for this answer — code against the abstraction, not against a specific provider.
 
 ### 15.4 Sprint mapping
 

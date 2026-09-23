@@ -13,7 +13,10 @@ export function SignOutButton() {
   }
 
   return (
-    <button onClick={handleSignOut} className="text-sm underline">
+    <button
+      onClick={handleSignOut}
+      className="cursor-pointer text-sm text-[var(--ink-muted)] underline hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
+    >
       Sign out
     </button>
   );

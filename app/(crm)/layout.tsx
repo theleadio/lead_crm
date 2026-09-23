@@ -27,15 +27,17 @@ export default async function CrmLayout({
   if (!user) redirect("/sign-in");
 
   return (
-    <div className="flex min-h-screen">
-      <aside className="w-56 shrink-0 border-r bg-gray-50 p-4">
-        <div className="mb-6 text-lg font-semibold">LEAD CRM</div>
+    <div className="bg-surface flex min-h-screen">
+      <aside className="bg-charcoal text-on-charcoal w-56 shrink-0 p-4">
+        <div className="bg-lead-yellow text-on-yellow mb-6 rounded-sm px-3 py-1.5 text-lg font-semibold">
+          LEAD CRM
+        </div>
         <nav className="space-y-1">
           {NAV_ITEMS.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className="block rounded px-3 py-2 text-sm hover:bg-gray-200"
+              className="text-on-charcoal focus-visible:outline-lead-yellow block rounded-sm px-3 py-2 text-sm hover:bg-black/20 focus-visible:outline-2 focus-visible:outline-offset-2"
             >
               {item.label}
             </Link>
@@ -43,18 +45,18 @@ export default async function CrmLayout({
         </nav>
       </aside>
       <div className="flex flex-1 flex-col">
-        <header className="flex items-center justify-between border-b px-6 py-3">
+        <header className="border-line bg-surface-raised flex items-center justify-between border-b px-6 py-3">
           <input
             type="search"
             placeholder="Search people by name, email, phone…"
-            className="w-80 rounded border px-3 py-1.5 text-sm"
+            className="border-line-strong bg-surface-raised text-ink placeholder:text-ink-muted focus-visible:outline-focus-ring w-80 rounded-sm border px-3 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
           />
-          <div className="flex items-center gap-3 text-sm">
+          <div className="text-ink flex items-center gap-3 text-sm">
             <span>{user.email}</span>
             <SignOutButton />
           </div>
         </header>
-        <main className="flex-1 p-6">{children}</main>
+        <main className="text-ink flex-1 p-6">{children}</main>
       </div>
     </div>
   );
