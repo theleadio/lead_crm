@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 // Refreshes the Supabase session cookie on every request and gates the
 // authenticated CRM routes. Permission checks (role, record ownership) are
 // per-route in the API layer (spec Section 6) — this only checks "signed in".
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -29,9 +29,18 @@ export async function middleware(request: NextRequest) {
   );
 
   const { data } = await supabase.auth.getUser();
-  const isCrmRoute = request.nextUrl.pathname.startsWith("/(crm)") ||
-    ["/people", "/companies", "/deals", "/classes", "/enrolments", "/enquiries", "/settings", "/dashboard"]
-      .some((path) => request.nextUrl.pathname.startsWith(path));
+  const isCrmRoute =
+    request.nextUrl.pathname.startsWith("/(crm)") ||
+    [
+      "/people",
+      "/companies",
+      "/deals",
+      "/classes",
+      "/enrolments",
+      "/enquiries",
+      "/settings",
+      "/dashboard",
+    ].some((path) => request.nextUrl.pathname.startsWith(path));
 
   if (isCrmRoute && !data.user) {
     const signInUrl = new URL("/sign-in", request.url);
