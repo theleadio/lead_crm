@@ -22,14 +22,21 @@ export type PersonListItem = {
   createdAt: string;
 };
 
-export type PeopleListQuery = {
+export type PeopleFilters = {
   q?: string;
-  page: number;
-  limit: number;
   stage?: LifecycleStage;
   language?: Language;
   needsReview?: boolean;
+  owner?: string; // app_user id, or "unassigned"
+  tags?: string[]; // person has any of these
+  hasOpenDeal?: boolean;
+  createdFrom?: string; // YYYY-MM-DD, Asia/Kuala_Lumpur
+  createdTo?: string;
 };
+
+export type PeopleListQuery = PeopleFilters & { page: number; limit: number };
+
+export type Option = { id: string; label: string };
 
 export type PageInfo = { total: number; page: number; limit: number };
 

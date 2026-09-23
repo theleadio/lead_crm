@@ -1,28 +1,54 @@
 import type { NextRequest } from "next/server";
-import { getSession } from "@/lib/auth/server";
-import { apiError } from "@/lib/api/errors";
-import { listPeople } from "@/lib/people/service";
-import { peopleListQuerySchema } from "@/lib/validation/people-query";
+import { getCurrentUser } from "@/lib/auth/current-user";
+import { permissionFor } from "@/lib/auth/permissions";
+import { apiError, validationError } from "@/lib/api/errors";
+import { createPerson, listPeople } from "@/lib/people/service";
+import { personSchema } from "@/lib/validation/person";
+import {
+  peopleListQuerySchema,
+  readPeopleParams,
+} from "@/lib/validation/people-query";
 
-// GET /api/people — spec §7. Role checks (requirePermission, marketing
-// masking, part_time assigned-only) land once app_user.role_code exists.
+// GET /api/people — spec §7 search + list.
 export async function GET(request: NextRequest) {
-  const user = await getSession();
-  if (!user) return apiError(401, "unauthenticated", "Sign in to continue.");
+  const viewer = await getCurrentUser();
+  if (!viewer) return apiError(401, "unauthenticated", "Sign in to continue.");
+  if (!permissionFor(viewer, "person", "read").allowed)
+    return apiError(403, "forbidden", "You don't have access to people.");
 
-  const sp = request.nextUrl.searchParams;
-  const parsed = peopleListQuerySchema.safeParse({
-    q: sp.get("q") ?? undefined,
-    page: sp.get("page") ?? undefined,
-    limit: sp.get("limit") ?? undefined,
-    stage: sp.get("filter[stage]") ?? undefined,
-    language: sp.get("filter[language]") ?? undefined,
-    needsReview: sp.get("filter[needsReview]") ?? undefined,
-  });
-
-  if (!parsed.success) {
+  const parsed = peopleListQuerySchema.safeParse(
+    readPeopleParams(request.nextUrl.searchParams),
+  );
+  if (!parsed.success)
     return apiError(400, "validation_failed", "Invalid list filters.");
-  }
 
-  return Response.json(await listPeople(parsed.data));
+  return Response.json(await listPeople(parsed.data, viewer));
+}
+
+// POST /api/people — spec §7 create; runs dedupe (§12.2), 409 on hard match.
+export async function POST(request: NextRequest) {
+  const viewer = await getCurrentUser();
+  if (!viewer) return apiError(401, "unauthenticated", "Sign in to continue.");
+  if (!permissionFor(viewer, "person", "write").allowed)
+    return apiError(403, "forbidden", "You don't have access to add people.");
+
+  const body = await request.json().catch(() => null);
+  const parsed = personSchema.safeParse(body);
+  if (!parsed.success) return validationError(parsed.error);
+
+  const result = await createPerson(parsed.data, viewer);
+  if (result.kind === "duplicate") {
+    const what = result.on === "phone" ? "phone number" : "email";
+    const name = result.existing.fullName || "another person";
+    return apiError(
+      409,
+      "duplicate",
+      `This ${what} already belongs to ${name}. Open their record, or merge them.`,
+      {
+        fields: { [result.on]: `Already belongs to ${name}` },
+        existing: result.existing,
+      },
+    );
+  }
+  return Response.json(result.person, { status: 201 });
 }

@@ -1,10 +1,14 @@
+import { getCurrentUser } from "@/lib/auth/current-user";
+import { canExportPeople, permissionFor } from "@/lib/auth/permissions";
 import { PeopleList } from "./people-list";
 
-export default function PeoplePage() {
-  return (
-    <div className="space-y-4">
-      <h1 className="text-xl font-semibold">People</h1>
-      <PeopleList />
-    </div>
-  );
+// Hiding buttons here is UX only — every API route re-checks (spec §6).
+export default async function PeoplePage() {
+  const user = await getCurrentUser();
+  const canWrite = user
+    ? permissionFor(user, "person", "write").allowed
+    : false;
+  const canExport = user ? canExportPeople(user.role) : false;
+
+  return <PeopleList canWrite={canWrite} canExport={canExport} />;
 }

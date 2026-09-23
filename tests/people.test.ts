@@ -58,18 +58,23 @@ test("lifecycle stage: customer beats student beats lead", () => {
 });
 
 // Spec §7 list conventions: { data, page: { total, page, limit } }, paginated.
+const admin = { id: "admin", role: "super_admin" as const };
+
 test("listPeople paginates and reports the total", async () => {
-  const first = await listPeople({ page: 1, limit: 25 });
+  const first = await listPeople({ page: 1, limit: 25 }, admin);
   assert.equal(first.data.length, 25);
   assert.equal(first.page.limit, 25);
   assert.ok(first.page.total > 25);
 
-  const last = await listPeople({ page: 3, limit: 25 });
+  const last = await listPeople({ page: 3, limit: 25 }, admin);
   assert.equal(last.data.length, first.page.total - 50);
 });
 
 test("listPeople filters by needsReview", async () => {
-  const flagged = await listPeople({ page: 1, limit: 100, needsReview: true });
+  const flagged = await listPeople(
+    { page: 1, limit: 100, needsReview: true },
+    admin,
+  );
   assert.ok(flagged.data.length > 0);
   assert.ok(flagged.data.every((p) => p.needsReview));
 });
