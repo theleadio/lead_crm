@@ -1,10 +1,10 @@
+import { PeopleList } from "./people-list";
+
 export default function PeoplePage() {
   return (
-    <div>
+    <div className="space-y-4">
       <h1 className="text-xl font-semibold">People</h1>
-      <p className="text-ink-muted mt-2 text-sm">
-        Screen not built yet — see spec Section 9.
-      </p>
+      <PeopleList />
     </div>
   );
 }
