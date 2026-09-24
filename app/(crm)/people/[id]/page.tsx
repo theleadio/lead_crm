@@ -10,5 +10,13 @@ export default async function PersonPage(props: PageProps<"/people/[id]">) {
     ? permissionFor(user, "person", "write").allowed
     : false;
 
-  return <PersonDetailView id={id} canWrite={canWrite} />;
+  const canExportData = user?.role === "super_admin";
+
+  return (
+    <PersonDetailView
+      id={id}
+      canWrite={canWrite}
+      canExportData={canExportData}
+    />
+  );
 }

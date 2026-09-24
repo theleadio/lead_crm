@@ -6,7 +6,6 @@ import { bulkUpdatePeople, InvalidBulkChange } from "@/lib/people/service";
 import { bulkPeopleSchema } from "@/lib/validation/people-query";
 
 // POST /api/people/bulk — spec §9.1 bulk assign owner / bulk add tag.
-// Not in the §7 endpoint table yet: raised as an open item in §15.3.
 export async function POST(request: NextRequest) {
   const viewer = await getCurrentUser();
   if (!viewer) return apiError(401, "unauthenticated", "Sign in to continue.");
@@ -19,7 +18,13 @@ export async function POST(request: NextRequest) {
 
   try {
     return Response.json(
-      await bulkUpdatePeople(parsed.data.ids, parsed.data.change, viewer),
+      await bulkUpdatePeople(
+        parsed.data.personIds,
+        parsed.data.action === "assign_owner"
+          ? { kind: "assignOwner", ownerId: parsed.data.ownerId ?? null }
+          : { kind: "addTag", tagId: parsed.data.tagId },
+        viewer,
+      ),
     );
   } catch (err) {
     if (err instanceof InvalidBulkChange)

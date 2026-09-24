@@ -13,7 +13,7 @@ import {
 const LANGUAGE = { en: "English", zh: "Chinese" } as const;
 
 // GET /api/people/export — spec §9.1 Export CSV, permitted roles only (§6),
-// audit-logged (§4). Not in the §7 table yet: raised in §15.3.
+// audit-logged (§4). Spec §7.1.
 export async function GET(request: NextRequest) {
   const viewer = await getCurrentUser();
   if (!viewer) return apiError(401, "unauthenticated", "Sign in to continue.");

@@ -99,6 +99,15 @@ export function requirePermission(
   return { assignedOnly };
 }
 
+// Spec §6 (v1.2): part-timers create people only together with an enquiry
+// assigned to them (built with 9.13) — never from the standalone Add person.
+export function canAddPersonStandalone(viewer: Viewer): boolean {
+  return (
+    viewer.role !== "part_time" &&
+    permissionFor(viewer, "person", "write").allowed
+  );
+}
+
 // Footnote ¹: marketing sees person phone/email masked.
 export function masksContactDetails(role: Role): boolean {
   return role === "marketing";

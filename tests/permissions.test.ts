@@ -159,3 +159,75 @@ test("dedupe: never matches on name alone", () => {
   );
   assert.equal(r.kind, "none");
 });
+
+// Spec §12.2 v1.2: normalised name AND (company | email username | last 7 digits).
+const person = (over: Partial<Parameters<typeof findDuplicate>[0]>) => ({
+  id: "x",
+  fullName: "Tan Mei Ling",
+  emailNorm: "tan.ml@gmail.com",
+  phoneE164: "+60123456789",
+  companyName: null,
+  ...over,
+});
+
+test("dedupe: spelling variants of a name normalise equal", () => {
+  const r = findDuplicate(
+    {
+      fullName: "TAN MEI-LING",
+      emailNorm: "tan.ml@acme.com",
+      phoneE164: null,
+      companyName: null,
+    },
+    [person({})],
+  );
+  assert.equal(r.kind === "soft" && r.on, "email");
+  const r2 = findDuplicate(
+    {
+      fullName: "Tan Meiling",
+      emailNorm: "tan.ml@acme.com",
+      phoneE164: null,
+      companyName: null,
+    },
+    [person({})],
+  );
+  assert.equal(r2.kind, "soft");
+});
+
+test("dedupe: same name + last 7 phone digits is a soft match", () => {
+  const r = findDuplicate(
+    {
+      fullName: "Tan Mei Ling",
+      emailNorm: null,
+      phoneE164: "+60193456789",
+      companyName: null,
+    },
+    [person({})],
+  );
+  assert.equal(r.kind === "soft" && r.on, "phone");
+});
+
+test("dedupe: signals without a matching name never flag", () => {
+  const r = findDuplicate(
+    {
+      fullName: "Lim Wei Jie",
+      emailNorm: "tan.ml@acme.com",
+      phoneE164: "+60193456789",
+      companyName: null,
+    },
+    [person({})],
+  );
+  assert.equal(r.kind, "none");
+});
+
+test("dedupe: an empty name never soft-matches", () => {
+  const r = findDuplicate(
+    {
+      fullName: "",
+      emailNorm: "tan.ml@acme.com",
+      phoneE164: null,
+      companyName: null,
+    },
+    [person({ fullName: "" })],
+  );
+  assert.equal(r.kind, "none");
+});

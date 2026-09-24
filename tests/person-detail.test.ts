@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { getPersonDetail, updatePerson } from "../lib/people/detail-service.ts";
 import { MOCK_PEOPLE } from "../lib/people/mock-data.ts";
+import { isAssignedTo } from "../lib/people/service.ts";
 import { MOCK_AUDIT_LOG } from "../lib/audit.ts";
 import type { Viewer } from "../lib/auth/permissions.ts";
 
@@ -17,7 +18,7 @@ const detailOf = async (id: string, viewer: Viewer = admin) => {
 
 test("unknown id is not_found; part_time can't open someone else's person", async () => {
   assert.equal((await getPersonDetail("nope", admin)).kind, "not_found");
-  const notMine = MOCK_PEOPLE.find((p) => p.owner?.id === "u-2")!;
+  const notMine = MOCK_PEOPLE.find((p) => !isAssignedTo(p, "u-1"))!;
   const r = await getPersonDetail(notMine.id, { id: "u-1", role: "part_time" });
   assert.equal(r.kind, "forbidden");
 });
@@ -25,7 +26,7 @@ test("unknown id is not_found; part_time can't open someone else's person", asyn
 test("admin sees every panel, and viewing payments is audit-logged", async () => {
   const before = MOCK_AUDIT_LOG.length;
   const d = await detailOf(customer().id);
-  assert.ok(d.deals && d.enrolments && d.payments && d.enquiries && d.consent);
+  assert.ok(d.deals && d.enrolments && d.payments && d.enquiries);
   assert.ok(d.payments!.length > 0);
   assert.equal(MOCK_AUDIT_LOG.length, before + d.payments!.length);
   assert.equal(MOCK_AUDIT_LOG.at(-1)?.action, "view");

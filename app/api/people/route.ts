@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { permissionFor } from "@/lib/auth/permissions";
+import { canAddPersonStandalone, permissionFor } from "@/lib/auth/permissions";
 import { apiError, validationError } from "@/lib/api/errors";
 import { createPerson, listPeople } from "@/lib/people/service";
 import { personSchema } from "@/lib/validation/person";
@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const viewer = await getCurrentUser();
   if (!viewer) return apiError(401, "unauthenticated", "Sign in to continue.");
-  if (!permissionFor(viewer, "person", "write").allowed)
+  if (!canAddPersonStandalone(viewer))
     return apiError(403, "forbidden", "You don't have access to add people.");
 
   const body = await request.json().catch(() => null);

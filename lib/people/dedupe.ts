@@ -1,4 +1,4 @@
-// Spec §12.2 duplicate prevention, run on every person create from any route.
+// Spec §12.2 (v1.2) duplicate prevention, run on every person create.
 
 export type DedupeCandidate = {
   fullName: string;
@@ -9,12 +9,29 @@ export type DedupeCandidate = {
 
 export type DedupeRecord = DedupeCandidate & { id: string };
 
+export type SoftReason = "company" | "email" | "phone";
+
 export type DedupeResult<T extends DedupeRecord> =
   | { kind: "hard"; match: T; on: "email" | "phone" }
-  | { kind: "soft"; match: T }
+  | { kind: "soft"; match: T; on: SoftReason }
   | { kind: "none" };
 
-const normName = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+// §12.2 rule 4: lowercase, spaces/hyphens/dots/apostrophes removed —
+// "Tan Mei Ling", "Tan Meiling" and "TAN MEI-LING" compare equal.
+export const normaliseName = (s: string) =>
+  s.toLowerCase().replace(/[\s\-.'’]/g, "");
+
+const normCompany = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+const emailLocal = (e: string) => e.slice(0, e.indexOf("@"));
+const emailDomain = (e: string) => e.slice(e.indexOf("@") + 1);
+const last7 = (e164: string) => e164.replace(/\D/g, "").slice(-7);
+
+export const SOFT_REASON_TEXT: Record<SoftReason, string> = {
+  company: "Possible duplicate: same name and company as another person",
+  email: "Possible duplicate: same name and email username as another person",
+  phone:
+    "Possible duplicate: same name and last 7 phone digits as another person",
+};
 
 export function findDuplicate<T extends DedupeRecord>(
   candidate: DedupeCandidate,
@@ -28,20 +45,35 @@ export function findDuplicate<T extends DedupeRecord>(
       return { kind: "hard", match: p, on: "phone" };
   }
 
-  // Soft match: same full name + same company → create, but flag for review.
-  // Never merge on name alone — "Tan Wei Ming" collides constantly.
-  // ponytail: the spec's second soft rule ("near-identical name with one
-  // matching identifier") is ambiguous — raised in §15.3, not guessed here.
-  if (candidate.companyName) {
-    const name = normName(candidate.fullName);
-    const company = normName(candidate.companyName);
-    const soft = existing.find(
-      (p) =>
-        p.companyName !== null &&
-        normName(p.fullName) === name &&
-        normName(p.companyName) === company,
-    );
-    if (soft) return { kind: "soft", match: soft };
+  // Soft match needs the normalised name to match AND one more signal.
+  // Never flag on name alone (rule 5) — "Tan Wei Ming" collides constantly.
+  const name = normaliseName(candidate.fullName);
+  if (!name) return { kind: "none" };
+
+  for (const p of existing) {
+    if (normaliseName(p.fullName) !== name) continue;
+
+    if (
+      candidate.companyName &&
+      p.companyName &&
+      normCompany(candidate.companyName) === normCompany(p.companyName)
+    )
+      return { kind: "soft", match: p, on: "company" };
+
+    if (
+      candidate.emailNorm &&
+      p.emailNorm &&
+      emailLocal(candidate.emailNorm) === emailLocal(p.emailNorm) &&
+      emailDomain(candidate.emailNorm) !== emailDomain(p.emailNorm)
+    )
+      return { kind: "soft", match: p, on: "email" };
+
+    if (
+      candidate.phoneE164 &&
+      p.phoneE164 &&
+      last7(candidate.phoneE164) === last7(p.phoneE164)
+    )
+      return { kind: "soft", match: p, on: "phone" };
   }
 
   return { kind: "none" };

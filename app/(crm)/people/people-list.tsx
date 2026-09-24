@@ -19,7 +19,8 @@ import { formatLastActivity } from "@/lib/format/date";
 import type {
   LifecycleStage,
   ListResponse,
-  Option,
+  OwnerOption,
+  TagOption,
   PersonListItem,
 } from "@/lib/people/types";
 import { AddPersonDialog } from "./add-person-dialog";
@@ -82,9 +83,11 @@ function filterParams(q: string, f: Filters): URLSearchParams {
 export function PeopleList({
   canWrite,
   canExport,
+  canAdd,
 }: {
   canWrite: boolean;
   canExport: boolean;
+  canAdd: boolean;
 }) {
   const [search, setSearch] = useState("");
   const [q, setQ] = useState("");
@@ -92,8 +95,8 @@ export function PeopleList({
   const [page, setPage] = useState(1);
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
-  const [owners, setOwners] = useState<Option[]>([]);
-  const [tags, setTags] = useState<Option[]>([]);
+  const [owners, setOwners] = useState<OwnerOption[]>([]);
+  const [tags, setTags] = useState<TagOption[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [addOpen, setAddOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -117,7 +120,7 @@ export function PeopleList({
   }, []);
 
   useEffect(() => {
-    const load = (url: string, set: (o: Option[]) => void) =>
+    const load = <T,>(url: string, set: (o: T[]) => void) =>
       fetch(url)
         .then((r) => (r.ok ? r.json() : { data: [] }))
         .then((b) => set(b.data))
@@ -203,7 +206,7 @@ export function PeopleList({
               </a>
             </Button>
           )}
-          {canWrite && (
+          {canAdd && (
             <Button onClick={() => setAddOpen(true)}>Add person</Button>
           )}
         </div>
@@ -234,7 +237,7 @@ export function PeopleList({
           onChange={(v) => updateFilter("owner", v)}
           options={[
             ["unassigned", "Unassigned"],
-            ...owners.map((o): [string, string] => [o.id, o.label]),
+            ...owners.map((o): [string, string] => [o.id, o.fullName]),
           ]}
         />
         <FilterSelect
@@ -370,7 +373,7 @@ export function PeopleList({
                       <>
                         No people yet. People appear here when a lead form is
                         submitted or someone is added.{" "}
-                        {canWrite && (
+                        {canAdd && (
                           <Button
                             variant="link"
                             onClick={() => setAddOpen(true)}
@@ -410,7 +413,7 @@ export function PeopleList({
         />
       )}
 
-      {canWrite && (
+      {canAdd && (
         <AddPersonDialog
           open={addOpen}
           onOpenChange={setAddOpen}
@@ -440,8 +443,8 @@ function BulkBar({
 }: {
   count: number;
   ids: string[];
-  owners: Option[];
-  tags: Option[];
+  owners: OwnerOption[];
+  tags: TagOption[];
   onDone: (message: string) => void;
 }) {
   const [owner, setOwner] = useState("");
@@ -451,8 +454,8 @@ function BulkBar({
 
   async function apply(
     change:
-      | { kind: "assignOwner"; ownerId: string | null }
-      | { kind: "addTag"; tag: string },
+      | { action: "assign_owner"; ownerId: string | null }
+      | { action: "add_tag"; tagId: string },
     describe: (updated: number) => string,
   ) {
     setSaving(true);
@@ -461,7 +464,7 @@ function BulkBar({
       const res = await fetch("/api/people/bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids, change }),
+        body: JSON.stringify({ personIds: ids, ...change }),
       });
       const body = await res.json();
       if (!res.ok) {
@@ -477,7 +480,7 @@ function BulkBar({
   }
 
   const ownerName = (id: string) =>
-    owners.find((o) => o.id === id)?.label ?? "nobody";
+    owners.find((o) => o.id === id)?.fullName ?? "nobody";
 
   return (
     <div className="border-line bg-blue-soft flex flex-wrap items-center gap-3 rounded-md border px-4 py-2 text-sm">
@@ -492,7 +495,7 @@ function BulkBar({
         <option value="unassigned">No owner</option>
         {owners.map((o) => (
           <option key={o.id} value={o.id}>
-            {o.label}
+            {o.fullName}
           </option>
         ))}
       </select>
@@ -503,7 +506,7 @@ function BulkBar({
         onClick={() =>
           apply(
             {
-              kind: "assignOwner",
+              action: "assign_owner",
               ownerId: owner === "unassigned" ? null : owner,
             },
             (n) =>
@@ -522,7 +525,7 @@ function BulkBar({
         <option value="">Add tag…</option>
         {tags.map((t) => (
           <option key={t.id} value={t.id}>
-            {t.label}
+            {t.name}
           </option>
         ))}
       </select>
@@ -532,9 +535,9 @@ function BulkBar({
         disabled={!tag || saving}
         onClick={() =>
           apply(
-            { kind: "addTag", tag },
+            { action: "add_tag", tagId: tag },
             (n) =>
-              `Tag "${tag}" added to ${n} ${n === 1 ? "person" : "people"}.`,
+              `Tag "${tags.find((t) => t.id === tag)?.name ?? tag}" added to ${n} ${n === 1 ? "person" : "people"}.`,
           )
         }
       >
@@ -554,7 +557,7 @@ function TagFilter({
   value,
   onChange,
 }: {
-  options: Option[];
+  options: TagOption[];
   value: string[];
   onChange: (value: string[]) => void;
 }) {
@@ -577,7 +580,7 @@ function TagFilter({
                 )
               }
             />
-            {o.label}
+            {o.name}
           </label>
         ))}
       </div>

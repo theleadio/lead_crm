@@ -9,7 +9,7 @@ import { normalizeEmail } from "../format/email.ts";
 import { maskEmail, maskPhone } from "../format/mask.ts";
 import { normalizePhoneE164 } from "../format/phone.ts";
 import type { PersonInput } from "../validation/person.ts";
-import { findDuplicate } from "./dedupe.ts";
+import { findDuplicate, SOFT_REASON_TEXT } from "./dedupe.ts";
 import {
   MOCK_OWNERS,
   MOCK_PEOPLE,
@@ -19,7 +19,8 @@ import {
 import { matchesPersonQuery } from "./search.ts";
 import type {
   ListResponse,
-  Option,
+  OwnerOption,
+  TagOption,
   PeopleFilters,
   PeopleListQuery,
   PersonListItem,
@@ -29,6 +30,11 @@ import type {
 // Reads/writes mock data today; swap to Shawn's generated client when it
 // lands — API routes and screens don't change.
 
+// Spec §6 (v1.2): a part-timer sees people they own, or who have an
+// enquiry or task assigned to them.
+export const isAssignedTo = (p: PersonRecord, userId: string) =>
+  p.owner?.id === userId || p.assignedUserIds.includes(userId);
+
 // Asia/Kuala_Lumpur is UTC+8 with no DST.
 const klStartOfDay = (d: string) => Date.parse(`${d}T00:00:00+08:00`);
 const klEndOfDay = (d: string) => Date.parse(`${d}T23:59:59.999+08:00`);
@@ -37,7 +43,7 @@ function visibleTo(viewer: Viewer, filters: PeopleFilters): PersonRecord[] {
   // part_time "assigned only": real version is a WHERE clause (spec §6).
   const { assignedOnly } = permissionFor(viewer, "person", "read");
   return MOCK_PEOPLE.filter((p) => {
-    if (assignedOnly && p.owner?.id !== viewer.id) return false;
+    if (assignedOnly && !isAssignedTo(p, viewer.id)) return false;
     if (filters.q && !matchesPersonQuery(p, filters.q)) return false;
     if (filters.stage && p.stage !== filters.stage) return false;
     if (filters.language && p.preferredLanguage !== filters.language)
@@ -54,7 +60,11 @@ function visibleTo(viewer: Viewer, filters: PeopleFilters): PersonRecord[] {
       p.owner?.id !== filters.owner
     )
       return false;
-    if (filters.tags?.length && !filters.tags.some((t) => p.tags.includes(t)))
+    // filters.tags holds tag ids; mock people store tag names.
+    if (
+      filters.tags?.length &&
+      !filters.tags.some((id) => p.tags.includes(tagName(id) ?? ""))
+    )
       return false;
     if (
       filters.hasOpenDeal !== undefined &&
@@ -160,7 +170,7 @@ export async function createPerson(
     phone && !phoneE164
       ? "Phone number could not be normalised"
       : dup.kind === "soft"
-        ? "Possible duplicate: same name and company as another person"
+        ? SOFT_REASON_TEXT[dup.on]
         : null;
 
   const now = new Date().toISOString();
@@ -184,6 +194,7 @@ export async function createPerson(
     needsReviewReason: reviewReason,
     companyName: null,
     hasOpenDeal: false,
+    assignedUserIds: [],
     createdAt: now,
     updatedAt: now,
   };
@@ -203,7 +214,7 @@ export async function createPerson(
 
 export type BulkChange =
   | { kind: "assignOwner"; ownerId: string | null }
-  | { kind: "addTag"; tag: string };
+  | { kind: "addTag"; tagId: string };
 
 export class InvalidBulkChange extends Error {}
 
@@ -218,7 +229,8 @@ export async function bulkUpdatePeople(
       : null;
   if (change.kind === "assignOwner" && change.ownerId && !owner)
     throw new InvalidBulkChange("That owner doesn't exist.");
-  if (change.kind === "addTag" && !MOCK_TAGS.includes(change.tag))
+  const tag = change.kind === "addTag" ? tagName(change.tagId) : null;
+  if (change.kind === "addTag" && !tag)
     throw new InvalidBulkChange("That tag doesn't exist.");
 
   // Only records this viewer can see (part_time: their own) are touched.
@@ -228,7 +240,7 @@ export async function bulkUpdatePeople(
   for (const p of targets) {
     const before = { owner: p.owner, tags: p.tags };
     if (change.kind === "assignOwner") p.owner = owner ?? null;
-    else if (!p.tags.includes(change.tag)) p.tags = [...p.tags, change.tag];
+    else if (tag && !p.tags.includes(tag)) p.tags = [...p.tags, tag];
     p.updatedAt = now;
     await writeAudit({
       userId: viewer.id,
@@ -242,10 +254,14 @@ export async function bulkUpdatePeople(
   return { updated: targets.length };
 }
 
-export async function listOwnerOptions(): Promise<Option[]> {
-  return MOCK_OWNERS.map((o) => ({ id: o.id, label: o.fullName }));
+// §7.1: {id, fullName} of active users, nothing else.
+export async function listOwnerOptions(): Promise<OwnerOption[]> {
+  return MOCK_OWNERS.map((o) => ({ id: o.id, fullName: o.fullName }));
 }
 
-export async function listTagOptions(): Promise<Option[]> {
-  return MOCK_TAGS.map((t) => ({ id: t, label: t }));
+export async function listTagOptions(): Promise<TagOption[]> {
+  return MOCK_TAGS.map((t) => ({ id: t.id, name: t.name }));
 }
+
+const tagName = (id: string) =>
+  MOCK_TAGS.find((t) => t.id === id)?.name ?? null;

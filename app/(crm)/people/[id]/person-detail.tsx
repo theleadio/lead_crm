@@ -8,7 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatDate, formatLastActivity, formatTime } from "@/lib/format/date";
 import { formatMoneyMyr } from "@/lib/format/money";
-import type { Option, PersonDetail } from "@/lib/people/types";
+import type {
+  ConsentState,
+  ListResponse,
+  OwnerOption,
+  PersonDetail,
+  TimelineItem,
+} from "@/lib/people/types";
 
 type Person = PersonDetail["person"];
 type Form = {
@@ -48,9 +54,11 @@ type LoadState =
 export function PersonDetailView({
   id,
   canWrite,
+  canExportData,
 }: {
   id: string;
   canWrite: boolean;
+  canExportData: boolean;
 }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
@@ -145,11 +153,32 @@ export function PersonDetailView({
             <span>Last activity: {formatLastActivity(p.lastActivityAt)}</span>
           </div>
         </div>
-        {p.email && !p.email.includes("•") && (
-          <Button variant="outline" asChild>
-            <a href={`mailto:${p.email}`}>Email</a>
-          </Button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {p.email && !p.email.includes("•") && (
+            <Button variant="outline" asChild>
+              <a href={`mailto:${p.email}`}>Email</a>
+            </Button>
+          )}
+          {/* §14 PDPA portability, on the person's request (§7.1). */}
+          {canExportData && (
+            <>
+              <Button variant="outline" asChild>
+                <a
+                  href={`/api/people/${encodeURIComponent(p.id)}/data-export?format=json`}
+                >
+                  Export data (JSON)
+                </a>
+              </Button>
+              <Button variant="outline" asChild>
+                <a
+                  href={`/api/people/${encodeURIComponent(p.id)}/data-export?format=csv`}
+                >
+                  Export data (CSV)
+                </a>
+              </Button>
+            </>
+          )}
+        </div>
       </header>
 
       {p.needsReview && (
@@ -245,38 +274,8 @@ export function PersonDetailView({
             </Panel>
           )}
 
-          {detail.consent && (
-            <Panel title="Consent" empty={!detail.consent.length}>
-              {detail.consent.map((c) => (
-                <Row key={c.purpose}>
-                  <span>
-                    {c.purpose === "marketing_email"
-                      ? "Marketing email"
-                      : "Marketing WhatsApp"}
-                  </span>
-                  <span
-                    className={c.isGranted ? "text-success" : "text-danger"}
-                  >
-                    {c.isGranted ? "Granted" : "Withdrawn"}
-                  </span>
-                  <span>{formatDate(c.recordedAt)}</span>
-                </Row>
-              ))}
-            </Panel>
-          )}
-
-          <Panel title="Timeline" empty={!detail.timeline.length}>
-            <ol className="space-y-2">
-              {detail.timeline.map((t, i) => (
-                <li key={i} className="flex gap-3 text-sm">
-                  <span className="text-ink-muted w-36 shrink-0">
-                    {formatDate(t.at)}, {formatTime(t.at)}
-                  </span>
-                  <span>{t.text}</span>
-                </li>
-              ))}
-            </ol>
-          </Panel>
+          <ConsentPanel personId={p.id} />
+          <TimelinePanel personId={p.id} />
         </div>
       </div>
 
@@ -296,7 +295,7 @@ function EditForm({
 }) {
   const initial = toForm(person);
   const [form, setForm] = useState<Form>(initial);
-  const [owners, setOwners] = useState<Option[]>([]);
+  const [owners, setOwners] = useState<OwnerOption[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<{
     message: string;
@@ -477,7 +476,7 @@ function EditForm({
           <option value="">Unassigned</option>
           {owners.map((o) => (
             <option key={o.id} value={o.id}>
-              {o.label}
+              {o.fullName}
             </option>
           ))}
         </select>
@@ -620,5 +619,112 @@ function DetailSkeleton() {
         <div className="bg-surface-sunken h-96 animate-pulse rounded-md" />
       </div>
     </div>
+  );
+}
+
+// GET /api/consent/:personId (spec §7). Hidden for roles without consent read.
+function ConsentPanel({ personId }: { personId: string }) {
+  const [consent, setConsent] = useState<ConsentState[] | null | "error">(null);
+  const [hidden, setHidden] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/consent/${encodeURIComponent(personId)}`)
+      .then(async (res) => {
+        if (res.status === 403) return setHidden(true);
+        if (!res.ok) return setConsent("error");
+        setConsent((await res.json()).data);
+      })
+      .catch(() => setConsent("error"));
+  }, [personId]);
+
+  if (hidden) return null;
+  return (
+    <Panel title="Consent" empty={Array.isArray(consent) && !consent.length}>
+      {consent === null ? (
+        <div className="bg-surface-sunken h-10 animate-pulse rounded-sm" />
+      ) : consent === "error" ? (
+        <p className="text-danger text-sm">Couldn&apos;t load consent.</p>
+      ) : (
+        consent.map((c) => (
+          <Row key={c.purpose}>
+            <span>
+              {c.purpose === "marketing_email"
+                ? "Marketing email"
+                : "Marketing WhatsApp"}
+            </span>
+            <span className={c.isGranted ? "text-success" : "text-danger"}>
+              {c.isGranted ? "Granted" : "Withdrawn"}
+            </span>
+            <span>{formatDate(c.recordedAt)}</span>
+          </Row>
+        ))
+      )}
+    </Panel>
+  );
+}
+
+// GET /api/people/:id/timeline (spec §7.1): 50 per page, "Load more" appends.
+function TimelinePanel({ personId }: { personId: string }) {
+  const [items, setItems] = useState<TimelineItem[]>([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/people/${encodeURIComponent(personId)}/timeline?page=${page}`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error();
+        const body: ListResponse<TimelineItem> = await res.json();
+        setItems((prev) => (page === 1 ? body.data : [...prev, ...body.data]));
+        setTotal(body.page.total);
+        setError(false);
+      })
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
+  }, [personId, page]);
+
+  const loadPage = (next: number) => {
+    setLoading(true);
+    setPage(next);
+  };
+
+  return (
+    <Panel title="Timeline" empty={!loading && !error && total === 0}>
+      {error ? (
+        <div className="text-danger text-sm">
+          Couldn&apos;t load the timeline.{" "}
+          <Button variant="link" onClick={() => loadPage(page)}>
+            Retry
+          </Button>
+        </div>
+      ) : (
+        <>
+          <ol className="space-y-2">
+            {items.map((t, i) => (
+              <li key={i} className="flex gap-3 text-sm">
+                <span className="text-ink-muted w-36 shrink-0">
+                  {formatDate(t.at)}, {formatTime(t.at)}
+                </span>
+                <span>{t.text}</span>
+              </li>
+            ))}
+          </ol>
+          {loading && (
+            <div className="bg-surface-sunken mt-2 h-10 animate-pulse rounded-sm" />
+          )}
+          {!loading && total !== null && items.length < total && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3"
+              onClick={() => loadPage(page + 1)}
+            >
+              Load more
+            </Button>
+          )}
+        </>
+      )}
+    </Panel>
   );
 }

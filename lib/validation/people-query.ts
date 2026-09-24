@@ -45,13 +45,17 @@ export function readPeopleParams(sp: URLSearchParams) {
   };
 }
 
-export const bulkPeopleSchema = z.object({
-  ids: z.array(z.string().max(100)).min(1).max(100),
-  change: z.discriminatedUnion("kind", [
-    z.object({
-      kind: z.literal("assignOwner"),
-      ownerId: z.string().nullable(),
-    }),
-    z.object({ kind: z.literal("addTag"), tag: z.string().min(1) }),
-  ]),
-});
+// Spec §7.1: {personIds[], action, ownerId?, tagId?}, max 500.
+// ownerId null (or omitted) with assign_owner means "no owner".
+export const bulkPeopleSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("assign_owner"),
+    personIds: z.array(z.string().max(100)).min(1).max(500),
+    ownerId: z.string().nullable().optional(),
+  }),
+  z.object({
+    action: z.literal("add_tag"),
+    personIds: z.array(z.string().max(100)).min(1).max(500),
+    tagId: z.string().min(1),
+  }),
+]);

@@ -25,6 +25,9 @@ export type PersonRecord = {
   needsReviewReason: string | null;
   companyName: string | null; // real version: company_membership join
   hasOpenDeal: boolean; // real version: computed from deal stage
+  // Users with an enquiry or task about this person assigned to them.
+  // Real version: join on enquiry/task.assigned_user_id (spec §6 "assigned").
+  assignedUserIds: string[];
   createdAt: string;
   updatedAt: string;
 };
@@ -35,13 +38,14 @@ export const MOCK_OWNERS = [
   { id: "u-3", fullName: "Lee Yee" },
 ];
 
+// System tags come from the data import and can't be renamed (spec §5 tag).
 export const MOCK_TAGS = [
-  "[source] meta",
-  "[workshop] 25 Sep",
-  "vip",
-  "hrdc",
-  "corporate",
-  "follow-up",
+  { id: "t-1", name: "[source] meta", isSystem: true },
+  { id: "t-2", name: "[workshop] 25 Sep", isSystem: true },
+  { id: "t-3", name: "vip", isSystem: false },
+  { id: "t-4", name: "hrdc", isSystem: false },
+  { id: "t-5", name: "corporate", isSystem: false },
+  { id: "t-6", name: "follow-up", isSystem: false },
 ];
 
 const NAMES = [
@@ -107,6 +111,7 @@ function build(i: number): PersonRecord {
         : null,
     companyName: COMPANIES[i % COMPANIES.length],
     hasOpenDeal: i % 3 === 0,
+    assignedUserIds: i % 5 === 1 ? ["u-1"] : [],
     createdAt: created,
     updatedAt: created,
   };

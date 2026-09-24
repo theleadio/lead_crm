@@ -1,3 +1,4 @@
+import { formatMoneyMyr } from "../format/money.ts";
 import type { PersonRecord } from "./mock-data.ts";
 import type {
   ConsentState,
@@ -23,7 +24,10 @@ export type MockRelated = {
   payments: (PaymentSummary & { dealOwnerId: string | null })[];
   enquiries: EnquirySummary[];
   consent: ConsentState[];
-  timeline: (TimelineItem & { resource: "person" | "deal" | "task" })[];
+  timeline: (TimelineItem & {
+    resource: "person" | "deal" | "task" | "payment" | "enrolment";
+    recordId: string | null;
+  })[];
 };
 
 export function mockRelated(p: PersonRecord): MockRelated {
@@ -132,12 +136,28 @@ export function mockRelated(p: PersonRecord): MockRelated {
       kind: "touchpoint" as const,
       text: `Came in via ${t.channel.replace("_", " ")}${t.utmSource ? ` (${t.utmSource})` : ""}`,
       resource: "person" as const,
+      recordId: null,
     })),
     ...deals.map((d) => ({
       at: shift(created, 24),
       kind: "stage_change" as const,
       text: `Deal for ${d.courseName} moved to ${d.stage}`,
       resource: "deal" as const,
+      recordId: d.id,
+    })),
+    ...enrolments.map((e) => ({
+      at: shift(created, 36),
+      kind: "enrolment_change" as const,
+      text: `Enrolment in ${e.classCode} is ${e.status}`,
+      resource: "enrolment" as const,
+      recordId: e.id,
+    })),
+    ...payments.map((pay) => ({
+      at: pay.paidAt ?? created,
+      kind: "payment" as const,
+      text: `Payment of ${formatMoneyMyr(pay.amountMyr)} ${pay.status}`,
+      resource: "payment" as const,
+      recordId: pay.id,
     })),
     ...(touchpoints.length
       ? [
@@ -146,12 +166,14 @@ export function mockRelated(p: PersonRecord): MockRelated {
             kind: "task" as const,
             text: "First-contact call completed",
             resource: "task" as const,
+            recordId: null,
           },
           {
             at: shift(created, 3),
             kind: "message" as const,
             text: "WhatsApp message received",
             resource: "person" as const,
+            recordId: null,
           },
         ]
       : []),

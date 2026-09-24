@@ -5,8 +5,10 @@ import {
   createPerson,
   exportPeople,
   InvalidBulkChange,
+  isAssignedTo,
   listPeople,
 } from "../lib/people/service.ts";
+import { MOCK_PEOPLE } from "../lib/people/mock-data.ts";
 import { MOCK_AUDIT_LOG } from "../lib/audit.ts";
 import { toCsv } from "../lib/format/csv.ts";
 
@@ -28,10 +30,14 @@ test("marketing gets masked phone and email, never the real values", async () =>
   }
 });
 
-test("part_time only sees people they own", async () => {
+test("part_time sees people they own or have an enquiry/task for", async () => {
   const { data, page } = await listPeople({ page: 1, limit: 100 }, partTimer);
   assert.ok(page.total > 0);
-  assert.ok(data.every((p) => p.owner?.id === "u-1"));
+  const records = data.map((p) => MOCK_PEOPLE.find((r) => r.id === p.id)!);
+  assert.ok(records.every((r) => isAssignedTo(r, "u-1")));
+  // Both routes in: some owned, some only via an assigned enquiry/task.
+  assert.ok(records.some((r) => r.owner?.id === "u-1"));
+  assert.ok(records.some((r) => r.owner?.id !== "u-1"));
 });
 
 test("filters: owner, tag, open deal, created between", async () => {
@@ -42,7 +48,7 @@ test("filters: owner, tag, open deal, created between", async () => {
     unassigned.data.length > 0 && unassigned.data.every((p) => !p.owner),
   );
 
-  const vip = await q({ tags: ["vip"] });
+  const vip = await q({ tags: ["t-3"] });
   assert.ok(
     vip.data.length > 0 && vip.data.every((p) => p.tags.includes("vip")),
   );
@@ -94,26 +100,24 @@ test("bulk: assigns owner and adds tag, rejects unknown values", async () => {
     admin,
   );
   assert.equal(owned.updated, 2);
-  await bulkUpdatePeople(ids, { kind: "addTag", tag: "vip" }, admin);
+  await bulkUpdatePeople(ids, { kind: "addTag", tagId: "t-3" }, admin);
   const after = await listPeople({ page: 1, limit: 2 }, admin);
   assert.ok(
     after.data.every((p) => p.owner?.id === "u-2" && p.tags.includes("vip")),
   );
 
   await assert.rejects(
-    bulkUpdatePeople(ids, { kind: "addTag", tag: "not-a-tag" }, admin),
+    bulkUpdatePeople(ids, { kind: "addTag", tagId: "not-a-tag" }, admin),
     InvalidBulkChange,
   );
 });
 
-test("bulk: part_time can't touch people they don't own", async () => {
-  const { data } = await listPeople(
-    { page: 1, limit: 100, owner: "u-2" },
-    admin,
-  );
+test("bulk: part_time can't touch people not assigned to them", async () => {
+  const notTheirs = MOCK_PEOPLE.filter((p) => !isAssignedTo(p, "u-1"));
+  assert.ok(notTheirs.length > 0);
   const result = await bulkUpdatePeople(
-    data.map((p) => p.id),
-    { kind: "addTag", tag: "vip" },
+    notTheirs.map((p) => p.id),
+    { kind: "addTag", tagId: "t-3" },
     partTimer,
   );
   assert.equal(result.updated, 0);

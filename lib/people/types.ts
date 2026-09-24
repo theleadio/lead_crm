@@ -36,10 +36,13 @@ export type PeopleFilters = {
 
 export type PeopleListQuery = PeopleFilters & { page: number; limit: number };
 
-export type Option = { id: string; label: string };
+// Spec §7.1 shapes.
+export type OwnerOption = { id: string; fullName: string };
+export type TagOption = { id: string; name: string };
 
-// Spec §9.2 Person detail. Each related section is null when the viewer's
-// role can't read that resource (§6) — the UI hides the panel.
+// Spec §9.2 Person detail (GET /api/people/:id). Each related section is
+// null when the viewer's role can't read that resource (§6) — the UI hides
+// the panel. Timeline and consent have their own routes (§7.1, §7).
 export type PersonDetail = {
   person: {
     id: string;
@@ -68,8 +71,6 @@ export type PersonDetail = {
   enrolments: EnrolmentSummary[] | null;
   payments: PaymentSummary[] | null;
   enquiries: EnquirySummary[] | null;
-  consent: ConsentState[] | null;
-  timeline: TimelineItem[];
 };
 
 export type Touchpoint = {
@@ -119,7 +120,13 @@ export type ConsentState = {
 
 export type TimelineItem = {
   at: string;
-  kind: "touchpoint" | "stage_change" | "task" | "message";
+  kind:
+    | "touchpoint"
+    | "stage_change"
+    | "task"
+    | "message"
+    | "payment"
+    | "enrolment_change";
   text: string;
 };
 
