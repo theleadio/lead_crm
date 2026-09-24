@@ -8,11 +8,28 @@ applied to a clean PostgreSQL 16 database, and `tests/schema_constraints.sql`
 passed 38 of 38 checks against it. The test script rolls itself back.
 
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/001_schema_v1.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/002_merge_erase.sql
     psql -d <db> -f lib/db/tests/schema_constraints.sql
+    psql -d <db> -f lib/db/tests/002_merge_erase_tests.sql
+
+Current result on PostgreSQL 16 with 001 + 002 applied: 38 of 38 and 42 of 42 (with and without Supabase's `anon`/`authenticated` roles present).
 
 The tests live outside `migrations/` on purpose, so no migration runner ever executes them.
 
 23 tables, one view (`consent_current`), seed rows for `lost_reason` and `app_setting`.
+
+## Migration 002 — merge, erase, soft delete (24 Sep)
+
+| Change | What it means for the app |
+| --- | --- |
+| `person.needs_review_reason` | One of `phone_unnormalised`, `possible_duplicate_company`, `possible_duplicate_email`, `possible_duplicate_phone`, `no_name`. A CHECK ties it to `needs_review`: set both or neither. |
+| `person.erased_at` | Set by `erase_person()`. Erased people also get `deleted_at`, so normal lists hide them. |
+| `merge_person(source, target, actor)` returns jsonb | Call it inside the merge route's transaction. It moves everything from source to target and marks source `merged_into_id = target`. It returns row counts and `first_touchpoint_id`. Apply the `fields` map (which values to keep) **after** it returns — the source is already merged, so its email/phone no longer block the unique indexes. |
+| Merge rules in the function | Refuses: no actor, self-merge, either person missing/merged/deleted/erased, both people active in the same class (error lists the class codes — resolve the enrolment first). Earliest touchpoint becomes the only first touch. **Any opt-out wins**: if either person had opted out of a purpose, the kept person ends up opted out. Shared tags kept once; duplicate company memberships collapse to the target's. The `review_duplicate` task for the pair is closed, not moved. One `audit_log` row, action `merge`. |
+| `erase_person(person, actor, reason)` | PDPA erasure = anonymise. Clears name (becomes "Erased person"), email, phones, job title, notes, WATI/Stripe ids, message bodies, enquiry summaries, task notes, tags. **Keeps** enrolments, payments, touchpoints and consent so revenue and attribution still add up. Records previously merged into this person are anonymised too (they still hold the old name/email). Audit row stores the reason and a count only, no personal data. |
+| `soft_delete_person(person, actor, reason)` | For junk/test records only. Refused if the person has any enrolment or payment — use erase instead. The audit row stores the reason, not a copy of the record (`audit_log` is append-only, so anything written there can never be erased). |
+| Append-only exception | `touchpoint` and `consent` may have `person_id` / `is_first_touch` updated **only** while `lead.merge_in_progress` is `on`, which `merge_person()` sets and clears within its transaction. Every other column, every DELETE, and `audit_log` / `deal_stage_history` stay frozen. This guards against accidents, not against someone with direct database access who sets the flag on purpose. |
+| Function privileges | EXECUTE is revoked from PUBLIC and, on Supabase, from `anon` and `authenticated`, so the functions cannot be called through the Data API with the publishable key. Call them from the server via `DATABASE_URL`. `actor` is trusted — pass the signed-in user's id from the session, never a value from the request body. |
 
 ## Where this is stricter or more specific than the spec
 
@@ -44,7 +61,7 @@ Match these in your mock layer so nothing surprises you when the real schema lan
 
 - **Phone normalisation** — libphonenumber in `/lib/format`, then write `phone_e164`.
 - **Seat counting and `class.status`** — computed in the service inside a transaction that locks the class row (Spec 12.1).
-- **Merging people with overlapping tags** — `person_tag` has a primary key on (person, tag), so move tags with `INSERT ... ON CONFLICT DO NOTHING` before deleting the loser's rows.
+- **Merging** — call `merge_person()`; don't hand-write the moves. Then apply the `fields` map and write it to the audit log.
 - **`person.last_activity_at`** — via `touchPersonActivity()` (Spec 12.9).
 
 ## Seed values
