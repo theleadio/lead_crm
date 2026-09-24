@@ -120,11 +120,13 @@ async function seed() {
       const [p] = await tx`
         INSERT INTO person (full_name, email, phone, phone_e164, whatsapp_e164,
                             preferred_language, owner_user_id, needs_review,
+                            needs_review_reason,
                             last_activity_at, created_at, updated_at)
         VALUES (${name}, ${email},
                 ${`0${local.slice(0, 2)}-${local.slice(2, 5)} ${local.slice(5)}`},
                 ${`+60${local}`}, ${`+60${local}`}, ${i % 3 === 2 ? "zh" : "en"},
                 ${owner}, ${i % 11 === 3},
+                ${i % 11 === 3 ? "possible_duplicate_company" : null},
                 ${activity === null ? null : daysAgo(activity)}, ${created}, ${created})
         RETURNING id`;
 
@@ -195,8 +197,8 @@ async function seed() {
 
     // Spec §4: a phone that couldn't be normalised is kept and flagged.
     await tx`
-      INSERT INTO person (full_name, phone, needs_review, created_at, updated_at)
-      VALUES ('Unknown Format', '12345', true, ${daysAgo(61)}, ${daysAgo(61)})`;
+      INSERT INTO person (full_name, phone, needs_review, needs_review_reason, created_at, updated_at)
+      VALUES ('Unknown Format', '12345', true, 'phone_unnormalised', ${daysAgo(61)}, ${daysAgo(61)})`;
   });
 
   const [{ people }] = await sql`SELECT count(*)::int AS people FROM person`;

@@ -47,6 +47,7 @@ type PersonRow = {
   job_title: string | null;
   notes: string | null;
   needs_review: boolean;
+  needs_review_reason: string | null;
   last_activity_at: Date | null;
   created_at: Date;
   updated_at: string; // full microsecond precision, see selectPerson
@@ -62,7 +63,7 @@ function selectPerson(sql: postgres.Sql) {
   return sql`
     SELECT p.id, p.full_name, p.preferred_name, p.email, p.phone, p.phone_e164,
            p.whatsapp_e164, p.preferred_language, p.job_title, p.notes,
-           p.needs_review, p.last_activity_at, p.created_at,
+           p.needs_review, p.needs_review_reason, p.last_activity_at, p.created_at,
            to_char(p.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS updated_at,
            u.id AS owner_id, u.full_name AS owner_name,
            (SELECT co.legal_name FROM company_membership m
@@ -367,8 +368,8 @@ export type UpdateResult =
 
 const blankToNull = (s: string) => (s === "" ? null : s);
 
-// PATCH /api/people/:id — spec §7. `loadedUpdatedAt` is the If-Unmodified-
-// Since value: the updated_at the client loaded. Anything else = stale.
+// PATCH /api/people/:id — spec §7. `loadedUpdatedAt` is the If-Match
+// value: the updated_at the client loaded. Anything else = stale.
 export async function updatePerson(
   id: string,
   patch: PersonUpdate,
@@ -410,9 +411,13 @@ export async function updatePerson(
       set.phone_e164 = newPhoneE164;
       // §4: an unnormalisable phone is kept and flagged, never dropped;
       // fixing it clears a flag that was only there for the phone.
-      if (phone && !newPhoneE164) set.needs_review = true;
-      else if (p.needs_review && p.phone && !p.phone_e164)
+      if (phone && !newPhoneE164) {
+        set.needs_review = true;
+        set.needs_review_reason = "phone_unnormalised";
+      } else if (p.needs_review_reason === "phone_unnormalised") {
         set.needs_review = false;
+        set.needs_review_reason = null;
+      }
     }
 
     if (patch.whatsapp !== undefined) {

@@ -101,6 +101,7 @@ type ListRow = {
   phone_e164: string | null;
   preferred_language: "en" | "zh";
   needs_review: boolean;
+  needs_review_reason: string | null;
   last_activity_at: Date | null;
   created_at: Date;
   owner_id: string | null;
@@ -112,7 +113,7 @@ type ListRow = {
 function selectList(sql: postgres.Sql) {
   return sql`
     SELECT p.id, p.full_name, p.preferred_name, p.email, p.phone, p.phone_e164,
-           p.preferred_language, p.needs_review, p.last_activity_at, p.created_at,
+           p.preferred_language, p.needs_review, p.needs_review_reason, p.last_activity_at, p.created_at,
            u.id AS owner_id, u.full_name AS owner_name,
            ${stageSql(sql)} AS stage,
            COALESCE((SELECT array_agg(t.name ORDER BY t.name)
@@ -121,16 +122,20 @@ function selectList(sql: postgres.Sql) {
     FROM person p LEFT JOIN app_user u ON u.id = p.owner_user_id`;
 }
 
-// The schema has needs_review but no reason column (raised with Shawn), so
-// the reason is derived: an unnormalised phone is visible in the data itself.
+// person.needs_review_reason (migration 002) holds a code; show it as text.
+const REVIEW_TEXT: Record<string, string> = {
+  phone_unnormalised: "Phone number could not be normalised",
+  possible_duplicate_company: SOFT_REASON_TEXT.company,
+  possible_duplicate_email: SOFT_REASON_TEXT.email,
+  possible_duplicate_phone: SOFT_REASON_TEXT.phone,
+  no_name: "No name was given",
+};
 export function reviewReason(r: {
-  needs_review: boolean;
-  phone: string | null;
-  phone_e164: string | null;
+  needs_review_reason: string | null;
 }): string | null {
-  if (!r.needs_review) return null;
-  if (r.phone && !r.phone_e164) return "Phone number could not be normalised";
-  return "Possible duplicate of another person";
+  return r.needs_review_reason
+    ? (REVIEW_TEXT[r.needs_review_reason] ?? r.needs_review_reason)
+    : null;
 }
 
 // Spec §7: lists never return more than they must. Spec §6 footnote ¹:
@@ -291,16 +296,22 @@ export async function createPerson(
       };
 
     // Spec §4: an unnormalisable phone is kept and flagged, never dropped.
-    const needsReview = Boolean(phone && !phoneE164) || dup.kind === "soft";
+    const reviewCode =
+      phone && !phoneE164
+        ? "phone_unnormalised"
+        : dup.kind === "soft"
+          ? `possible_duplicate_${dup.on}`
+          : null;
+    const needsReview = reviewCode !== null;
     const sql = db();
     const [row] = await sql`
       INSERT INTO person (full_name, preferred_name, email, phone, phone_e164,
                           whatsapp_e164, preferred_language, job_title, notes,
-                          needs_review, created_by)
+                          needs_review, needs_review_reason, created_by)
       VALUES (${input.fullName}, ${blankToNull(input.preferredName)}, ${email},
               ${phone}, ${phoneE164}, ${phoneE164}, ${input.preferredLanguage},
               ${blankToNull(input.jobTitle)}, ${blankToNull(input.notes)},
-              ${needsReview}, ${viewer.id})
+              ${needsReview}, ${reviewCode}, ${viewer.id})
       RETURNING id`;
     // §12.9: a manual create is not an activity — last_activity_at stays null.
 

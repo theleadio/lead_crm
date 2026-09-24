@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { apiError, validationError } from "@/lib/api/errors";
+import { deletePerson, reasonSchema } from "@/lib/people/delete-service";
 import { getPersonDetail, updatePerson } from "@/lib/people/detail-service";
 import { personUpdateSchema } from "@/lib/validation/person";
 
@@ -25,8 +26,43 @@ export async function GET(
   return Response.json(result.detail);
 }
 
+// DELETE /api/people/:id — soft delete, super_admin only, reason required.
+export async function DELETE(
+  request: NextRequest,
+  ctx: RouteContext<"/api/people/[id]">,
+) {
+  const viewer = await getCurrentUser();
+  if (!viewer) return apiError(401, "unauthenticated", "Sign in to continue.");
+  if (viewer.role !== "super_admin")
+    return apiError(403, "forbidden", "Only a super admin can delete people.");
+
+  const parsed = reasonSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return validationError(parsed.error);
+
+  const { id } = await ctx.params;
+  const result = await deletePerson(id, parsed.data.reason, viewer);
+  switch (result.kind) {
+    case "done":
+      return new Response(null, { status: 204 });
+    case "forbidden":
+      return apiError(
+        403,
+        "forbidden",
+        "Only a super admin can delete people.",
+      );
+    case "not_found":
+      return apiError(
+        404,
+        "not_found",
+        "This person doesn't exist or was removed.",
+      );
+    case "conflict":
+      return apiError(409, "delete_blocked", result.message);
+  }
+}
+
 // PATCH /api/people/:id — spec §7 partial update, audit-logged, with the
-// If-Unmodified-Since stale-edit check.
+// If-Match stale-edit check.
 export async function PATCH(
   request: NextRequest,
   ctx: RouteContext<"/api/people/[id]">,
@@ -34,7 +70,7 @@ export async function PATCH(
   const viewer = await getCurrentUser();
   if (!viewer) return apiError(401, "unauthenticated", "Sign in to continue.");
 
-  const loadedUpdatedAt = request.headers.get("If-Unmodified-Since");
+  const loadedUpdatedAt = request.headers.get("If-Match");
   if (!loadedUpdatedAt)
     return apiError(
       428,

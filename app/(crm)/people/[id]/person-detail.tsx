@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Toast } from "@/components/toast";
 import { Badge } from "@/components/ui/badge";
@@ -176,6 +177,8 @@ export function PersonDetailView({
                   Export data (CSV)
                 </a>
               </Button>
+              <DeletePerson id={p.id} name={displayName} />
+              <ErasePerson id={p.id} name={displayName} />
             </>
           )}
         </div>
@@ -192,6 +195,7 @@ export function PersonDetailView({
           <h2 className="mb-4 font-semibold">Details</h2>
           {canWrite ? (
             <EditForm
+              canMerge={canExportData}
               key={p.updatedAt}
               person={p}
               onSaved={(person) => {
@@ -285,10 +289,12 @@ export function PersonDetailView({
 }
 
 function EditForm({
+  canMerge,
   person,
   onSaved,
   onReload,
 }: {
+  canMerge: boolean;
   person: Person;
   onSaved: (person: Person) => void;
   onReload: () => void;
@@ -334,7 +340,7 @@ function EditForm({
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          "If-Unmodified-Since": person.updatedAt,
+          "If-Match": person.updatedAt,
         },
         body: JSON.stringify(patch),
       });
@@ -369,12 +375,19 @@ function EditForm({
         >
           <p>{error.message}</p>
           {error.existing && (
-            <Link
-              href={`/people/${error.existing.id}`}
-              className="mt-1 inline-block underline"
-            >
-              Open {error.existing.fullName || "their record"}
-            </Link>
+            <div className="mt-1 flex gap-4">
+              <Link href={`/people/${error.existing.id}`} className="underline">
+                Open {error.existing.fullName || "their record"}
+              </Link>
+              {canMerge && (
+                <Link
+                  href={`/people/${person.id}/merge?with=${error.existing.id}`}
+                  className="underline"
+                >
+                  Merge
+                </Link>
+              )}
+            </div>
           )}
           {error.stale && (
             <Button
@@ -578,7 +591,7 @@ function Panel({
 
 function Row({ children }: { children: React.ReactNode }) {
   return (
-    <div className="border-line flex flex-wrap justify-between gap-2 border-t py-2 text-sm first:border-t-0">
+    <div className="border-line grid auto-cols-fr grid-flow-col gap-2 border-t py-2 text-sm first:border-t-0 [&>:last-child]:text-right">
       {children}
     </div>
   );
@@ -592,11 +605,13 @@ function TouchLine({
   t: PersonDetail["attribution"]["firstTouch"];
 }) {
   return (
-    <p className="text-sm">
-      <span className="text-ink-muted">{title}: </span>
-      {t
-        ? `${t.utmSource ?? label(t.channel)}${t.utmCampaign ? ` · ${t.utmCampaign}` : ""} · ${formatDate(t.occurredAt)}`
-        : "—"}
+    <p className="grid grid-cols-[6.5rem_1fr] gap-2 py-1 text-sm">
+      <span className="text-ink-muted">{title}</span>
+      <span>
+        {t
+          ? `${t.utmSource ?? label(t.channel)}${t.utmCampaign ? ` · ${t.utmCampaign}` : ""} · ${formatDate(t.occurredAt)}`
+          : "—"}
+      </span>
     </p>
   );
 }
@@ -726,5 +741,129 @@ function TimelinePanel({ personId }: { personId: string }) {
         </>
       )}
     </Panel>
+  );
+}
+
+// Soft delete, super_admin only (button is UX; DELETE re-checks). Reason is
+// required and goes to the audit log.
+function DeletePerson({ id, name }: { id: string; name: string }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  if (!open)
+    return (
+      <Button variant="destructive" onClick={() => setOpen(true)}>
+        Delete
+      </Button>
+    );
+
+  async function remove() {
+    const res = await fetch(`/api/people/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+    });
+    if (res.ok) return router.push("/people");
+    setError((await res.json()).error?.message ?? "Couldn't delete.");
+  }
+
+  return (
+    <div className="w-full space-y-2 rounded-md border p-3 text-sm">
+      <p>
+        Delete <strong>{name}</strong>? They disappear from all lists. Use this
+        for test data or mistakes only.
+      </p>
+      <Input
+        aria-label="Reason for deleting"
+        placeholder="Reason (required)"
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+      />
+      {error && (
+        <p role="alert" className="text-danger">
+          {error}
+        </p>
+      )}
+      <div className="flex gap-2">
+        <Button
+          variant="destructive"
+          disabled={!reason.trim()}
+          onClick={remove}
+        >
+          Confirm delete
+        </Button>
+        <Button variant="outline" onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// PDPA erasure = anonymise (spec 12.10), on the person's request.
+// Irreversible, so the admin types the name first; the reason is audited.
+function ErasePerson({ id, name }: { id: string; name: string }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [typed, setTyped] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  if (!open)
+    return (
+      <Button variant="destructive" onClick={() => setOpen(true)}>
+        Erase personal data
+      </Button>
+    );
+
+  async function erase() {
+    const res = await fetch(`/api/people/${encodeURIComponent(id)}/erase`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+    });
+    if (res.ok) return router.push("/people");
+    setError((await res.json()).error?.message ?? "Couldn't erase.");
+  }
+
+  return (
+    <div className="w-full space-y-2 rounded-md border p-3 text-sm">
+      <p>
+        Erase personal data for <strong>{name}</strong> (PDPA request)? Name,
+        email, phone, notes and messages are cleared. Deals, payments and
+        enrolments stay. <strong>This can&apos;t be undone.</strong>
+      </p>
+      <Input
+        aria-label="Reason for erasing"
+        placeholder="Reason (required)"
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+      />
+      <Input
+        aria-label="Type the name to confirm"
+        placeholder={`Type "${name}" to confirm`}
+        value={typed}
+        onChange={(e) => setTyped(e.target.value)}
+      />
+      {error && (
+        <p role="alert" className="text-danger">
+          {error}
+        </p>
+      )}
+      <div className="flex gap-2">
+        <Button
+          variant="destructive"
+          disabled={!reason.trim() || typed.trim() !== name}
+          onClick={erase}
+        >
+          Confirm erase
+        </Button>
+        <Button variant="outline" onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+      </div>
+    </div>
   );
 }

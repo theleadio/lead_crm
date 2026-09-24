@@ -20,6 +20,8 @@ import {
   InvalidBulkChange,
   listPeople,
 } from "../lib/people/service.ts";
+import { deletePerson, erasePerson } from "../lib/people/delete-service.ts";
+import { mergePeople } from "../lib/people/merge-service.ts";
 import { closeDb, db, rollbackAfter } from "../lib/sql.ts";
 import { SEED_USERS } from "../scripts/seed-ids.ts";
 
@@ -417,4 +419,108 @@ it("PDPA export: super_admin only, unmasked, audit-logged, CSV rows", async () =
       "nur3@example.com",
     ),
   );
+});
+
+it("merge: super_admin only; moves children, keeps chosen fields (§9.3)", async () => {
+  const sql = db();
+  const ids = (
+    await sql`SELECT id FROM person WHERE deleted_at IS NULL ORDER BY created_at LIMIT 2`
+  ).map((r) => r.id as string);
+  const [a, b] = ids;
+  const bothDeals = async () =>
+    (
+      await sql`SELECT count(*)::int AS n FROM deal WHERE person_id IN ${sql(ids)}`
+    )[0].n;
+  const before = await bothDeals();
+  const [src] = await sql`SELECT full_name, email FROM person WHERE id = ${a}`;
+
+  assert.equal(
+    (await mergePeople(a, { targetId: b, fields: {} }, sales)).kind,
+    "forbidden",
+  );
+  assert.equal(
+    (await mergePeople(a, { targetId: a, fields: {} }, admin)).kind,
+    "invalid",
+  );
+
+  const r = await mergePeople(
+    a,
+    { targetId: b, fields: { fullName: "source", email: "source" } },
+    admin,
+  );
+  assert.equal(r.kind, "merged");
+
+  const [{ n }] =
+    await sql`SELECT count(*)::int AS n FROM deal WHERE person_id = ${b}`;
+  assert.equal(n, before);
+  const [t] = await sql`SELECT full_name, email FROM person WHERE id = ${b}`;
+  assert.deepEqual({ ...t }, { ...src });
+  const [s] = await sql`SELECT merged_into_id FROM person WHERE id = ${a}`;
+  assert.equal(s.merged_into_id, b);
+  assert.equal(
+    (await mergePeople(a, { targetId: b, fields: {} }, admin)).kind,
+    "conflict",
+  );
+});
+
+it("delete: super_admin only, reason audited", async () => {
+  const sql = db();
+  const [{ id: free }] = await sql`
+    SELECT p.id FROM person p WHERE p.deleted_at IS NULL AND p.merged_into_id IS NULL
+      AND NOT EXISTS (SELECT 1 FROM enrolment e WHERE e.person_id = p.id)
+      AND NOT EXISTS (SELECT 1 FROM deal d JOIN payment y ON y.deal_id = d.id WHERE d.person_id = p.id)
+    LIMIT 1`;
+
+  assert.equal((await deletePerson(free, "test", sales)).kind, "forbidden");
+  assert.equal(
+    (await deletePerson(free, "made by mistake", admin)).kind,
+    "done",
+  );
+  const [gone] = await sql`SELECT deleted_at FROM person WHERE id = ${free}`;
+  assert.ok(gone.deleted_at);
+  const audit = await lastAudit();
+  assert.equal(audit.action, "soft_delete");
+  assert.equal(audit.after.reason, "made by mistake");
+  assert.equal((await deletePerson(free, "again", admin)).kind, "not_found");
+});
+
+it("delete: refused for someone with an enrolment", async () => {
+  const [{ id: used }] =
+    await db()`SELECT person_id AS id FROM enrolment LIMIT 1`;
+  assert.equal((await deletePerson(used, "test", admin)).kind, "conflict");
+});
+
+it("erase: anonymises, keeps enrolments, super_admin only", async () => {
+  const sql = db();
+  const [{ id }] = await sql`SELECT person_id AS id FROM enrolment LIMIT 1`;
+  const [{ n: before }] =
+    await sql`SELECT count(*)::int AS n FROM enrolment WHERE person_id = ${id}`;
+
+  assert.equal(
+    (await erasePerson(id, "PDPA request", sales)).kind,
+    "forbidden",
+  );
+  assert.equal((await erasePerson(id, "PDPA request", admin)).kind, "done");
+
+  const [p] =
+    await sql`SELECT full_name, email, phone, erased_at, deleted_at FROM person WHERE id = ${id}`;
+  assert.equal(p.full_name, "Erased person");
+  assert.equal(p.email, null);
+  assert.equal(p.phone, null);
+  assert.ok(p.erased_at && p.deleted_at);
+  const [{ n }] =
+    await sql`SELECT count(*)::int AS n FROM enrolment WHERE person_id = ${id}`;
+  assert.equal(n, before);
+});
+
+it("needs_review_reason is set with the flag (migration 002)", async () => {
+  const r = await createPerson(
+    { fullName: "Bad Phone", phone: "12345", preferredLanguage: "en" },
+    admin,
+  );
+  assert.ok(r.kind === "created");
+  assert.equal(r.person.needsReview, true);
+  const [row] =
+    await db()`SELECT needs_review_reason FROM person WHERE id = ${r.person.id}`;
+  assert.equal(row.needs_review_reason, "phone_unnormalised");
 });
