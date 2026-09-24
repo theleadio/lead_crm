@@ -1,4 +1,4 @@
-# LEAD CRM — Software Specification v1.2
+# LEAD CRM — Software Specification v1.3
 
 _Last updated 24 Sep 2026 · Owner: Shawn_
 
@@ -6,6 +6,7 @@ _Last updated 24 Sep 2026 · Owner: Shawn_
 
 | Version | Date | Changes |
 | --- | --- | --- |
+| v1.3 | 24 Sep 2026 | Migration 002: `needs_review_reason` and `erased_at` on person (§5); merge, erasure and soft delete as tested database functions (§12.10); merge route body and two new routes (§7, §7.1); concurrency switched to If-Match with a microsecond version (§7); open items O11–O15 (§15.3). |
 | v1.2 | 24 Sep 2026 | From Zixuan's review of §9–11: new routes (§7.1), public register route (§8.3), `hrdcIntended` on leads, soft-match rule rewritten (§12.2), part-time "assigned" + create rule (§6), propose/request as tasks (§6), Home page (§9.0), schema changes (§5), Supabase env vars (§2). Schema v1 DDL issued. |
 | v1.1 | 22–23 Sep 2026 | `class_notice`, `tag`, `person_tag`, `lost_reason` tables; `payment.notes`; `deal.lost_reason_id`; last activity (§12.9); audit log viewer (§9.16); auth decision; decision calendar (§15.3) |
 | v1.0 | 22 Sep 2026 | First issue |
@@ -177,7 +178,7 @@ Rule: strip non-digit/non-leading-`+`; starts `0` → replace with `+60`; starts
 
 ## 5. Data Model
 
-23 tables for MVP (4 added 22 Sep, `app_setting` added 24 Sep). DDL: schema v1 (`001_schema_v1.sql`, issued 24 Sep). Shawn owns migrations; this is the contract Zixuan codes against. Every table has standard columns from Section 4 (`id`, `created_at`, `updated_at`, `created_by`) — not repeated below.
+23 tables for MVP (4 added 22 Sep, `app_setting` added 24 Sep). DDL: schema v1 (`001_schema_v1.sql`, issued 24 Sep) and `002_merge_erase.sql` (24 Sep), both in `lib/db/migrations/`. Shawn owns migrations; this is the contract Zixuan codes against. Every table has standard columns from Section 4 (`id`, `created_at`, `updated_at`, `created_by`) — not repeated below.
 
 ### Entity relationships
 
@@ -240,6 +241,8 @@ APP_USER ||--o{ DEAL : owns
 | wati_contact_id     | text              | nullable                                                       |
 | stripe_customer_id  | text              | nullable                                                       |
 | needs_review        | bool              | true when phone couldn't be normalised or soft duplicate found |
+| needs_review_reason | text              | why it was flagged: phone_unnormalised, possible_duplicate_company, possible_duplicate_email, possible_duplicate_phone, no_name. Set and cleared together with needs_review (CHECK) |
+| erased_at           | timestamptz       | set by erase_person() (§12.10); erased rows also get deleted_at |
 | merged_into_id      | uuid → person     | set when merged away; such rows hidden from all lists          |
 | notes               | text              | free text                                                      |
 | deleted_at          | timestamptz       |                                                                |
@@ -336,6 +339,14 @@ Only one `pending` notice per class at a time — a second edit while one is pen
 | task_type | add `export_request` | Management's "request" export (§6) |
 | new `app_setting` | `key text PK`, `value jsonb`, `updated_by`, `updated_at` | HRDC lead time, claim window, reservation expiry, SLA — the configurable values in §12.1, §12.6, §15.3 |
 
+**Schema changes 24 Sep, migration 002 (v1.3)**
+
+| Table | Change | Why |
+| --- | --- | --- |
+| person | add `needs_review_reason`, `erased_at` | The 9.4 review queue shows why a record was flagged; erasure needs a marker |
+| touchpoint, consent | append-only trigger now lets `merge_person()` change `person_id` (and `is_first_touch`) and nothing else | A merge has to move history onto the kept person — Zixuan's catch |
+| functions | `merge_person`, `erase_person`, `soft_delete_person`; EXECUTE revoked from PUBLIC and Supabase's `anon`/`authenticated` | One tested implementation of each rule; cannot be called with the publishable key |
+
 **Onboarding templates have no table, deliberately.** WhatsApp templates must be Meta-approved and live in WATI; email templates live in the ESP. Settings links out to both.
 
 **Deferred to January:** `campaign`, `ad`, `ad_metric_daily`, `content_item`, `attendance`, `class_session`. Do not build screens for these.
@@ -414,7 +425,7 @@ REST under `/api`, JSON, session cookie auth. Shared zod schema validation (form
 | POST /api/people                              | Create                           | Zixuan | Runs dedupe (§12); 409 with existing record on hard match                                |
 | GET /api/people/:id                           | Detail + timeline                | Zixuan | person + deals + enrolments + enquiries + touchpoints                                    |
 | PATCH /api/people/:id                         | Update                           | Zixuan | Partial; audit-logged                                                                    |
-| POST /api/people/:id/merge                    | Merge into another               | Zixuan | super_admin only; body `{targetId}`; moves children, sets merged_into_id                 |
+| POST /api/people/:id/merge                    | Merge into another               | Zixuan | super_admin only; body `{targetId, fields?}`. One transaction: `merge_person(:id, targetId, sessionUserId)`, then apply `fields` (9.3 per-field choices) to the target and audit-log them. `merge_blocked` → 409 with the message and class codes (§12.10) |
 | GET/POST/PATCH /api/companies[/:id]           | Company CRUD                     | Zixuan |                                                                                          |
 | POST /api/companies/:id/members               | Attach person                    | Zixuan | body `{personId, jobTitle, isHrContact, isBillingContact}`                               |
 | GET /api/deals                                | Pipeline board + list            | Zixuan | filter[pipeline], filter[stage], filter[owner]                                           |
@@ -458,6 +469,8 @@ From Zixuan's review of §9–11 against the table above.
 | GET /api/lost-reasons | Active reasons, in order | Zixuan | Every role that can read deals (Lost dialog) |
 | POST/PATCH /api/lost-reasons[/:id] | Create / rename / deactivate | Zixuan | super_admin |
 | POST /api/lost-reasons/reorder | Reorder | Zixuan | body `{ids[]}` in new order |
+| DELETE /api/people/:id | Soft delete a junk/test record (v1.3) | Zixuan | super_admin; body `{reason}` required; calls `soft_delete_person()`; 409 "use erase instead" if the person has any enrolment or payment |
+| POST /api/people/:id/erase | PDPA erasure — anonymise (v1.3) | Zixuan | super_admin, on the person's request; body `{reason}` required; calls `erase_person()`; irreversible, confirm by typing the name; §12.10 |
 | GET /api/companies/:id | Company detail | Zixuan | company + members + deals + enrolment summary |
 | GET /api/deals/:id | Deal detail | Zixuan | deal + stageHistory[] + tasks + linked enquiry |
 | GET /api/audit-log | Audit viewer (9.16) | Zixuan | super_admin, management; filters per 9.16; 50/page |
@@ -474,7 +487,7 @@ From Zixuan's review of §9–11 against the table above.
 - PATCH /api/classes/:id takes optional `notice: 'prepare' | 'skip'`. If the edit touches a notice field on a class with confirmed enrolments and `notice` is absent → **409 `notice_decision_required`** with `{recipientCount}`, nothing saved. UI shows the 9.9 dialog and resubmits with the choice. The server decides whether a notice is needed, never the client.
 - POST /api/deals/:id/checkout-link stores `checkout_url`, `checkout_session_id`, `checkout_sent_at` on the deal as well as returning it.
 
-**Concurrency.** PATCH on person/deal/class/enrolment sends `If-Unmodified-Since` with record's `updated_at`. Stale write → 409, client shows "someone else changed this record — reload".
+**Concurrency** (revised 24 Sep, v1.3). GET on person/deal/class/enrolment returns `version` = `updated_at::text` — the Postgres text form with full microseconds. Don't round-trip it through a JS `Date`, which keeps milliseconds only and would never match. PATCH sends `If-Match: <version>`; the server runs `UPDATE … WHERE id = $1 AND updated_at = $2::timestamptz`. 0 rows → 409, client shows "someone else changed this record — reload". Missing header → 428. This replaces `If-Unmodified-Since`, which works in whole seconds and would miss two edits in the same second.
 
 **Transactions.** Anything touching seats or money: check + write in one DB transaction with row locked — never check-then-write across two calls. Two people paying for the last seat simultaneously → one confirmed enrolment, one clean 409.
 
@@ -726,7 +739,7 @@ Event names are exact — a typo is a silent failure. They live in one shared Ty
 | n8n (Meta Lead Ads) | person, touchpoint, deal                 | Same as form leads                                                 |
 | Workers             | task, enrolment.onboarding_step          | Tasks appearing that nobody created by hand                        |
 
-**Implication for UI:** any record may change underneath the user at any moment. Lists refetch on window focus. Detail screens use If-Unmodified-Since (§7).
+**Implication for UI:** any record may change underneath the user at any moment. Lists refetch on window focus. Detail screens send If-Match with the record's version (§7).
 
 ### 11.3 Unmatched payments
 
@@ -853,6 +866,25 @@ Set to now() when:
 
 Implementation: one helper `touchPersonActivity(personId, tx)`, called inside same transaction as each trigger. Never a DB trigger on updated_at, never computed at read time with joins across 13,000 people.
 
+### 12.10 Merge, erasure and deletion (added 24 Sep, v1.3)
+
+All three are database functions in migration 002 (`lib/db/migrations/002_merge_erase.sql`, tests in `lib/db/tests/`). The API calls them; it does not re-implement them. `actor` is always the signed-in user from the session, never a value from the request body. The functions cannot be called with the publishable key.
+
+**Merge** — `merge_person(source, target, actor)`
+- Blocked if either person is merged, deleted or erased, or both have an active enrolment in the same class. The error lists the class codes; cancel or transfer one enrolment, then merge.
+- Moves touchpoints, consent, deals, enrolments (as person and as booker), enquiries, messages, tasks, tags and company memberships. Shared tags are kept once; the target's current membership at a company wins.
+- The earlier of the two first touchpoints becomes the only first touch.
+- **Any opt-out wins.** If either person had opted out of a purpose, the kept person is opted out after the merge, even if the other opted in later.
+- The pair's `review_duplicate` task is closed.
+- The per-field choices from 9.3 are applied after the function returns, in the same transaction, and audit-logged.
+- Irreversible. There is no unmerge.
+
+**Erasure (PDPA)** — `erase_person(person, actor, reason)`
+Anonymise, don't delete. The name becomes "Erased person". Email, phones, job title, notes, WATI/Stripe ids, message bodies, enquiry summaries, task notes and tags are cleared. Records previously merged into the person are anonymised too. Enrolments, payments, touchpoints and consent stay, so revenue, attribution and the opt-out record still add up. The email and phone are then free for a new signup. See O11–O14.
+
+**Soft delete** — `soft_delete_person(person, actor, reason)`
+For junk and test records only. Refused for anyone with an enrolment or payment; use erasure instead. The audit row stores the reason, not a copy of the record.
+
 ## 13. Errors, States & Logging
 
 **Error messages say what happened and what to do.** Never "An error occurred", never a raw exception.
@@ -922,7 +954,7 @@ Toasts last 5 seconds, dismissible, never carry the only copy of something impor
 
 - Personal data stays in Singapore region unless transfer basis documented.
 - A person's data exportable as JSON/CSV from their detail screen — portability right, law not nice-to-have.
-- Soft delete everywhere; hard delete only via admin action, audit-logged.
+- Soft delete everywhere; hard delete only via admin action, audit-logged. A person's erasure request is handled by anonymising (§12.10).
 - No production data in staging, ever.
 - Marketing consent enforced at send time by checking consent table — never by remembering a checkbox.
 
@@ -975,6 +1007,11 @@ Everything else: manual UAT with Wei Ping, Ops and Sales during Sprint 5 (30 Nov
 | O8  | Who owns website deploy, does Zixuan have access?                                         | §10, all of it         | **Sprint 1** | Management             |
 | O9  | Corporate booking: one HR contact registering 10 staff — confirm Booker model matches Ops | Enrolment screens      | Sprint 3     | Operations             |
 | O10 | Certificate numbering format                                                              | Enrolment              | January      | Operations             |
+| O11 | Does anonymisation (§12.10) satisfy a PDPA erasure request? | Erase route | Sprint 2 | Shawn + privacy review |
+| O12 | How long must payment and invoice records be kept? | Retention, erasure scope | Sprint 4 | Finance / accountant |
+| O13 | `audit_log` rows written before an erasure still hold that person's old values (append-only). Accept, or allow a controlled redaction? | Erasure completeness | Sprint 2 | Shawn + privacy review |
+| O14 | `touchpoint.landing_url` / `referrer` can carry personal data in the query string (e.g. `?email=`). Strip at capture? | Touchpoint capture, erasure | Sprint 2 | Shawn |
+| O15 | Which fields can the 9.3 merge screen choose between (the `fields` map)? | Merge route validation | Sprint 1 | Zixuan + Shawn |
 
 **Decision calendar (added 23 Sep).** Every open item now has a date. If an answer misses its date, the fallback in the last column is what gets built — nobody waits.
 
@@ -990,6 +1027,11 @@ Everything else: manual UAT with Wei Ping, Ops and Sales during Sprint 5 (30 Nov
 | O6 refund/transfer policy | Fri 13 Nov | Finance | Transfer allowed to any future class; refunds handled manually in Stripe |
 | O7 HRDC lead time and claim window | Fri 13 Nov | Finance | Ship as editable settings with no default; Ops fills them in |
 | O10 certificate numbering | January | Operations | Out of MVP |
+| O15 merge `fields` map | Fri 2 Oct | Zixuan + Shawn | The contact fields shown on 9.3: full name, preferred name, email, phone, WhatsApp, job title, language, owner |
+| O11 anonymisation = erasure | Fri 9 Oct | Shawn + privacy review | Ship anonymisation as built |
+| O13 audit_log history | Fri 9 Oct | Shawn + privacy review | Leave audit rows as they are; revisit in January |
+| O14 personal data in URLs | Fri 16 Oct | Shawn | Keep only utm_*, gclid, fbclid and the path; drop other query parameters at capture |
+| O12 payment record retention | Fri 13 Nov | Finance / accountant | Keep payment rows indefinitely; erasure never touches them |
 
 The two that matter this week are **O8** and **O1**. O8 is the only item that can stop a whole sprint — Zixuan can't build Section 10 against a website she can't deploy to.
 
