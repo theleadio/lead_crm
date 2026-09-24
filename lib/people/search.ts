@@ -1,30 +1,24 @@
 import { normalizePhoneE164 } from "../format/phone.ts";
 
-type Searchable = {
-  fullName: string;
-  email: string | null;
-  phoneE164: string | null;
-};
-
 // Spec §7/§9.1: q matches name, email and phone. Typing "012-345 6789",
 // "+60123456789" or "123456789" must all find the same person.
-export function matchesPersonQuery(
-  person: Searchable,
-  rawQuery: string,
-): boolean {
-  const q = rawQuery.trim().toLowerCase();
-  if (!q) return true;
+export type PersonQuery = {
+  text: string; // matched against name and email (case-insensitive)
+  phoneE164: string | null; // a complete number → exact match
+  digits: string | null; // a partial number (6+ digits) → substring match
+};
 
-  if (person.fullName.toLowerCase().includes(q)) return true;
-  if (person.email?.toLowerCase().includes(q)) return true;
-
-  if (!person.phoneE164) return false;
-  const e164 = normalizePhoneE164(rawQuery);
-  if (e164) return person.phoneE164 === e164;
-
-  // Partial number: match digits anywhere in the stored number.
-  const digits = rawQuery.replace(/\D/g, "");
-  return (
-    digits.length >= 6 && person.phoneE164.replace(/\D/g, "").includes(digits)
-  );
+export function parsePersonQuery(raw: string): PersonQuery | null {
+  const text = raw.trim();
+  if (!text) return null;
+  const phoneE164 = normalizePhoneE164(text);
+  const digits = text.replace(/\D/g, "");
+  return {
+    text,
+    phoneE164,
+    digits: !phoneE164 && digits.length >= 6 ? digits : null,
+  };
 }
+
+// Escape LIKE wildcards so a user typing "%" or "_" searches for them.
+export const likeEscape = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);

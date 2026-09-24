@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  canAddPersonStandalone,
   canExportPeople,
   masksContactDetails,
   mergeAccess,
@@ -10,6 +11,7 @@ import {
 } from "../lib/auth/permissions.ts";
 import { maskEmail, maskPhone } from "../lib/format/mask.ts";
 import { findDuplicate } from "../lib/people/dedupe.ts";
+import { bulkPeopleSchema } from "../lib/validation/people-query.ts";
 
 const as = (role: Parameters<typeof permissionFor>[0]["role"]) => ({
   id: "me",
@@ -230,4 +232,24 @@ test("dedupe: an empty name never soft-matches", () => {
     [person({ fullName: "" })],
   );
   assert.equal(r.kind, "none");
+});
+
+test("part_time: no standalone Add person (§6 v1.2)", () => {
+  assert.equal(canAddPersonStandalone({ id: "p", role: "part_time" }), false);
+  assert.equal(canAddPersonStandalone({ id: "s", role: "sales" }), true);
+  assert.equal(canAddPersonStandalone({ id: "m", role: "marketing" }), false);
+});
+
+test("bulk body matches §7.1 shape", () => {
+  const ok = (b: unknown) => bulkPeopleSchema.safeParse(b).success;
+  assert.equal(ok({ personIds: ["a"], action: "add_tag", tagId: "t" }), true);
+  assert.equal(
+    ok({ personIds: ["a"], action: "assign_owner", ownerId: null }),
+    true,
+  );
+  assert.equal(ok({ personIds: ["a"], action: "add_tag" }), false);
+  assert.equal(
+    ok({ personIds: Array(501).fill("a"), action: "add_tag", tagId: "t" }),
+    false,
+  );
 });

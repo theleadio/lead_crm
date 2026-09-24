@@ -1,3 +1,4 @@
+import type postgres from "postgres";
 import {
   masksContactDetails,
   permissionFor,
@@ -7,322 +8,476 @@ import {
 import { writeAudit } from "../audit.ts";
 import { normalizeEmail } from "../format/email.ts";
 import { maskEmail, maskPhone } from "../format/mask.ts";
+import { formatMoneyMyr } from "../format/money.ts";
 import { normalizePhoneE164 } from "../format/phone.ts";
+import { db, withTransaction } from "../sql.ts";
 import type { PersonUpdate } from "../validation/person.ts";
 import { findDuplicate } from "./dedupe.ts";
-import { MOCK_OWNERS, MOCK_PEOPLE, type PersonRecord } from "./mock-data.ts";
-import { mockRelated } from "./mock-related.ts";
-import { isAssignedTo } from "./service.ts";
+import { stageSql } from "./lifecycle.ts";
+import {
+  dedupeCandidates,
+  isUuid,
+  reviewReason,
+  visibleSql,
+} from "./service.ts";
 import type {
   ConsentState,
   ListResponse,
   PersonDetail,
   TimelineItem,
+  Touchpoint,
 } from "./types.ts";
 
-// Service layer for spec §9.2 Person detail (GET + PATCH /api/people/:id).
-// Mock-backed; swap to Shawn's client when the schema lands.
+// Service layer for spec §9.2 Person detail and its §7/§7.1 routes.
 
 const can = (viewer: Viewer, resource: Resource) =>
   permissionFor(viewer, resource, "read");
 
-function canSeePerson(viewer: Viewer, p: PersonRecord): boolean {
-  const { allowed, assignedOnly } = can(viewer, "person");
-  return allowed && (!assignedOnly || isAssignedTo(p, viewer.id));
+type Found = { kind: "not_found" } | { kind: "forbidden" };
+
+type PersonRow = {
+  id: string;
+  full_name: string;
+  preferred_name: string | null;
+  email: string | null;
+  phone: string | null;
+  phone_e164: string | null;
+  whatsapp_e164: string | null;
+  preferred_language: "en" | "zh";
+  job_title: string | null;
+  notes: string | null;
+  needs_review: boolean;
+  last_activity_at: Date | null;
+  created_at: Date;
+  updated_at: string; // full microsecond precision, see selectPerson
+  owner_id: string | null;
+  owner_name: string | null;
+  company_name: string | null;
+  stage: "lead" | "student" | "customer";
+};
+
+function selectPerson(sql: postgres.Sql) {
+  // updated_at as text with microseconds: the stale-edit check (spec §7)
+  // compares it exactly, and a JS Date would drop the microseconds.
+  return sql`
+    SELECT p.id, p.full_name, p.preferred_name, p.email, p.phone, p.phone_e164,
+           p.whatsapp_e164, p.preferred_language, p.job_title, p.notes,
+           p.needs_review, p.last_activity_at, p.created_at,
+           to_char(p.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS updated_at,
+           u.id AS owner_id, u.full_name AS owner_name,
+           (SELECT co.legal_name FROM company_membership m
+            JOIN company co ON co.id = m.company_id
+            WHERE m.person_id = p.id AND m.end_date IS NULL AND co.deleted_at IS NULL
+            ORDER BY m.created_at LIMIT 1) AS company_name,
+           ${stageSql(sql)} AS stage
+    FROM person p LEFT JOIN app_user u ON u.id = p.owner_user_id`;
 }
 
-function toDetailPerson(
-  p: PersonRecord,
+// Loads a person the viewer may see; tells "missing" apart from "not yours".
+async function findVisible(
+  id: string,
   viewer: Viewer,
-): PersonDetail["person"] {
+): Promise<{ kind: "ok"; person: PersonRow } | Found> {
+  if (!isUuid(id)) return { kind: "not_found" };
+  const sql = db();
+  const [person] = await sql<PersonRow[]>`
+    ${selectPerson(sql)} WHERE p.id = ${id} AND ${visibleSql(sql, viewer)}`;
+  if (person) return { kind: "ok", person };
+  const [exists] = await sql`
+    SELECT 1 FROM person p WHERE p.id = ${id}
+    AND p.deleted_at IS NULL AND p.merged_into_id IS NULL`;
+  return exists ? { kind: "forbidden" } : { kind: "not_found" };
+}
+
+function toDetailPerson(p: PersonRow, viewer: Viewer): PersonDetail["person"] {
   const masked = masksContactDetails(viewer.role);
   return {
     id: p.id,
-    fullName: p.fullName,
-    preferredName: p.preferredName,
+    fullName: p.full_name,
+    preferredName: p.preferred_name,
     email: masked ? maskEmail(p.email) : p.email,
-    phone: masked ? maskPhone(p.phoneE164 ?? p.phone) : p.phone,
-    whatsapp: masked ? maskPhone(p.whatsappE164) : p.whatsappE164,
-    preferredLanguage: p.preferredLanguage,
-    jobTitle: p.jobTitle,
+    phone: masked ? maskPhone(p.phone_e164 ?? p.phone) : p.phone,
+    whatsapp: masked ? maskPhone(p.whatsapp_e164) : p.whatsapp_e164,
+    preferredLanguage: p.preferred_language,
+    jobTitle: p.job_title,
     notes: p.notes,
     stage: p.stage,
-    owner: p.owner,
-    companyName: p.companyName,
-    needsReview: p.needsReview,
-    needsReviewReason: p.needsReviewReason,
-    lastActivityAt: p.lastActivityAt,
-    createdAt: p.createdAt,
-    updatedAt: p.updatedAt,
+    owner: p.owner_id ? { id: p.owner_id, fullName: p.owner_name ?? "" } : null,
+    companyName: p.company_name,
+    needsReview: p.needs_review,
+    needsReviewReason: reviewReason(p),
+    lastActivityAt: p.last_activity_at?.toISOString() ?? null,
+    createdAt: p.created_at.toISOString(),
+    updatedAt: p.updated_at,
   };
 }
 
-export type DetailResult =
-  | { kind: "ok"; detail: PersonDetail }
-  | { kind: "not_found" }
-  | { kind: "forbidden" };
+// Payments tied to the person through their enrolments or deals, with the
+// owning deal's owner — sales sees only payments on deals they own (§6 ²).
+function paymentsSql(sql: postgres.Sql, personId: string, viewer: Viewer) {
+  return sql`
+    SELECT pay.id, pay.method, pay.amount_myr, pay.paid_at, pay.status, pay.created_at
+    FROM payment pay
+    LEFT JOIN enrolment e ON e.id = pay.enrolment_id
+    LEFT JOIN deal d ON d.id = coalesce(pay.deal_id, e.deal_id)
+    WHERE (e.person_id = ${personId} OR d.person_id = ${personId})
+      ${viewer.role === "sales" ? sql`AND d.owner_user_id = ${viewer.id}` : sql``}`;
+}
+
+async function auditPaymentViews(viewer: Viewer, ids: string[]) {
+  // §6: every view of a payment record is audit-logged.
+  for (const id of ids)
+    await writeAudit({
+      userId: viewer.id,
+      action: "view",
+      entity: "payment",
+      entityId: id,
+      before: null,
+      after: null,
+    });
+}
+
+export type DetailResult = { kind: "ok"; detail: PersonDetail } | Found;
 
 export async function getPersonDetail(
   id: string,
   viewer: Viewer,
 ): Promise<DetailResult> {
-  const p = MOCK_PEOPLE.find((x) => x.id === id);
-  if (!p) return { kind: "not_found" };
-  if (!canSeePerson(viewer, p)) return { kind: "forbidden" };
+  const found = await findVisible(id, viewer);
+  if (found.kind !== "ok") return found;
+  const p = found.person;
+  const sql = db();
 
-  const r = mockRelated(p);
-  // part_time "A" on enquiries means assigned-only (§6 v1.2). Mock: the
-  // enquiry is assigned to the people in assignedUserIds.
-  const readable = (res: Resource) => {
-    const { allowed, assignedOnly } = can(viewer, res);
-    return allowed && !assignedOnly;
-  };
+  const touches = await sql`
+    SELECT id, occurred_at, channel, utm_source, utm_campaign, is_first_touch
+    FROM touchpoint WHERE person_id = ${p.id} ORDER BY occurred_at`;
+  const toTouch = (t: (typeof touches)[number]): Touchpoint => ({
+    id: t.id,
+    occurredAt: t.occurred_at.toISOString(),
+    channel: t.channel,
+    utmSource: t.utm_source,
+    utmCampaign: t.utm_campaign,
+  });
+  const first = touches.find((t) => t.is_first_touch) ?? touches[0];
+  const latest = touches.at(-1);
+
+  const deals = can(viewer, "deal").allowed
+    ? (
+        await sql`
+          SELECT d.id, d.stage, d.amount_myr, c.name_en AS course_name, u.full_name AS owner_name
+          FROM deal d
+          LEFT JOIN course c ON c.id = d.course_id
+          LEFT JOIN app_user u ON u.id = d.owner_user_id
+          WHERE d.person_id = ${p.id} AND d.deleted_at IS NULL
+          ORDER BY d.created_at DESC`
+      ).map((d) => ({
+        id: d.id,
+        stage: d.stage,
+        courseName: d.course_name ?? "No course",
+        amountMyr: d.amount_myr ?? "0.00",
+        owner: d.owner_name,
+      }))
+    : null;
+
+  const enrolments = can(viewer, "enrolment").allowed
+    ? (
+        await sql`
+          SELECT e.id, cl.code AS class_code, e.status, e.price_paid_myr
+          FROM enrolment e JOIN class cl ON cl.id = e.class_id
+          WHERE e.person_id = ${p.id} ORDER BY e.created_at DESC`
+      ).map((e) => ({
+        id: e.id,
+        classCode: e.class_code,
+        status: e.status,
+        pricePaidMyr: e.price_paid_myr,
+      }))
+    : null;
 
   let payments: PersonDetail["payments"] = null;
   if (can(viewer, "payment").allowed) {
-    // §6 footnote ²: sales sees payments only on deals they own.
-    const visible =
-      viewer.role === "sales"
-        ? r.payments.filter((x) => x.dealOwnerId === viewer.id)
-        : r.payments;
-    payments = visible.map((x) => ({
+    const rows =
+      await sql`${paymentsSql(sql, p.id, viewer)} ORDER BY pay.created_at DESC`;
+    payments = rows.map((x) => ({
       id: x.id,
       method: x.method,
-      amountMyr: x.amountMyr,
-      paidAt: x.paidAt,
+      amountMyr: x.amount_myr,
+      paidAt: x.paid_at?.toISOString() ?? null,
       status: x.status,
     }));
-    // §6: every view of a payment record is audit-logged.
-    for (const pay of payments)
-      await writeAudit({
-        userId: viewer.id,
-        action: "view",
-        entity: "payment",
-        entityId: pay.id,
-        before: null,
-        after: null,
-      });
+    await auditPaymentViews(
+      viewer,
+      payments.map((x) => x.id),
+    );
   }
 
-  const touches = [...r.touchpoints].sort(
-    (a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt),
-  );
+  // part_time "A" on enquiries = only ones assigned to them (§6 v1.2).
+  const enquiryAccess = can(viewer, "enquiry");
+  const enquiries = enquiryAccess.allowed
+    ? (
+        await sql`
+          SELECT id, channel, category, status, handled_by FROM enquiry
+          WHERE person_id = ${p.id}
+            ${enquiryAccess.assignedOnly ? sql`AND assigned_user_id = ${viewer.id}` : sql``}
+          ORDER BY created_at DESC`
+      ).map((q) => ({
+        id: q.id,
+        channel: q.channel,
+        category: q.category ?? "other",
+        status: q.status,
+        handledBy: q.handled_by ?? "user",
+      }))
+    : null;
 
   return {
     kind: "ok",
     detail: {
       person: toDetailPerson(p, viewer),
       attribution: {
-        firstTouch: touches[0] ?? null,
-        latestTouch: touches.length > 1 ? touches[touches.length - 1] : null,
+        firstTouch: first ? toTouch(first) : null,
+        latestTouch: latest && latest.id !== first?.id ? toTouch(latest) : null,
       },
-      deals: can(viewer, "deal").allowed
-        ? r.deals.map((d) => ({
-            id: d.id,
-            stage: d.stage,
-            courseName: d.courseName,
-            amountMyr: d.amountMyr,
-            owner: d.owner,
-          }))
-        : null,
-      enrolments: can(viewer, "enrolment").allowed ? r.enrolments : null,
+      deals,
+      enrolments,
       payments,
-      enquiries: can(viewer, "enquiry").allowed
-        ? readable("enquiry") || p.assignedUserIds.includes(viewer.id)
-          ? r.enquiries
-          : []
-        : null,
+      enquiries,
     },
   };
 }
 
-type Found = { kind: "not_found" } | { kind: "forbidden" };
-
-function findVisible(
-  id: string,
-  viewer: Viewer,
-): { kind: "ok"; person: PersonRecord } | Found {
-  const person = MOCK_PEOPLE.find((x) => x.id === id);
-  if (!person) return { kind: "not_found" };
-  if (!canSeePerson(viewer, person)) return { kind: "forbidden" };
-  return { kind: "ok", person };
-}
-
-// GET /api/people/:id/timeline — spec §7.1: newest first, 50 per page.
-// Items the viewer's role can't read are left out (§6).
+// GET /api/people/:id/timeline — spec §7.1: touchpoints, stage changes,
+// tasks, messages, payments, enrolment changes; newest first, 50 per page.
+// Branches the viewer's role can't read are left out of the query (§6).
 export async function getPersonTimeline(
   id: string,
   viewer: Viewer,
   page: number,
   limit = 50,
 ): Promise<{ kind: "ok"; result: ListResponse<TimelineItem> } | Found> {
-  const found = findVisible(id, viewer);
+  const found = await findVisible(id, viewer);
   if (found.kind !== "ok") return found;
-  const { person } = found;
+  const pid = found.person.id;
+  const sql = db();
 
-  const readable = (res: Resource) => {
-    const { allowed, assignedOnly } = can(viewer, res);
-    return allowed && !assignedOnly;
+  const task = can(viewer, "task");
+  const branches = [
+    sql`SELECT occurred_at AS at, 'touchpoint' AS kind, channel AS a, utm_source AS b,
+               NULL::numeric AS amount, NULL::uuid AS record_id
+        FROM touchpoint WHERE person_id = ${pid}`,
+    sql`SELECT coalesce(sent_at, created_at), 'message', channel, direction, NULL, id
+        FROM message_log WHERE person_id = ${pid}`,
+  ];
+  if (can(viewer, "deal").allowed)
+    branches.push(sql`
+      SELECT h.changed_at, 'stage_change', coalesce(c.name_en, 'a deal'), h.to_stage, NULL, d.id
+      FROM deal_stage_history h JOIN deal d ON d.id = h.deal_id
+      LEFT JOIN course c ON c.id = d.course_id
+      WHERE d.person_id = ${pid} AND d.deleted_at IS NULL`);
+  if (task.allowed)
+    branches.push(sql`
+      SELECT coalesce(done_at, created_at), 'task', title,
+             CASE WHEN done_at IS NULL THEN 'created' ELSE 'done' END, NULL, id
+      FROM task WHERE person_id = ${pid}
+        ${task.assignedOnly ? sql`AND assigned_user_id = ${viewer.id}` : sql``}`);
+  if (can(viewer, "enrolment").allowed)
+    branches.push(sql`
+      SELECT e.updated_at, 'enrolment_change', cl.code, e.status, NULL, e.id
+      FROM enrolment e JOIN class cl ON cl.id = e.class_id WHERE e.person_id = ${pid}`);
+  if (can(viewer, "payment").allowed)
+    branches.push(sql`
+      SELECT coalesce(x.paid_at, x.created_at), 'payment', x.method, x.status, x.amount_myr, x.id
+      FROM (${paymentsSql(sql, pid, viewer)}) x`);
+
+  const union = branches.reduce((acc, b) => sql`${acc} UNION ALL ${b}`);
+  const [{ total }] =
+    await sql`SELECT count(*)::int AS total FROM (${union}) t`;
+  const rows = await sql`
+    SELECT * FROM (${union}) t ORDER BY at DESC
+    LIMIT ${limit} OFFSET ${(page - 1) * limit}`;
+
+  await auditPaymentViews(
+    viewer,
+    rows.filter((r) => r.kind === "payment").map((r) => r.record_id),
+  );
+
+  const words = (s: string) => s.replace(/_/g, " ");
+  const text = (r: (typeof rows)[number]): string => {
+    switch (r.kind) {
+      case "touchpoint":
+        return `Came in via ${words(r.a)}${r.b ? ` (${r.b})` : ""}`;
+      case "message":
+        return `${r.a === "whatsapp" ? "WhatsApp message" : "Email"} ${r.b === "in" ? "received" : "sent"}`;
+      case "stage_change":
+        return `Deal for ${r.a} moved to ${words(r.b)}`;
+      case "task":
+        return `Task ${r.b}: ${r.a}`;
+      case "enrolment_change":
+        return `Enrolment in ${r.a} is ${words(r.b)}`;
+      default:
+        return `Payment of ${formatMoneyMyr(r.amount)} ${words(r.b)}`;
+    }
   };
-  const payOk = can(viewer, "payment").allowed;
-  const allowed = mockRelated(person).timeline.filter((t) => {
-    if (t.resource === "person") return true;
-    if (t.resource === "deal") return can(viewer, "deal").allowed;
-    if (t.resource === "task") return readable("task");
-    if (t.resource === "enrolment") return can(viewer, "enrolment").allowed;
-    // Sales sees payments only on deals they own (§6 ²) — mock ties the
-    // payment's deal owner to the person's owner.
-    return payOk && (viewer.role !== "sales" || person.owner?.id === viewer.id);
-  });
-
-  const start = (page - 1) * limit;
-  const items = allowed.slice(start, start + limit);
-
-  // §6: every view of a payment record is audit-logged.
-  for (const t of items)
-    if (t.resource === "payment")
-      await writeAudit({
-        userId: viewer.id,
-        action: "view",
-        entity: "payment",
-        entityId: t.recordId,
-        before: null,
-        after: null,
-      });
 
   return {
     kind: "ok",
     result: {
-      data: items.map((t) => ({ at: t.at, kind: t.kind, text: t.text })),
-      page: { total: allowed.length, page, limit },
+      data: rows.map((r) => ({
+        at: r.at.toISOString(),
+        kind: r.kind,
+        text: text(r),
+      })),
+      page: { total, page, limit },
     },
   };
 }
 
-// GET /api/consent/:personId — spec §7. Latest row per purpose wins (§5).
+// GET /api/consent/:personId — spec §7. Latest row per purpose (§5 view).
 export async function getPersonConsent(
   id: string,
   viewer: Viewer,
 ): Promise<{ kind: "ok"; consent: ConsentState[] } | Found> {
   if (!can(viewer, "consent").allowed) return { kind: "forbidden" };
-  const found = findVisible(id, viewer);
+  const found = await findVisible(id, viewer);
   if (found.kind !== "ok") return found;
-  return { kind: "ok", consent: mockRelated(found.person).consent };
+  const sql = db();
+  const rows = await sql`
+    SELECT purpose, is_granted, recorded_at FROM consent_current
+    WHERE person_id = ${found.person.id}
+      AND purpose IN ('marketing_email', 'marketing_whatsapp')
+    ORDER BY purpose`;
+  return {
+    kind: "ok",
+    consent: rows.map((r) => ({
+      purpose: r.purpose,
+      isGranted: r.is_granted,
+      recordedAt: r.recorded_at.toISOString(),
+    })),
+  };
 }
 
 export type UpdateResult =
   | { kind: "updated"; person: PersonDetail["person"] }
-  | { kind: "not_found" }
-  | { kind: "forbidden" }
   | { kind: "stale" }
   | { kind: "invalid"; fields: Record<string, string> }
   | {
       kind: "duplicate";
       on: "email" | "phone";
       existing: { id: string; fullName: string };
-    };
+    }
+  | Found;
 
 const blankToNull = (s: string) => (s === "" ? null : s);
 
-// Spec §7 concurrency: the client sends the updated_at it loaded
-// (If-Unmodified-Since). Anything else means someone saved in between.
+// PATCH /api/people/:id — spec §7. `loadedUpdatedAt` is the If-Unmodified-
+// Since value: the updated_at the client loaded. Anything else = stale.
 export async function updatePerson(
   id: string,
   patch: PersonUpdate,
   loadedUpdatedAt: string,
   viewer: Viewer,
 ): Promise<UpdateResult> {
-  const p = MOCK_PEOPLE.find((x) => x.id === id);
-  if (!p) return { kind: "not_found" };
-  const { allowed } = permissionFor(viewer, "person", "write");
-  if (!allowed || !canSeePerson(viewer, p)) return { kind: "forbidden" };
-  if (loadedUpdatedAt !== p.updatedAt) return { kind: "stale" };
+  if (!permissionFor(viewer, "person", "write").allowed)
+    return { kind: "forbidden" };
 
-  const next: PersonRecord = { ...p };
-  const fields: Record<string, string> = {};
+  return withTransaction(async (): Promise<UpdateResult> => {
+    const sql = db();
+    const found = await findVisible(id, viewer);
+    if (found.kind !== "ok") return found;
+    // Lock the row so the stale check and the write can't interleave (§7).
+    const [locked] = await sql`
+      SELECT to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS updated_at
+      FROM person WHERE id = ${id} FOR UPDATE`;
+    if (locked.updated_at !== loadedUpdatedAt) return { kind: "stale" };
+    const p = found.person;
 
-  if (patch.fullName !== undefined) next.fullName = patch.fullName;
-  if (patch.preferredName !== undefined)
-    next.preferredName = blankToNull(patch.preferredName);
-  if (patch.preferredLanguage !== undefined)
-    next.preferredLanguage = patch.preferredLanguage;
-  if (patch.jobTitle !== undefined) next.jobTitle = blankToNull(patch.jobTitle);
-  if (patch.notes !== undefined) next.notes = blankToNull(patch.notes);
+    const set: Record<string, string | boolean | null> = {};
+    const fields: Record<string, string> = {};
 
-  if (patch.email !== undefined) {
-    next.email = blankToNull(patch.email);
-    next.emailNorm = next.email ? normalizeEmail(next.email) : null;
-  }
+    if (patch.fullName !== undefined) set.full_name = patch.fullName;
+    if (patch.preferredName !== undefined)
+      set.preferred_name = blankToNull(patch.preferredName);
+    if (patch.preferredLanguage !== undefined)
+      set.preferred_language = patch.preferredLanguage;
+    if (patch.jobTitle !== undefined)
+      set.job_title = blankToNull(patch.jobTitle);
+    if (patch.notes !== undefined) set.notes = blankToNull(patch.notes);
+    if (patch.email !== undefined) set.email = blankToNull(patch.email);
 
-  if (patch.phone !== undefined) {
-    next.phone = blankToNull(patch.phone);
-    next.phoneE164 = next.phone ? normalizePhoneE164(next.phone) : null;
-    // §4: an unnormalisable phone is kept and flagged, never dropped.
-    const badPhone = "Phone number could not be normalised";
-    if (next.phone && !next.phoneE164) {
-      next.needsReview = true;
-      next.needsReviewReason = badPhone;
-    } else if (p.needsReviewReason === badPhone) {
-      next.needsReview = false;
-      next.needsReviewReason = null;
+    let newPhoneE164 = p.phone_e164;
+    if (patch.phone !== undefined) {
+      const phone = blankToNull(patch.phone);
+      newPhoneE164 = phone ? normalizePhoneE164(phone) : null;
+      set.phone = phone;
+      set.phone_e164 = newPhoneE164;
+      // §4: an unnormalisable phone is kept and flagged, never dropped;
+      // fixing it clears a flag that was only there for the phone.
+      if (phone && !newPhoneE164) set.needs_review = true;
+      else if (p.needs_review && p.phone && !p.phone_e164)
+        set.needs_review = false;
     }
-  }
 
-  if (patch.whatsapp !== undefined) {
-    // whatsapp_e164 has no "as typed" column, so it must normalise.
-    const e164 = patch.whatsapp ? normalizePhoneE164(patch.whatsapp) : null;
-    if (patch.whatsapp && !e164)
-      fields.whatsapp = "Enter a Malaysian mobile number";
-    else next.whatsappE164 = e164;
-  }
+    if (patch.whatsapp !== undefined) {
+      // whatsapp_e164 has no "as typed" column, so it must normalise.
+      const e164 = patch.whatsapp ? normalizePhoneE164(patch.whatsapp) : null;
+      if (patch.whatsapp && !e164)
+        fields.whatsapp = "Enter a Malaysian mobile number";
+      else set.whatsapp_e164 = e164;
+    }
 
-  if (patch.ownerId !== undefined) {
-    const owner = patch.ownerId
-      ? MOCK_OWNERS.find((o) => o.id === patch.ownerId)
-      : null;
-    if (patch.ownerId && !owner) fields.ownerId = "That owner doesn't exist";
-    else next.owner = owner ?? null;
-  }
+    if (patch.ownerId !== undefined) {
+      if (patch.ownerId === null) set.owner_user_id = null;
+      else {
+        const [owner] = isUuid(patch.ownerId)
+          ? await sql`SELECT id FROM app_user WHERE id = ${patch.ownerId} AND is_active`
+          : [];
+        if (!owner) fields.ownerId = "That owner doesn't exist";
+        else set.owner_user_id = owner.id;
+      }
+    }
 
-  if (Object.keys(fields).length) return { kind: "invalid", fields };
+    if (Object.keys(fields).length) return { kind: "invalid", fields };
+    if (!Object.keys(set).length)
+      return { kind: "updated", person: toDetailPerson(p, viewer) };
 
-  // §9.2: saving a phone or email that belongs to someone else → 409.
-  const dup = findDuplicate(
-    {
-      fullName: next.fullName,
-      emailNorm: next.emailNorm !== p.emailNorm ? next.emailNorm : null,
-      phoneE164: next.phoneE164 !== p.phoneE164 ? next.phoneE164 : null,
+    // §9.2: saving a phone or email that belongs to someone else → 409.
+    const candidate = {
+      fullName: (set.full_name as string | undefined) ?? p.full_name,
+      emailNorm:
+        typeof set.email === "string" ? normalizeEmail(set.email) : null,
+      phoneE164: patch.phone !== undefined ? newPhoneE164 : null,
       companyName: null,
-    },
-    MOCK_PEOPLE.filter((x) => x.id !== p.id),
-  );
-  if (dup.kind === "hard")
-    return {
-      kind: "duplicate",
-      on: dup.on,
-      existing: { id: dup.match.id, fullName: dup.match.fullName },
     };
+    if (candidate.emailNorm || candidate.phoneE164) {
+      const dup = findDuplicate(
+        candidate,
+        await dedupeCandidates(candidate, id),
+      );
+      if (dup.kind === "hard")
+        return {
+          kind: "duplicate",
+          on: dup.on,
+          existing: { id: dup.match.id, fullName: dup.match.fullName },
+        };
+    }
 
-  // Keep updated_at strictly increasing so a stale check can't pass by luck.
-  const now = Math.max(Date.now(), Date.parse(p.updatedAt) + 1);
-  next.updatedAt = new Date(now).toISOString();
-  // §12.9: editing a field never touches last_activity_at.
+    const columns = Object.keys(set);
+    await sql`UPDATE person SET ${sql(set, columns)} WHERE id = ${id}`;
+    // §12.9: editing a field never touches last_activity_at.
 
-  const changed = (Object.keys(next) as (keyof PersonRecord)[]).filter(
-    (k) =>
-      k !== "updatedAt" && JSON.stringify(next[k]) !== JSON.stringify(p[k]),
-  );
-  await writeAudit({
-    userId: viewer.id,
-    action: "update",
-    entity: "person",
-    entityId: p.id,
-    before: Object.fromEntries(changed.map((k) => [k, p[k]])),
-    after: Object.fromEntries(changed.map((k) => [k, next[k]])),
+    const row = p as unknown as Record<string, unknown>;
+    await writeAudit({
+      userId: viewer.id,
+      action: "update",
+      entity: "person",
+      entityId: id,
+      before: Object.fromEntries(columns.map((c) => [c, row[c] ?? null])),
+      after: set,
+    });
+
+    const [fresh] = await sql<
+      PersonRow[]
+    >`${selectPerson(sql)} WHERE p.id = ${id}`;
+    return { kind: "updated", person: toDetailPerson(fresh, viewer) };
   });
-
-  Object.assign(p, next);
-  return { kind: "updated", person: toDetailPerson(p, viewer) };
 }
 
 // GET /api/people/:id/data-export — spec §7.1 / §14 PDPA portability.
@@ -334,38 +489,45 @@ export async function exportPersonData(
   format: "json" | "csv",
 ): Promise<{ kind: "ok"; data: Record<string, unknown> } | Found> {
   if (viewer.role !== "super_admin") return { kind: "forbidden" };
-  const found = findVisible(id, viewer);
+  const found = await findVisible(id, viewer);
   if (found.kind !== "ok") return found;
   const p = found.person;
-  const r = mockRelated(p);
+  const sql = db();
 
   const data = {
     person: {
       id: p.id,
-      fullName: p.fullName,
-      preferredName: p.preferredName,
+      fullName: p.full_name,
+      preferredName: p.preferred_name,
       email: p.email,
       phone: p.phone,
-      whatsapp: p.whatsappE164,
-      preferredLanguage: p.preferredLanguage,
-      jobTitle: p.jobTitle,
+      whatsapp: p.whatsapp_e164,
+      preferredLanguage: p.preferred_language,
+      jobTitle: p.job_title,
       notes: p.notes,
-      company: p.companyName,
-      createdAt: p.createdAt,
-      updatedAt: p.updatedAt,
+      company: p.company_name,
+      createdAt: p.created_at.toISOString(),
     },
-    touchpoints: r.touchpoints,
-    deals: r.deals,
-    enrolments: r.enrolments,
-    payments: r.payments.map((x) => ({
-      id: x.id,
-      method: x.method,
-      amountMyr: x.amountMyr,
-      paidAt: x.paidAt,
-      status: x.status,
-    })),
-    enquiries: r.enquiries,
-    consent: r.consent,
+    touchpoints: await sql`
+      SELECT occurred_at, channel, utm_source, utm_medium, utm_campaign, landing_url, form_name
+      FROM touchpoint WHERE person_id = ${p.id} ORDER BY occurred_at`,
+    deals: await sql`
+      SELECT d.id, d.pipeline, d.stage, c.name_en AS course, d.amount_myr, d.created_at
+      FROM deal d LEFT JOIN course c ON c.id = d.course_id
+      WHERE d.person_id = ${p.id} AND d.deleted_at IS NULL ORDER BY d.created_at`,
+    enrolments: await sql`
+      SELECT e.id, cl.code AS class, e.status, e.price_paid_myr, e.created_at
+      FROM enrolment e JOIN class cl ON cl.id = e.class_id
+      WHERE e.person_id = ${p.id} ORDER BY e.created_at`,
+    payments: await sql`
+      SELECT id, method, amount_myr, status, paid_at
+      FROM (${paymentsSql(sql, p.id, viewer)}) x ORDER BY created_at`,
+    enquiries: await sql`
+      SELECT id, channel, category, status, created_at
+      FROM enquiry WHERE person_id = ${p.id} ORDER BY created_at`,
+    consent: await sql`
+      SELECT purpose, is_granted, source, recorded_at
+      FROM consent WHERE person_id = ${p.id} ORDER BY recorded_at`,
   };
 
   await writeAudit({
@@ -376,7 +538,8 @@ export async function exportPersonData(
     before: null,
     after: { kind: "pdpa_data_export", format },
   });
-  return { kind: "ok", data };
+  // Round-trip through JSON so Dates become ISO strings for both formats.
+  return { kind: "ok", data: JSON.parse(JSON.stringify(data)) };
 }
 
 // CSV version: one row per value — section, record, field, value.
