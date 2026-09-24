@@ -1,6 +1,14 @@
-# LEAD CRM — Software Specification v1.0
+# LEAD CRM — Software Specification v1.2
 
-_Sep 22, 2026 · @Someone_
+_Last updated 24 Sep 2026 · Owner: Shawn_
+
+## Changelog
+
+| Version | Date | Changes |
+| --- | --- | --- |
+| v1.2 | 24 Sep 2026 | From Zixuan's review of §9–11: new routes (§7.1), public register route (§8.3), `hrdcIntended` on leads, soft-match rule rewritten (§12.2), part-time "assigned" + create rule (§6), propose/request as tasks (§6), Home page (§9.0), schema changes (§5), Supabase env vars (§2). Schema v1 DDL issued. |
+| v1.1 | 22–23 Sep 2026 | `class_notice`, `tag`, `person_tag`, `lost_reason` tables; `payment.notes`; `deal.lost_reason_id`; last activity (§12.9); audit log viewer (§9.16); auth decision; decision calendar (§15.3) |
+| v1.0 | 22 Sep 2026 | First issue |
 
 Build reference for Zixuan (CRM app, website, landing pages) and Shawn (data, integrations). Companion to the LEAD Unified CRM Solution Blueprint.
 
@@ -81,6 +89,8 @@ No production customer data in staging, ever — seed it instead (PDPA, Blueprin
 DATABASE_URL
 AUTH_SECRET
 APP_BASE_URL
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY   - older projects call it the anon key
 STRIPE_SECRET_KEY
 STRIPE_WEBHOOK_SECRET
 WATI_API_BASE / WATI_TOKEN
@@ -167,7 +177,7 @@ Rule: strip non-digit/non-leading-`+`; starts `0` → replace with `+60`; starts
 
 ## 5. Data Model
 
-21 tables for MVP (4 added 22 Sep after review). Shawn owns migrations; this is the contract Zixuan codes against. Every table has standard columns from Section 4 (`id`, `created_at`, `updated_at`, `created_by`) — not repeated below.
+23 tables for MVP (4 added 22 Sep, `app_setting` added 24 Sep). DDL: schema v1 (`001_schema_v1.sql`, issued 24 Sep). Shawn owns migrations; this is the contract Zixuan codes against. Every table has standard columns from Section 4 (`id`, `created_at`, `updated_at`, `created_by`) — not repeated below.
 
 ### Entity relationships
 
@@ -208,7 +218,7 @@ APP_USER ||--o{ DEAL : owns
 | `enquiry_status`        | open, ai_resolved, human_resolved, converted, closed                                                                        |
 | `enquiry_category`      | course_info, schedule, price, hrdc, corporate, registration_help, payment_issue, post_class, complaint, other               |
 | `consent_purpose`       | marketing_email, marketing_whatsapp, data_processing                                                                        |
-| `task_type`             | call, follow_up, review_duplicate, match_payment, hrdc_deadline, other                                                      |
+| `task_type`             | call, follow_up, review_duplicate, match_payment, hrdc_deadline, export_request, other                                                      |
 
 **Changed 22 Sep:** `lost_reason` is now an editable table (Settings must let Sales add reasons without a migration). `deal.lost_reason_id` FKs to it.
 
@@ -275,7 +285,7 @@ Indexes: (start_date, is_public, status), course_id.
 
 **`deal_stage_history`** — deal_id, from_stage, to_stage, changed_by, changed_at. Written on every stage change; enables conversion reporting.
 
-**`payment`** — enrolment_id or deal_id (at least one), method, status, amount_myr, currency default MYR, stripe_payment_intent_id (unique where not null), stripe_checkout_session_id, reference_no, proof_file_key (S3 key), paid_at, refunded_amount_myr, notes text (added 22 Sep, free text from manual payment modal), recorded_by.
+**`payment`** — enrolment_id or deal_id (at least one, unless `match_status = unmatched` — see v1.2 changes below), match_status (matched, unmatched), method, status, amount_myr, currency default MYR, stripe_payment_intent_id (unique where not null), stripe_checkout_session_id, reference_no, proof_file_key (S3 key), paid_at, refunded_amount_myr, notes text (added 22 Sep, free text from manual payment modal), recorded_by.
 
 **`enquiry`** — person_id, channel, category, status, handled_by (ai, user), assigned_user_id, wati_conversation_id, first_message_at, first_response_at, closed_at, deal_id, summary text.
 
@@ -315,6 +325,19 @@ Only one `pending` notice per class at a time — a second edit while one is pen
 
 **`lost_reason`** — added 22 Sep, replaces the enum. code (unique, stable — reports group by this), label_en, label_zh, sort_order int, is_active bool. Seed with the eight reasons from the Blueprint. Deactivating hides from new deals but keeps on old ones — never delete a row.
 
+**Schema changes 24 Sep (v1.2)** — all before the 16 Oct freeze.
+
+| Table | Change | Why |
+| --- | --- | --- |
+| app_user | add `auth_user_id text unique` | Links to the auth provider's user id; matching on email breaks when an email changes |
+| deal | add `checkout_url`, `checkout_session_id`, `checkout_sent_at` | §13 says the link lives on the deal record |
+| payment | add `match_status` (matched, unmatched), default matched. Constraint: enrolment_id or deal_id set, **or** unmatched | An unmatched Stripe payment is still real money and must be stored (§11.3) |
+| task | add `related_person_id uuid → person` | A merge proposal names two people |
+| task_type | add `export_request` | Management's "request" export (§6) |
+| new `app_setting` | `key text PK`, `value jsonb`, `updated_by`, `updated_at` | HRDC lead time, claim window, reservation expiry, SLA — the configurable values in §12.1, §12.6, §15.3 |
+
+**Onboarding templates have no table, deliberately.** WhatsApp templates must be Meta-approved and live in WATI; email templates live in the ESP. Settings links out to both.
+
 **Deferred to January:** `campaign`, `ad`, `ad_metric_daily`, `content_item`, `attendance`, `class_session`. Do not build screens for these.
 
 ## 6. Auth & Permissions
@@ -352,6 +375,15 @@ F = full, E = create/edit, R = read, A = assigned records only, — = no access.
 
 Masking happens server-side — Marketing's API responses contain masked strings only, real values never reach that browser.
 
+**What "assigned" means per resource (added 24 Sep).** A part-timer can see: enquiries and tasks where `assigned_user_id` is them; people they own (`owner_user_id`) or who have an enquiry or task assigned to them; companies of those people.
+
+**Part-timers may create people, but only as part of an enquiry.** Their Add person creates the person plus an open enquiry assigned to them in one transaction, so they keep sight of the record. `owner_user_id` stays empty so sales assignment works normally. No standalone Add person button on the People list for part-timers.
+
+**"Propose" and "request" are tasks (added 24 Sep).** No new routes:
+
+- **Merge proposal** (sales, support, operations): `POST /api/tasks` with `type = 'review_duplicate'`, `person_id` + `related_person_id`, assigned to a super_admin, who resolves it with the 9.3 merge screen.
+- **Export request** (management): Export button creates `type = 'export_request'` assigned to a super_admin, filters stored in `notes`. Nothing downloads for management directly.
+
 **Audit.** Sign-in, sign-out, failed sign-in, permission denial, every export, every payment record view — all audit-logged.
 
 ## 7. Internal API
@@ -376,38 +408,71 @@ REST under `/api`, JSON, session cookie auth. Shared zod schema validation (form
 
 ### Endpoints
 
-| Method + path                                 | Purpose                          | Owner  | Notes                                                                                                |
-| --------------------------------------------- | -------------------------------- | ------ | ---------------------------------------------------------------------------------------------------- |
-| GET /api/people                               | Search + list                    | Zixuan | q matches name/email/phone, normalised before matching                                               |
-| POST /api/people                              | Create                           | Zixuan | Runs dedupe (§12); 409 with existing record on hard match                                            |
-| GET /api/people/:id                           | Detail + timeline                | Zixuan | person + deals + enrolments + enquiries + touchpoints                                                |
-| PATCH /api/people/:id                         | Update                           | Zixuan | Partial; audit-logged                                                                                |
-| POST /api/people/:id/merge                    | Merge into another               | Zixuan | super_admin only; body `{targetId}`; moves children, sets merged_into_id                             |
-| GET/POST/PATCH /api/companies[/:id]           | Company CRUD                     | Zixuan |                                                                                                      |
-| POST /api/companies/:id/members               | Attach person                    | Zixuan | body `{personId, jobTitle, isHrContact, isBillingContact}`                                           |
-| GET /api/deals                                | Pipeline board + list            | Zixuan | filter[pipeline], filter[stage], filter[owner]                                                       |
-| POST /api/deals                               | Create                           | Zixuan |                                                                                                      |
-| PATCH /api/deals/:id                          | Update fields                    | Zixuan |                                                                                                      |
+| Method + path                                 | Purpose                          | Owner  | Notes                                                                                    |
+| --------------------------------------------- | -------------------------------- | ------ | ---------------------------------------------------------------------------------------- |
+| GET /api/people                               | Search + list                    | Zixuan | q matches name/email/phone, normalised before matching                                   |
+| POST /api/people                              | Create                           | Zixuan | Runs dedupe (§12); 409 with existing record on hard match                                |
+| GET /api/people/:id                           | Detail + timeline                | Zixuan | person + deals + enrolments + enquiries + touchpoints                                    |
+| PATCH /api/people/:id                         | Update                           | Zixuan | Partial; audit-logged                                                                    |
+| POST /api/people/:id/merge                    | Merge into another               | Zixuan | super_admin only; body `{targetId}`; moves children, sets merged_into_id                 |
+| GET/POST/PATCH /api/companies[/:id]           | Company CRUD                     | Zixuan |                                                                                          |
+| POST /api/companies/:id/members               | Attach person                    | Zixuan | body `{personId, jobTitle, isHrContact, isBillingContact}`                               |
+| GET /api/deals                                | Pipeline board + list            | Zixuan | filter[pipeline], filter[stage], filter[owner]                                           |
+| POST /api/deals                               | Create                           | Zixuan |                                                                                          |
+| PATCH /api/deals/:id                          | Update fields                    | Zixuan |                                                                                          |
 | POST /api/deals/:id/stage                     | Move stage                       | Zixuan | body `{toStage, lostReasonId?}`; writes history + outbox event; 422 if lost without an active reason |
-| POST /api/deals/:id/checkout-link             | Generate Stripe link             | Shawn  | Returns `{url}`; Zixuan calls from deal screen                                                       |
-| GET/POST/PATCH /api/courses[/:id]             | Course catalogue                 | Zixuan |                                                                                                      |
-| GET /api/classes                              | List with seat counts            | Zixuan | Returns capacity, confirmedCount, reservedCount, seatsAvailable                                      |
-| POST/PATCH /api/classes[/:id]                 | Create/edit                      | Zixuan | Date/time/venue change on class with enrolments returns `{noticeRequired: true}` (§12)               |
-| POST /api/classes/:id/cancel                  | Cancel class                     | Zixuan | Requires reason; sets all enrolments cancelled; raises event                                         |
-| GET /api/classes/:id/roster                   | Enrolment list                   | Zixuan | Used by class detail + CSV export                                                                    |
-| GET /api/enrolments[/:id]                     | List + detail                    | Zixuan |                                                                                                      |
-| POST /api/enrolments                          | Create manually                  | Zixuan | Seat check inside transaction; 409 no_seats                                                          |
-| POST /api/enrolments/:id/status               | Change status                    | Zixuan | Validated against state machine; 422 on illegal jump                                                 |
-| POST /api/enrolments/:id/transfer             | Move to another class            | Zixuan | body `{toClassId}`; seat check on target                                                             |
-| POST /api/payments/manual                     | Record bank/HRDC/invoice payment | Zixuan | Requires method, amount, reference, proof upload; confirms enrolment                                 |
-| POST /api/uploads/sign                        | Signed upload URL                | Zixuan | Payment proof, HRDC documents                                                                        |
-| GET/PATCH /api/enquiries[/:id]                | Support queue                    | Zixuan |                                                                                                      |
-| POST /api/enquiries/:id/convert               | Create deal from enquiry         | Zixuan | Links both, assigns owner, raises event                                                              |
-| GET/POST/PATCH /api/tasks[/:id]               | Tasks                            | Zixuan | filter[mine]=true for default view                                                                   |
-| GET /api/consent/:personId, POST /api/consent | Consent records                  | Zixuan |                                                                                                      |
-| GET/POST/PATCH /api/users[/:id]               | User admin                       | Zixuan | super_admin only                                                                                     |
-| GET /api/health/integrations                  | Integration status panel         | Shawn  | Zixuan renders it                                                                                    |
-| POST /api/webhooks/stripe, /wati              | Inbound webhooks                 | Shawn  | No session; signature-verified                                                                       |
+| POST /api/deals/:id/checkout-link             | Generate Stripe link             | Shawn  | Returns `{url}` and stores it on the deal (§7.1); Zixuan calls from deal screen                                           |
+| GET/POST/PATCH /api/courses[/:id]             | Course catalogue                 | Zixuan |                                                                                          |
+| GET /api/classes                              | List with seat counts            | Zixuan | Returns capacity, confirmedCount, reservedCount, seatsAvailable                          |
+| POST/PATCH /api/classes[/:id]                 | Create/edit                      | Zixuan | Takes optional `notice: 'prepare' \| 'skip'`; see §7.1 (409 `notice_decision_required`)   |
+| POST /api/classes/:id/cancel                  | Cancel class                     | Zixuan | Requires reason; sets all enrolments cancelled; raises event                             |
+| GET /api/classes/:id/roster                   | Enrolment list                   | Zixuan | Used by class detail + CSV export                                                        |
+| GET /api/enrolments[/:id]                     | List + detail                    | Zixuan |                                                                                          |
+| POST /api/enrolments                          | Create manually                  | Zixuan | Seat check inside transaction; 409 no_seats                                              |
+| POST /api/enrolments/:id/status               | Change status                    | Zixuan | Validated against state machine; 422 on illegal jump                                     |
+| POST /api/enrolments/:id/transfer             | Move to another class            | Zixuan | body `{toClassId}`; seat check on target                                                 |
+| POST /api/payments/manual                     | Record bank/HRDC/invoice payment | Zixuan | Requires method, amount, reference, proof upload; confirms enrolment                     |
+| POST /api/uploads/sign                        | Signed upload URL                | Zixuan | Payment proof, HRDC documents                                                            |
+| GET/PATCH /api/enquiries[/:id]                | Support queue                    | Zixuan |                                                                                          |
+| POST /api/enquiries/:id/convert               | Create deal from enquiry         | Zixuan | Links both, assigns owner, raises event                                                  |
+| GET/POST/PATCH /api/tasks[/:id]               | Tasks                            | Zixuan | filter[mine]=true for default view                                                       |
+| GET /api/consent/:personId, POST /api/consent | Consent records                  | Zixuan |                                                                                          |
+| GET/POST/PATCH /api/users[/:id]               | User admin                       | Zixuan | super_admin only                                                                         |
+| GET /api/health/integrations                  | Integration status panel         | Shawn  | Zixuan renders it                                                                        |
+| POST /api/webhooks/stripe, /wati              | Inbound webhooks                 | Shawn  | No session; signature-verified                                                           |
+
+### 7.1 Routes added 24 Sep (v1.2)
+
+From Zixuan's review of §9–11 against the table above.
+
+| Method + path | Purpose | Owner | Notes |
+| --- | --- | --- | --- |
+| POST /api/people/bulk | Bulk assign owner / add tag | Zixuan | body `{personIds[], action: 'assign_owner'\|'add_tag', ownerId?, tagId?}`; max 500; one audit row per person |
+| GET /api/people/export | People CSV | Zixuan | super_admin only; streams; audit-logged with filter + row count |
+| GET /api/people/:id/timeline | Paginated timeline for 9.2 | Zixuan | touchpoints, stage changes, tasks, messages, payments, enrolment changes; newest first, 50/page. Keeps GET /api/people/:id fast |
+| GET /api/people/:id/data-export | PDPA portability export | Zixuan | `?format=json\|csv`; super_admin (on the person's request); audit-logged |
+| GET /api/users/options | `{id, fullName}` of active users for owner filters/pickers | Zixuan | Every signed-in role; nothing else returned |
+| GET /api/tags | Tag list for filters + bulk tag | Zixuan | Every role that can read people |
+| PATCH /api/tags/:id | Rename / deactivate | Zixuan | super_admin; 422 on system tags |
+| POST /api/tags/:id/merge | Merge into another tag | Zixuan | body `{intoTagId}`; moves person_tag rows, deactivates source |
+| GET /api/lost-reasons | Active reasons, in order | Zixuan | Every role that can read deals (Lost dialog) |
+| POST/PATCH /api/lost-reasons[/:id] | Create / rename / deactivate | Zixuan | super_admin |
+| POST /api/lost-reasons/reorder | Reorder | Zixuan | body `{ids[]}` in new order |
+| GET /api/companies/:id | Company detail | Zixuan | company + members + deals + enrolment summary |
+| GET /api/deals/:id | Deal detail | Zixuan | deal + stageHistory[] + tasks + linked enquiry |
+| GET /api/audit-log | Audit viewer (9.16) | Zixuan | super_admin, management; filters per 9.16; 50/page |
+| GET /api/classes/:id/roster.csv | Roster export | Zixuan | operations, super_admin; audit-logged |
+| GET /api/classes/:id/notices | Notices for a class | Zixuan | Pending first |
+| PATCH /api/class-notices/:id | Edit message EN/ZH | Zixuan | Only while pending |
+| POST /api/class-notices/:id/approve | Approve and send | Zixuan | operations, super_admin; raises ClassNoticeApproved; Shawn's worker sends |
+| POST /api/class-notices/:id/discard | Discard | Zixuan | Only while pending |
+| POST /api/payments/:id/match | Resolve unmatched Stripe payment (§11.3) | Zixuan | body `{personId, classId}`; one transaction: creates enrolment, links payment, sets match_status = matched, closes the match_payment task |
+
+**Changes to existing routes**
+
+- GET /api/deals also returns `stageTotals: [{stage, count, totalMyr}]` over the whole filtered set (not the current page). Board headers use it.
+- PATCH /api/classes/:id takes optional `notice: 'prepare' | 'skip'`. If the edit touches a notice field on a class with confirmed enrolments and `notice` is absent → **409 `notice_decision_required`** with `{recipientCount}`, nothing saved. UI shows the 9.9 dialog and resubmits with the choice. The server decides whether a notice is needed, never the client.
+- POST /api/deals/:id/checkout-link stores `checkout_url`, `checkout_session_id`, `checkout_sent_at` on the deal as well as returning it.
 
 **Concurrency.** PATCH on person/deal/class/enrolment sends `If-Unmodified-Since` with record's `updated_at`. Stale write → 409, client shows "someone else changed this record — reload".
 
@@ -415,7 +480,7 @@ REST under `/api`, JSON, session cookie auth. Shared zod schema validation (form
 
 ## 8. Public API
 
-Two endpoints the public website uses — only routes reachable without a session. Rate-limited, key-protected, deliberately narrow.
+Three endpoints the public website uses — the only routes reachable without a session. Rate-limited, key-protected, deliberately narrow.
 
 ### 8.1 GET /api/public/schedule
 
@@ -476,6 +541,7 @@ Accepts a form submission from any landing page or the website contact form.
   "classCode": "AIA-2610-EN",
   "message": "Is this HRDC claimable?",
   "consentMarketing": true,
+  "hrdcIntended": false,
   "attribution": {
     "utmSource": "facebook",
     "utmMedium": "paid_social",
@@ -515,11 +581,28 @@ Required: only `fullName` + one of email/phone. A submission missing everything 
 
 Never trust the client — attribution is informational; server records landingUrl/referrer from headers where possible.
 
+**Added 24 Sep:** `hrdcIntended` (optional boolean, default false). When true, the new deal gets `funding_type = 'hrdc'`.
+
+### 8.3 POST /api/public/register (added 24 Sep)
+
+`/register/<classCode>` (§10.4) needs a Stripe link without a session, so it calls this instead of the internal checkout route. Body: everything in 8.2, plus required `classCode` and `hrdcIntended`.
+
+Server behaviour, in order:
+
+1. Everything 8.2 does (key, CAPTCHA, rate limit, dedupe, touchpoint, consent, deal).
+2. Load the class by classCode. 409 `class_unavailable` if not public, not open/few_seats, or already started.
+3. If `hrdcIntended`: no checkout; return `201 { next: 'hrdc_contact' }`.
+4. Otherwise create a `reserved` enrolment (seat check in the transaction, 409 `no_seats` if full), create the Stripe Checkout session (Shawn's code), store it on the deal, return `201 { next: 'checkout', checkoutUrl }`.
+
+**Price always comes from the class record on the server** — nothing in the request body can set an amount. The Stripe session carries `deal_id`, `enrolment_id`, `class_id` in metadata so the webhook can match it.
+
 ## 9. CRM Screens
 
-16 screens, build in order below (each depends on ones above it).
+17 screens, build in order below (each depends on ones above it).
 
 **Shell.** Left sidebar: Dashboard, People, Companies, Deals, Classes, Enrolments, Enquiries, Tasks, Settings — filtered by role. Top bar: global search (name/email/phone), signed-in user, sign out. Every list screen: filter row, table, pagination, empty state, row click → detail.
+
+**9.0 Home** (added 24 Sep) — The Dashboard link opens a work page, not analytics (charts live in the BI tool): my tasks (overdue first, then today); my open deals count + value per stage (from `stageTotals`); upcoming classes next 14 days with sold/capacity; needs attention — `needs_review` people, unmatched payments, pending class notices, each shown only to roles that can act on it; link to BI dashboards. No charts, no custom metrics.
 
 **9.1 People list** — Columns: Name, Phone, Email, Language, Stage (computed badge), Owner, Last activity, Tags. Tags: up to 3 chips + "+2" tooltip. Last activity: relative <7 days ("3 days ago"), absolute after ("14 Aug 2026"), "—" if none. Filters: stage, owner, language, tag, has open deal, created between, needs_review. Search matches name/email/phone (normalised), debounce 300ms. Actions: Add person, Export CSV (permitted roles), bulk assign owner, bulk add tag. needs_review row → amber dot + tooltip.
 
@@ -555,7 +638,7 @@ Change-notice flow: date/time/venue change on class w/ confirmed enrolments → 
 
 - Users — invite, set role, deactivate.
 - Courses — from 9.7.
-- Lost reasons — full CRUD on lost_reason table (Sales lead may edit). Deactivate hides from new deals, keeps on old. No delete button.
+- Lost reasons — full CRUD on lost_reason table (super_admin only in MVP — there is no sales-lead role). Deactivate hides from new deals, keeps on old. No delete button.
 - Tags — rename user tags, merge two into one, deactivate. System tags read-only, greyed, lock icon.
 - Templates — onboarding email/WhatsApp templates, view only in MVP (Shawn edits content).
 - Integrations — health panel from GET /api/health/integrations.
@@ -596,7 +679,7 @@ Rules:
 
 1. Shows class summary + price.
 2. Collects lead form fields + company + HRDC claiming intent.
-3. Posts to leads endpoint, then requests checkout link, redirects to Stripe.
+3. Posts to `POST /api/public/register` (§8.3), which returns the Stripe checkout URL; redirects to it.
 4. If HRDC intended: does NOT go to Stripe — submits enquiry, shows "Our team will contact you about HRDC claiming" (HRDC seats invoiced, not card-paid).
 
 Stripe returns to `/register/thank-you?session_id=...` — confirms in plain words, says onboarding details coming by email/WhatsApp. **Must not create the enrolment** — Stripe webhook does that on Shawn's side.
@@ -647,7 +730,7 @@ Event names are exact — a typo is a silent failure. They live in one shared Ty
 
 ### 11.3 Unmatched payments
 
-When Stripe sends a payment that can't be matched to a person/class, Shawn's worker creates a task of type `match_payment` holding raw details. Zixuan builds the resolution screen: show Stripe metadata, search for right person/class, confirm → creates enrolment, links payment. Safety net for the money path — MVP, not optional.
+When Stripe sends a payment that can't be matched to a person/class, Shawn's worker creates a task of type `match_payment` holding raw details. Zixuan builds the resolution screen: show Stripe metadata, search for right person/class, confirm → `POST /api/payments/:id/match` (§7.1) creates enrolment, links payment, sets match_status = matched. Safety net for the money path — MVP, not optional.
 
 ### 11.4 Integration health
 
@@ -686,8 +769,9 @@ On every person create, any route:
 
 1. Normalise email and phone.
 2. **Hard match** — same email_norm or phone_e164 → use existing person, don't create. API create → 409 with existing record; public form silently attaches.
-3. **Soft match** — same full name + same company, or near-identical name w/ one matching identifier → create person but set `needs_review = true`.
-4. **Never merge automatically on name alone.** Malaysian/Chinese names collide constantly — auto-merge on "Tan Wei Ming" would be a data-loss bug.
+3. **Soft match** (revised 24 Sep) — create the person but set `needs_review = true` when the **normalised name** matches and either: (a) the company matches, (b) the email local part matches at a different domain (`tan.ml@gmail.com` vs `tan.ml@acme.com`), or (c) the last 7 phone digits match.
+4. **Normalised name** = lowercase, spaces/hyphens/dots/apostrophes removed. "Tan Mei Ling", "Tan Meiling" and "TAN MEI-LING" compare equal without a fuzzy-matching library.
+5. **Never merge automatically, never flag on name alone.** Malaysian/Chinese names collide constantly — flagging every "Tan Wei Ming" would bury the review queue.
 
 ### 12.3 Lifecycle stage (computed, never stored as truth)
 
@@ -879,36 +963,33 @@ Everything else: manual UAT with Wei Ping, Ops and Sales during Sprint 5 (30 Nov
 
 ### 15.3 Open items
 
-| #   | Question                                                                                                                                                                                                                                                                                                                   | Blocks                 | Needed by          | Owner                  |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------------------ | ---------------------- |
-| O1  | Google Workspace or Microsoft 365? Decides SSO                                                                                                                                                                                                                                                                             | §6 auth                | Sprint 1           | Shawn                  |
-| O2  | Store WhatsApp message bodies, or metadata only? (PDPA)                                                                                                                                                                                                                                                                    | message_log.body       | Sprint 2           | Shawn + privacy review |
-| O3  | Reservation expiry — 48 hours or something else?                                                                                                                                                                                                                                                                           | Seat logic             | Sprint 2           | Operations             |
-| O4  | First-response SLA in business hours                                                                                                                                                                                                                                                                                       | Enquiry screen, alerts | Sprint 3           | Wei Ping               |
-| O5  | Waitlist in MVP or January?                                                                                                                                                                                                                                                                                                | Class detail scope     | Sprint 3           | Client (pending)       |
-| O6  | Refund and transfer policy in writing                                                                                                                                                                                                                                                                                      | Enrolment actions      | Sprint 4           | Finance                |
-| O7  | HRDC grant lead time and claim window values                                                                                                                                                                                                                                                                               | HRDC reminders         | Sprint 4           | Finance                |
-| O8  | Who owns website deploy, does Zixuan have access?                                                                                                                                                                                                                                                                          | §10, all of it         | **Sprint 1**       | Management             |
-| O9  | Corporate booking: one HR contact registering 10 staff — confirm Booker model matches Ops                                                                                                                                                                                                                                  | Enrolment screens      | Sprint 3           | Operations             |
-| O10 | Certificate numbering format                                                                                                                                                                                                                                                                                               | Enrolment              | January            | Operations             |
-| O11 | §9.1 needs endpoints §7 doesn't list. Built provisionally: `POST /api/people/bulk` (assign owner / add tag), `GET /api/people/export` (CSV, super_admin, audit-logged), `GET /api/users/options` (id + name for owner pickers — `GET /api/users` is super_admin only), `GET /api/tags`. Confirm or rename before C2 freeze | §9.1 People list       | 16 Oct (C2 freeze) | Shawn + Zixuan         |
-| O12 | §12.2 soft match "near-identical name with one matching identifier" — a matching email/phone is already a hard match, so what counts? Only "same name + same company" is built                                                                                                                                             | Dedupe                 | Sprint 1           | Shawn                  |
-| O13 | Can `part_time` create people? Matrix gives person "A" (assigned only), which says nothing about creating. Currently allowed                                                                                                                                                                                               | §6, 9.1 Add person     | Sprint 1           | Shawn                  |
+| #   | Question                                                                                  | Blocks                 | Needed by    | Owner                  |
+| --- | ----------------------------------------------------------------------------------------- | ---------------------- | ------------ | ---------------------- |
+| O1  | Google Workspace or Microsoft 365? Decides SSO                                            | §6 auth                | Sprint 1     | Shawn                  |
+| O2  | Store WhatsApp message bodies, or metadata only? (PDPA)                                   | message_log.body       | Sprint 2     | Shawn + privacy review |
+| O3  | Reservation expiry — 48 hours or something else?                                          | Seat logic             | Sprint 2     | Operations             |
+| O4  | First-response SLA in business hours                                                      | Enquiry screen, alerts | Sprint 3     | Wei Ping               |
+| O5  | Waitlist in MVP or January?                                                               | Class detail scope     | Sprint 3     | Client (pending)       |
+| O6  | Refund and transfer policy in writing                                                     | Enrolment actions      | Sprint 4     | Finance                |
+| O7  | HRDC grant lead time and claim window values                                              | HRDC reminders         | Sprint 4     | Finance                |
+| O8  | Who owns website deploy, does Zixuan have access?                                         | §10, all of it         | **Sprint 1** | Management             |
+| O9  | Corporate booking: one HR contact registering 10 staff — confirm Booker model matches Ops | Enrolment screens      | Sprint 3     | Operations             |
+| O10 | Certificate numbering format                                                              | Enrolment              | January      | Operations             |
 
 **Decision calendar (added 23 Sep).** Every open item now has a date. If an answer misses its date, the fallback in the last column is what gets built — nobody waits.
 
-| #                                  | Decide by      | Who decides            | Fallback if the date passes                                                       |
-| ---------------------------------- | -------------- | ---------------------- | --------------------------------------------------------------------------------- |
-| O8 website deploy access           | **Fri 25 Sep** | Management             | Blocker, not a fallback — escalate the same day; Sprint 3 cannot start without it |
-| O1 auth (SSO vs email+MFA)         | Fri 2 Oct      | Shawn                  | Email + password with MFA (see below)                                             |
-| O2 store message bodies            | Fri 9 Oct      | Shawn + privacy review | Metadata only; no bodies stored                                                   |
-| O3 reservation expiry              | Fri 16 Oct     | Operations             | 48 hours                                                                          |
-| O9 corporate booker model          | Fri 16 Oct     | Operations             | Build as specified in 12.2                                                        |
-| O4 first-response SLA              | Fri 30 Oct     | Wei Ping               | 1 business hour, configurable                                                     |
-| O5 waitlist in MVP                 | Fri 30 Oct     | Client                 | Defer to January                                                                  |
-| O6 refund/transfer policy          | Fri 13 Nov     | Finance                | Transfer allowed to any future class; refunds handled manually in Stripe          |
-| O7 HRDC lead time and claim window | Fri 13 Nov     | Finance                | Ship as editable settings with no default; Ops fills them in                      |
-| O10 certificate numbering          | January        | Operations             | Out of MVP                                                                        |
+| # | Decide by | Who decides | Fallback if the date passes |
+|---|---|---|---|
+| O8 website deploy access | **Fri 25 Sep** | Management | Blocker, not a fallback — escalate the same day; Sprint 3 cannot start without it |
+| O1 auth (SSO vs email+MFA) | Fri 2 Oct | Shawn | Email + password with MFA (see below) |
+| O2 store message bodies | Fri 9 Oct | Shawn + privacy review | Metadata only; no bodies stored |
+| O3 reservation expiry | Fri 16 Oct | Operations | 48 hours |
+| O9 corporate booker model | Fri 16 Oct | Operations | Build as specified in 12.2 |
+| O4 first-response SLA | Fri 30 Oct | Wei Ping | 1 business hour, configurable |
+| O5 waitlist in MVP | Fri 30 Oct | Client | Defer to January |
+| O6 refund/transfer policy | Fri 13 Nov | Finance | Transfer allowed to any future class; refunds handled manually in Stripe |
+| O7 HRDC lead time and claim window | Fri 13 Nov | Finance | Ship as editable settings with no default; Ops fills them in |
+| O10 certificate numbering | January | Operations | Out of MVP |
 
 The two that matter this week are **O8** and **O1**. O8 is the only item that can stop a whole sprint — Zixuan can't build Section 10 against a website she can't deploy to.
 
