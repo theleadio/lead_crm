@@ -4,7 +4,9 @@
 
 export type AuditEntry = {
   userId: string;
-  action: "create" | "update" | "delete" | "export" | "permission_change";
+  // "view": spec §6 — every view of a payment record is audit-logged.
+  action:
+    "create" | "update" | "delete" | "export" | "permission_change" | "view";
   entity: string;
   entityId: string | null;
   before: unknown;

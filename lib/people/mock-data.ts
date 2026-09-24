@@ -13,6 +13,7 @@ export type PersonRecord = {
   emailNorm: string | null;
   phone: string | null;
   phoneE164: string | null;
+  whatsappE164: string | null; // spec §5: defaults to phone_e164
   preferredLanguage: Language;
   jobTitle: string | null;
   notes: string | null;
@@ -90,6 +91,7 @@ function build(i: number): PersonRecord {
     emailNorm: email,
     phone: `0${local.slice(0, 2)}-${local.slice(2, 5)} ${local.slice(5)}`,
     phoneE164: `+60${local}`,
+    whatsappE164: `+60${local}`,
     preferredLanguage: LANGS[i % LANGS.length],
     jobTitle: null,
     notes: null,
@@ -121,6 +123,7 @@ export const MOCK_PEOPLE: PersonRecord[] = [
     emailNorm: null,
     phone: "+60 17-888 1234",
     phoneE164: "+60178881234",
+    whatsappE164: "+60178881234",
   },
   // Spec §4: phone that could not be normalised is kept and flagged.
   {
@@ -129,6 +132,7 @@ export const MOCK_PEOPLE: PersonRecord[] = [
     fullName: "Unknown Format",
     phone: "12345",
     phoneE164: null,
+    whatsappE164: null,
     needsReview: true,
     needsReviewReason: "Phone number could not be normalised",
   },

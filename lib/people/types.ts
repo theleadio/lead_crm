@@ -38,6 +38,91 @@ export type PeopleListQuery = PeopleFilters & { page: number; limit: number };
 
 export type Option = { id: string; label: string };
 
+// Spec §9.2 Person detail. Each related section is null when the viewer's
+// role can't read that resource (§6) — the UI hides the panel.
+export type PersonDetail = {
+  person: {
+    id: string;
+    fullName: string;
+    preferredName: string | null;
+    email: string | null;
+    phone: string | null;
+    whatsapp: string | null;
+    preferredLanguage: Language;
+    jobTitle: string | null;
+    notes: string | null;
+    stage: LifecycleStage;
+    owner: { id: string; fullName: string } | null;
+    companyName: string | null;
+    needsReview: boolean;
+    needsReviewReason: string | null;
+    lastActivityAt: string | null;
+    createdAt: string;
+    updatedAt: string;
+  };
+  attribution: {
+    firstTouch: Touchpoint | null;
+    latestTouch: Touchpoint | null;
+  };
+  deals: DealSummary[] | null;
+  enrolments: EnrolmentSummary[] | null;
+  payments: PaymentSummary[] | null;
+  enquiries: EnquirySummary[] | null;
+  consent: ConsentState[] | null;
+  timeline: TimelineItem[];
+};
+
+export type Touchpoint = {
+  id: string;
+  occurredAt: string;
+  channel: string;
+  utmSource: string | null;
+  utmCampaign: string | null;
+};
+
+export type DealSummary = {
+  id: string;
+  stage: string;
+  courseName: string;
+  amountMyr: string;
+  owner: string | null;
+};
+
+export type EnrolmentSummary = {
+  id: string;
+  classCode: string;
+  status: string;
+  pricePaidMyr: string | null;
+};
+
+export type PaymentSummary = {
+  id: string;
+  method: string;
+  amountMyr: string;
+  paidAt: string | null;
+  status: string;
+};
+
+export type EnquirySummary = {
+  id: string;
+  channel: string;
+  category: string;
+  status: string;
+  handledBy: "ai" | "user";
+};
+
+export type ConsentState = {
+  purpose: "marketing_email" | "marketing_whatsapp";
+  isGranted: boolean;
+  recordedAt: string;
+};
+
+export type TimelineItem = {
+  at: string;
+  kind: "touchpoint" | "stage_change" | "task" | "message";
+  text: string;
+};
+
 export type PageInfo = { total: number; page: number; limit: number };
 
 export type ListResponse<T> = { data: T[]; page: PageInfo };

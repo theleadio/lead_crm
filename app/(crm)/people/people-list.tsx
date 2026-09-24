@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Toast } from "@/components/toast";
 import { Badge } from "@/components/ui/badge";
@@ -598,9 +600,20 @@ function PersonRow({
   const displayName = person.fullName || person.phone || "Unnamed";
   const shownTags = person.tags.slice(0, 3);
   const hiddenTags = person.tags.slice(3);
+  const router = useRouter();
+  const href = `/people/${person.id}`;
 
+  // Spec §9: row click opens detail. The name is a real link for keyboard
+  // and middle-click; clicks on the checkbox or link aren't hijacked.
   return (
-    <TableRow data-state={selected ? "selected" : undefined}>
+    <TableRow
+      data-state={selected ? "selected" : undefined}
+      className="cursor-pointer"
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest("a, input, button")) return;
+        router.push(href);
+      }}
+    >
       {selectable && (
         <TableCell>
           <input
@@ -623,7 +636,9 @@ function PersonRow({
               </span>
             </span>
           )}
-          {displayName}
+          <Link href={href} className="hover:underline">
+            {displayName}
+          </Link>
         </span>
       </TableCell>
       <TableCell>{person.phone ?? "—"}</TableCell>

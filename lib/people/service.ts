@@ -172,6 +172,7 @@ export async function createPerson(
     emailNorm,
     phone,
     phoneE164,
+    whatsappE164: phoneE164,
     preferredLanguage: input.preferredLanguage,
     jobTitle: blankToNull(input.jobTitle),
     notes: blankToNull(input.notes),
