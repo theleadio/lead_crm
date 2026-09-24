@@ -1,4 +1,4 @@
-# LEAD CRM — Software Specification v1.4
+# LEAD CRM — Software Specification v1.5
 
 _Last updated 24 Sep 2026 · Owner: Shawn_
 
@@ -6,6 +6,7 @@ _Last updated 24 Sep 2026 · Owner: Shawn_
 
 | Version | Date | Changes |
 | --- | --- | --- |
+| v1.5 | 24 Sep 2026 | Companies from Zixuan's 9.4 question: Add/Edit company, Add person, edit and end memberships on 9.4; `replaceCurrent` on POST members; new PATCH members route (§7, §7.1); company decisions recorded (§15.3). |
 | v1.4 | 24 Sep 2026 | What the lead form's `companyName` does — it was sent but never saved. Migration 003: `person.company_name_given`, `company.name_norm`, `link_company_from_form()` (§5, §8.2, §8.3); company picker on person detail (§9.2); soft-match "company matches" defined (§12.2). |
 | v1.3 | 24 Sep 2026 | Migration 002: `needs_review_reason` and `erased_at` on person (§5); merge, erasure and soft delete as tested database functions (§12.10); merge route body and two new routes (§7, §7.1); concurrency switched to If-Match with a microsecond version (§7); open items O11–O15 (§15.3). |
 | v1.2 | 24 Sep 2026 | From Zixuan's review of §9–11: new routes (§7.1), public register route (§8.3), `hrdcIntended` on leads, soft-match rule rewritten (§12.2), part-time "assigned" + create rule (§6), propose/request as tasks (§6), Home page (§9.0), schema changes (§5), Supabase env vars (§2). Schema v1 DDL issued. |
@@ -436,8 +437,8 @@ REST under `/api`, JSON, session cookie auth. Shared zod schema validation (form
 | GET /api/people/:id                           | Detail + timeline                | Zixuan | person + deals + enrolments + enquiries + touchpoints                                    |
 | PATCH /api/people/:id                         | Update                           | Zixuan | Partial; audit-logged                                                                    |
 | POST /api/people/:id/merge                    | Merge into another               | Zixuan | super_admin only; body `{targetId, fields?}`. One transaction: `merge_person(:id, targetId, sessionUserId)`, then apply `fields` (9.3 per-field choices) to the target and audit-log them. `merge_blocked` → 409 with the message and class codes (§12.10) |
-| GET/POST/PATCH /api/companies[/:id]           | Company CRUD                     | Zixuan |                                                                                          |
-| POST /api/companies/:id/members               | Attach person                    | Zixuan | body `{personId, jobTitle, isHrContact, isBillingContact}`                               |
+| GET/POST/PATCH /api/companies[/:id]           | Company CRUD                     | Zixuan | Write: super_admin, sales, support (§6). No DELETE in MVP (§15.3)                         |
+| POST /api/companies/:id/members               | Attach person                    | Zixuan | body `{personId, jobTitle, isHrContact, isBillingContact, replaceCurrent?}`. `replaceCurrent: true` (used by the 9.2 picker) ends the person's other current memberships with `end_date` = today in the same transaction. 409 if already a current member here |
 | GET /api/deals                                | Pipeline board + list            | Zixuan | filter[pipeline], filter[stage], filter[owner]                                           |
 | POST /api/deals                               | Create                           | Zixuan |                                                                                          |
 | PATCH /api/deals/:id                          | Update fields                    | Zixuan |                                                                                          |
@@ -479,6 +480,7 @@ From Zixuan's review of §9–11 against the table above.
 | GET /api/lost-reasons | Active reasons, in order | Zixuan | Every role that can read deals (Lost dialog) |
 | POST/PATCH /api/lost-reasons[/:id] | Create / rename / deactivate | Zixuan | super_admin |
 | POST /api/lost-reasons/reorder | Reorder | Zixuan | body `{ids[]}` in new order |
+| PATCH /api/companies/:id/members/:membershipId | Edit or end a membership (v1.5) | Zixuan | body `{jobTitle?, isHrContact?, isBillingContact?, endDate?}`; same roles as company write. `endDate` ends it (not before `start_date`); rows are never deleted. Ending is one-way — to rejoin, POST a new membership |
 | DELETE /api/people/:id | Soft delete a junk/test record (v1.3) | Zixuan | super_admin; body `{reason}` required; calls `soft_delete_person()`; 409 "use erase instead" if the person has any enrolment or payment |
 | POST /api/people/:id/erase | PDPA erasure — anonymise (v1.3) | Zixuan | super_admin, on the person's request; body `{reason}` required; calls `erase_person()`; irreversible, confirm by typing the name; §12.10 |
 | GET /api/companies/:id | Company detail | Zixuan | company + members + deals + enrolment summary |
@@ -635,6 +637,14 @@ Server behaviour, in order:
 **9.3 Merge people** — super_admin only. Side-by-side, radio buttons per field, plain-language summary of what moves. Confirm requires typing kept person's name. Irreversible — say so.
 
 **9.4 Companies list & detail** — List: name, industry, size, HRDC registered, people count, open deals. Detail: fields, employee list w/ job title + HR/billing flags, deals, enrolments, total revenue.
+
+*Write controls (v1.5)* — for super_admin, sales and support (§6); hidden for other roles.
+- **Add company** (list): legal name (required), registration no., industry, size, HRDC registered, billing address, billing email, owner. Before saving, show "Similar companies" — same `name_norm` (from `normalise_company_name()`), or same registration no. ignoring case, spaces and hyphens. A warning with links, not a block.
+- **Edit** (detail): the same fields.
+- **Add person** (employee list): search existing people → POST /api/companies/:id/members. Creating a new person happens on 9.1, not here.
+- **Per employee row**: edit job title and HR/billing flags; **End membership** asks for an end date (default today) → PATCH …/members/:membershipId.
+- Ended memberships move to a collapsed "Past employees" list.
+- No delete and no company merge in MVP (§15.3).
 
 **9.5 Deals board** — Two tabs: Individual / Corporate (separate pipelines, not a filter). Kanban per stage, count + summed value. Cards: person, course, value, owner initials circle, days in stage (amber >7, red >14). Drag → POST /api/deals/:id/stage. Drag to Lost → required reason dialog. Optimistic move + revert/toast on failure. Filters: owner, course, date range, funding type. "My deals" toggle, default on for sales.
 
@@ -1045,6 +1055,14 @@ Everything else: manual UAT with Wei Ping, Ops and Sales during Sprint 5 (30 Nov
 | O12 payment record retention | Fri 13 Nov | Finance / accountant | Keep payment rows indefinitely; erasure never touches them |
 
 The two that matter this week are **O8** and **O1**. O8 is the only item that can stop a whole sprint — Zixuan can't build Section 10 against a website she can't deploy to.
+
+**Companies — decided 24 Sep (v1.5).** From Zixuan's 9.4 question. Recorded so nobody re-asks.
+- Create and edit company, and attaching people, are MVP. They were already in §7 (contract C2) and §9.2; 9.4 now shows the controls.
+- Ending a membership: MVP, via PATCH …/members/:membershipId with `endDate`. Changing a person's company on 9.2 uses `replaceCurrent` — old membership ended, new one created, one transaction.
+- Duplicate companies: no hard-match rule in MVP. "Similar companies" warning on Add company only.
+- Company merge: January.
+- Company delete (soft or hard): January. `company.deleted_at` stays unused until then.
+- Public forms never create companies (§8.2 step 3a).
 
 **Auth — decided now, so nothing waits.** Build email + password with MFA behind an auth abstraction in `/lib/auth`. If LEAD turns out to be on Google Workspace, adding Google SSO later is a provider swap and a settings change, not a rewrite. Zixuan should not hold Sprint 1 for this answer — code against the abstraction, not against a specific provider.
 
