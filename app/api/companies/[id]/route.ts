@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { canWriteCompany, permissionFor } from "@/lib/auth/permissions";
-import { apiError, validationError } from "@/lib/api/errors";
+import { apiError, forbidden, validationError } from "@/lib/api/errors";
 import { getCompanyDetail, updateCompany } from "@/lib/companies/service";
 import { companyUpdateSchema } from "@/lib/validation/company";
 
@@ -10,19 +10,25 @@ const notFound = () =>
 
 // GET /api/companies/:id — spec §7.1 / §9.4 detail.
 export async function GET(
-  _req: NextRequest,
+  request: NextRequest,
   ctx: RouteContext<"/api/companies/[id]">,
 ) {
   const viewer = await getCurrentUser();
   if (!viewer) return apiError(401, "unauthenticated", "Sign in to continue.");
   if (!permissionFor(viewer, "person", "read").allowed)
-    return apiError(403, "forbidden", "You don't have access to companies.");
+    return forbidden(viewer, request, {
+      what: "companies",
+      resource: "company",
+    });
 
   const { id } = await ctx.params;
   const result = await getCompanyDetail(id, viewer);
   if (result.kind === "not_found") return notFound();
   if (result.kind === "forbidden")
-    return apiError(403, "forbidden", "You don't have access to this company.");
+    return forbidden(viewer, request, {
+      what: "this company",
+      resource: "company",
+    });
   return Response.json(result.detail);
 }
 
@@ -34,11 +40,10 @@ export async function PATCH(
   const viewer = await getCurrentUser();
   if (!viewer) return apiError(401, "unauthenticated", "Sign in to continue.");
   if (!canWriteCompany(viewer))
-    return apiError(
-      403,
-      "forbidden",
-      "You don't have access to edit companies.",
-    );
+    return forbidden(viewer, request, {
+      what: "edit companies",
+      resource: "company",
+    });
 
   const parsed = companyUpdateSchema.safeParse(
     await request.json().catch(() => null),
@@ -60,10 +65,9 @@ export async function PATCH(
         { fields: result.fields },
       );
     case "forbidden":
-      return apiError(
-        403,
-        "forbidden",
-        "You don't have access to edit companies.",
-      );
+      return forbidden(viewer, request, {
+        what: "edit companies",
+        resource: "company",
+      });
   }
 }

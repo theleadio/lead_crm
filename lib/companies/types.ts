@@ -10,17 +10,14 @@ export type CompanyListItem = {
   openDeals: number;
 };
 
-export type SimilarCompany = {
-  id: string;
-  legalName: string;
-  registrationNo: string | null;
-  matchedOn: "name" | "registrationNo";
-};
-
 export type CompanyListQuery = {
   q?: string;
   hrdcRegistered?: boolean;
   hasOpenDeal?: boolean;
+  similarTo?: string;
+  registrationNo?: string;
+  excludeId?: string;
+  sort?: "name" | "-name";
   page: number;
   limit: number;
 };

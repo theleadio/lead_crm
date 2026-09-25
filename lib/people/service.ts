@@ -50,6 +50,23 @@ export function visibleSql(sql: postgres.Sql, viewer: Viewer): Fragment {
   )`;
 }
 
+// Spec §7 sort=, mapped to fixed fragments. Ties break on id so paging is
+// stable; no sort keeps today's newest-first order.
+function orderSql(sql: postgres.Sql, sort: PeopleFilters["sort"]) {
+  const desc = sort?.startsWith("-");
+  const dir = desc ? sql`DESC` : sql`ASC`;
+  switch (sort?.replace("-", "")) {
+    case "name":
+      return sql`lower(p.full_name) ${dir}, p.id`;
+    case "created":
+      return sql`p.created_at ${dir}, p.id`;
+    case "lastActivity":
+      return sql`p.last_activity_at ${dir} NULLS LAST, p.id`;
+    default:
+      return sql`p.created_at DESC, p.id`;
+  }
+}
+
 function whereSql(sql: postgres.Sql, viewer: Viewer, f: PeopleFilters) {
   const parts: Fragment[] = [visibleSql(sql, viewer)];
 
@@ -171,7 +188,7 @@ export async function listPeople(
   const rows = await sql<ListRow[]>`
     ${selectList(sql)}
     WHERE ${whereSql(sql, viewer, query)}
-    ORDER BY p.created_at DESC, p.id
+    ORDER BY ${orderSql(sql, query.sort)}
     LIMIT ${query.limit} OFFSET ${(query.page - 1) * query.limit}`;
   return {
     data: rows.map((r) => toListItem(r, viewer)),
@@ -188,7 +205,7 @@ export async function exportPeople(
   const rows = await sql<ListRow[]>`
     ${selectList(sql)}
     WHERE ${whereSql(sql, viewer, filters)}
-    ORDER BY p.created_at DESC, p.id`;
+    ORDER BY ${orderSql(sql, filters.sort)}`;
   await writeAudit({
     userId: viewer.id,
     action: "export",

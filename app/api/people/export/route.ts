@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { canExportPeople } from "@/lib/auth/permissions";
-import { apiError } from "@/lib/api/errors";
+import { apiError, forbidden } from "@/lib/api/errors";
 import { toCsv } from "@/lib/format/csv";
 import { formatDate } from "@/lib/format/date";
 import { exportPeople } from "@/lib/people/service";
@@ -18,11 +18,10 @@ export async function GET(request: NextRequest) {
   const viewer = await getCurrentUser();
   if (!viewer) return apiError(401, "unauthenticated", "Sign in to continue.");
   if (!canExportPeople(viewer.role))
-    return apiError(
-      403,
-      "forbidden",
-      "You don't have access to export people.",
-    );
+    return forbidden(viewer, request, {
+      what: "export people",
+      resource: "person",
+    });
 
   const parsed = peopleFiltersSchema.safeParse(
     readPeopleParams(request.nextUrl.searchParams),

@@ -8,10 +8,10 @@ import {
   createCompany,
   getCompanyDetail,
   listCompanies,
-  similarCompanies,
   updateCompany,
   updateMembership,
 } from "../lib/companies/service.ts";
+import { companyListQuerySchema } from "../lib/validation/company.ts";
 import { closeDb, db, rollbackAfter } from "../lib/sql.ts";
 import { SEED_USERS } from "../scripts/seed-ids.ts";
 
@@ -207,18 +207,19 @@ it("similar companies: same normalised name or registration no., never itself (�
   );
   assert.ok(made.kind === "ok");
   const names = async (q: object) =>
-    (await similarCompanies(q, admin)).map((s) => s.id);
+    (await listCompanies({ ...page, ...q }, admin)).data.map((c) => c.id);
 
-  assert.ok((await names({ name: "ACME SDN BHD" })).includes(made.id));
-  assert.ok((await names({ name: "acme berhad" })).includes(made.id));
+  assert.ok((await names({ similarTo: "ACME SDN BHD" })).includes(made.id));
+  assert.ok((await names({ similarTo: "acme berhad" })).includes(made.id));
   assert.ok((await names({ registrationNo: "201901234x" })).includes(made.id));
   assert.ok(
-    !(await names({ name: "ACME SDN BHD", excludeId: made.id })).includes(
+    !(await names({ similarTo: "ACME SDN BHD", excludeId: made.id })).includes(
       made.id,
     ),
   );
-  assert.deepEqual(await names({ name: "N/A" }), []);
-  assert.deepEqual(await names({}), []);
+  assert.deepEqual(await names({ similarTo: "N/A" }), []);
+  // No similarity filter: the normal list, so the new company is in it.
+  assert.ok((await names({})).includes(made.id));
 });
 
 it("members: replaceCurrent switches company; PATCH edits and ends, never deletes (§7)", async () => {
@@ -308,4 +309,35 @@ it("members: replaceCurrent switches company; PATCH edits and ends, never delete
   assert.ok(detail.kind === "ok");
   assert.ok(detail.detail.pastMembers.some((p) => p.personId === personId));
   assert.ok(!detail.detail.members.some((p) => p.personId === personId));
+});
+
+it("sort: name is A–Z ignoring case, -name reverses, total unchanged; unknown sort is rejected", async () => {
+  const [{ n }] =
+    await db()`SELECT count(*)::int AS n FROM company WHERE deleted_at IS NULL`;
+  const expected = (
+    await db()`
+    SELECT id FROM company WHERE deleted_at IS NULL
+    ORDER BY lower(legal_name), id`
+  ).map((r) => r.id);
+  const asc = await listCompanies({ ...page, sort: "name" }, admin);
+  const desc = await listCompanies({ ...page, sort: "-name" }, admin);
+  assert.deepEqual(
+    asc.data.map((c) => c.id),
+    expected.slice(0, 100),
+  );
+  assert.equal(asc.page.total, n);
+  assert.equal(desc.page.total, n);
+  assert.equal(
+    desc.data[0].legalName.toLowerCase() >=
+      desc.data.at(-1)!.legalName.toLowerCase(),
+    true,
+  );
+  assert.equal(
+    companyListQuerySchema.safeParse({ sort: "registration_no" }).success,
+    false,
+  );
+  assert.equal(
+    companyListQuerySchema.safeParse({ sort: "-name" }).success,
+    true,
+  );
 });

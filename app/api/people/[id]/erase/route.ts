@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { apiError, validationError } from "@/lib/api/errors";
+import { apiError, forbidden, validationError } from "@/lib/api/errors";
 import { erasePerson, reasonSchema } from "@/lib/people/delete-service";
 
 // POST /api/people/:id/erase — spec §7 / §12.10 PDPA anonymise.
@@ -12,7 +12,10 @@ export async function POST(
   const viewer = await getCurrentUser();
   if (!viewer) return apiError(401, "unauthenticated", "Sign in to continue.");
   if (viewer.role !== "super_admin")
-    return apiError(403, "forbidden", "Only a super admin can erase people.");
+    return forbidden(viewer, request, {
+      what: "erase people",
+      resource: "person",
+    });
 
   const parsed = reasonSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return validationError(parsed.error);
@@ -23,7 +26,10 @@ export async function POST(
     case "done":
       return new Response(null, { status: 204 });
     case "forbidden":
-      return apiError(403, "forbidden", "Only a super admin can erase people.");
+      return forbidden(viewer, request, {
+        what: "erase people",
+        resource: "person",
+      });
     case "not_found":
       return apiError(
         404,

@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { apiError } from "@/lib/api/errors";
+import { apiError, forbidden } from "@/lib/api/errors";
 import { getPersonTimeline } from "@/lib/people/detail-service";
 
 // GET /api/people/:id/timeline — spec §7.1. Newest first, 50 per page.
@@ -24,6 +24,9 @@ export async function GET(
       "This person doesn't exist or was removed.",
     );
   if (result.kind === "forbidden")
-    return apiError(403, "forbidden", "You don't have access to this person.");
+    return forbidden(viewer, request, {
+      what: "this person",
+      resource: "person",
+    });
   return Response.json(result.result);
 }

@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { flash } from "@/components/flash-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { PersonDetail } from "@/lib/people/types";
@@ -52,7 +54,7 @@ export function MergePeopleView({
   const [choice, setChoice] = useState<Record<string, Side>>({});
   const [typed, setTyped] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     Promise.all([load(sourceId), load(keepId)])
@@ -70,16 +72,14 @@ export function MergePeopleView({
     `${d.deals?.length ?? 0} deals, ${d.enrolments?.length ?? 0} enrolments, ${d.enquiries?.length ?? 0} enquiries`;
 
   const confirm = async () => {
-    setBusy(true);
-    setError(null);
     const res = await fetch(`/api/people/${sourceId}/merge`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ targetId: keepId, fields: choice }),
     });
-    if (res.ok) return router.push(`/people/${keepId}`);
-    setError((await res.json()).error?.message ?? "Merge failed.");
-    setBusy(false);
+    if (!res.ok) return (await res.json()).error?.message ?? "Merge failed.";
+    flash(`Merged ${source.person.fullName} into ${keptName}.`);
+    router.push(`/people/${keepId}`);
   };
 
   return (
@@ -137,16 +137,28 @@ export function MergePeopleView({
         </p>
       </div>
 
-      {error && (
-        <p
-          role="alert"
-          className="bg-danger-soft text-danger rounded-md p-3 text-sm"
-        >
-          {error}
-        </p>
-      )}
+      <Button variant="destructive" onClick={() => setOpen(true)}>
+        Merge permanently
+      </Button>
 
-      <div className="max-w-sm space-y-2">
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="Merge these people?"
+        body={
+          <>
+            <p>
+              <strong>{source.person.fullName}</strong> is removed and{" "}
+              <strong>{keptName}</strong> is kept. Their {counts(source)} move
+              to the kept person.
+            </p>
+            <p className="text-danger font-medium">This can’t be undone.</p>
+          </>
+        }
+        confirmLabel="Merge permanently"
+        canConfirm={typed.trim() === keptName}
+        onConfirm={confirm}
+      >
         <label className="text-sm" htmlFor="confirm-name">
           Type <strong>{keptName}</strong> to confirm
         </label>
@@ -155,14 +167,7 @@ export function MergePeopleView({
           value={typed}
           onChange={(e) => setTyped(e.target.value)}
         />
-        <Button
-          variant="destructive"
-          disabled={busy || typed.trim() !== keptName}
-          onClick={confirm}
-        >
-          Merge permanently
-        </Button>
-      </div>
+      </ConfirmDialog>
     </div>
   );
 }

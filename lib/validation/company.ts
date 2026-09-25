@@ -37,11 +37,24 @@ export const companyUpdateSchema = z.object({
 });
 export type CompanyUpdate = z.infer<typeof companyUpdateSchema>;
 
-// GET /api/companies/similar — the "Similar companies" warning (§9.4).
-export const similarSchema = z.object({
-  name: z.string().trim().max(500).optional(),
+// GET /api/companies — spec §7 list (?q=&sort=&page=&limit=&filter[...]).
+// similarTo / registrationNo / excludeId drive the Add and Edit company
+// "Similar companies" warning (§9.4).
+const bool = z
+  .enum(["true", "false"])
+  .transform((v) => v === "true")
+  .optional();
+
+export const companyListQuerySchema = z.object({
+  q: z.string().trim().max(200).optional(),
+  hrdcRegistered: bool,
+  hasOpenDeal: bool,
+  similarTo: z.string().trim().max(500).optional(),
   registrationNo: z.string().trim().max(500).optional(),
   excludeId: z.string().max(100).optional(),
+  sort: z.enum(["name", "-name"]).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(25),
 });
 
 // POST /api/companies/:id/members — spec §7. `replaceCurrent` (used by the

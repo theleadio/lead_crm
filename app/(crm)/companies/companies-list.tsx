@@ -11,6 +11,7 @@ import {
   ListHeader,
   Pagination,
   SkeletonRows,
+  SortableHead,
   TableCard,
 } from "@/components/list-kit";
 import { Toast } from "@/components/toast";
@@ -44,6 +45,7 @@ export function CompaniesList({ canWrite }: { canWrite: boolean }) {
   const [hrdc, setHrdc] = useState("");
   const [openDeal, setOpenDeal] = useState("");
   const [page, setPage] = useState(1);
+  const [sort, setSort] = useState("name");
   const [state, setState] = useState<State>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
   const [addOpen, setAddOpen] = useState(false);
@@ -65,6 +67,7 @@ export function CompaniesList({ canWrite }: { canWrite: boolean }) {
       page: String(page),
       limit: String(LIMIT),
     });
+    params.set("sort", sort);
     if (search) params.set("q", search);
     if (hrdc) params.set("filter[hrdcRegistered]", hrdc);
     if (openDeal) params.set("filter[hasOpenDeal]", openDeal);
@@ -86,7 +89,7 @@ export function CompaniesList({ canWrite }: { canWrite: boolean }) {
           });
       });
     return () => controller.abort();
-  }, [search, hrdc, openDeal, page, reloadKey]);
+  }, [search, hrdc, openDeal, sort, page, reloadKey]);
 
   const hasFilters = Boolean(search || hrdc || openDeal);
   const clearFilters = () => {
@@ -157,7 +160,15 @@ export function CompaniesList({ canWrite }: { canWrite: boolean }) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Company</TableHead>
+                <SortableHead
+                  label="Company"
+                  column="name"
+                  sort={sort}
+                  onSort={(s) => {
+                    setSort(s);
+                    setPage(1);
+                  }}
+                />
                 <TableHead>Industry</TableHead>
                 <TableHead>Size</TableHead>
                 <TableHead>HRDC registered</TableHead>

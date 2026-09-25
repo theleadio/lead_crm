@@ -9,6 +9,7 @@ import {
   FilterSelect,
   ListError,
   ListHeader,
+  SortableHead,
   Pagination,
   SkeletonRows,
   TableCard,
@@ -25,12 +26,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatLastActivity } from "@/lib/format/date";
+import { formatDate, formatLastActivity } from "@/lib/format/date";
 import type {
   LifecycleStage,
   ListResponse,
   OwnerOption,
   TagOption,
+  PeopleSort,
   PersonListItem,
 } from "@/lib/people/types";
 import { AddPersonDialog } from "./add-person-dialog";
@@ -91,18 +93,21 @@ function filterParams(q: string, f: Filters): URLSearchParams {
 }
 
 export function PeopleList({
+  initialQ,
   canWrite,
   canExport,
   canAdd,
 }: {
+  initialQ: string;
   canWrite: boolean;
   canExport: boolean;
   canAdd: boolean;
 }) {
-  const [search, setSearch] = useState("");
-  const [q, setQ] = useState("");
+  const [search, setSearch] = useState(initialQ);
+  const [q, setQ] = useState(initialQ);
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [page, setPage] = useState(1);
+  const [sort, setSort] = useState<PeopleSort | undefined>(undefined);
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
   const [owners, setOwners] = useState<OwnerOption[]>([]);
@@ -121,6 +126,16 @@ export function PeopleList({
     }, 300);
     return () => clearTimeout(t);
   }, [search]);
+
+  // Keep ?q= in the URL so reload and sharing work. replaceState, not
+  // router.replace: the page is keyed by its q, and a server round trip per
+  // keystroke would remount the list and drop focus.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (q) url.searchParams.set("q", q);
+    else url.searchParams.delete("q");
+    window.history.replaceState(null, "", url);
+  }, [q]);
 
   // Spec §11.2: lists refetch on window focus — records change underneath.
   useEffect(() => {
@@ -142,6 +157,7 @@ export function PeopleList({
   useEffect(() => {
     const controller = new AbortController();
     const params = filterParams(q, filters);
+    if (sort) params.set("sort", sort);
     params.set("page", String(page));
     params.set("limit", String(LIMIT));
 
@@ -163,7 +179,13 @@ export function PeopleList({
         });
       });
     return () => controller.abort();
-  }, [q, filters, page, reloadKey]);
+  }, [q, filters, sort, page, reloadKey]);
+
+  function changeSort(next: string) {
+    setSort(next as PeopleSort);
+    setPage(1);
+    setSelected(new Set());
+  }
 
   function updateFilter<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((f) => ({ ...f, [key]: value }));
@@ -202,7 +224,7 @@ export function PeopleList({
     });
   }
 
-  const columnCount = canWrite ? 9 : 8;
+  const columnCount = canWrite ? 10 : 9;
 
   return (
     <div className="space-y-4">
@@ -339,13 +361,29 @@ export function PeopleList({
                     />
                   </TableHead>
                 )}
-                <TableHead>Name</TableHead>
+                <SortableHead
+                  label="Name"
+                  column="name"
+                  sort={sort}
+                  onSort={changeSort}
+                />
                 <TableHead>Phone</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>Language</TableHead>
                 <TableHead>Stage</TableHead>
                 <TableHead>Owner</TableHead>
-                <TableHead>Last activity</TableHead>
+                <SortableHead
+                  label="Last activity"
+                  column="lastActivity"
+                  sort={sort}
+                  onSort={changeSort}
+                />
+                <SortableHead
+                  label="Created"
+                  column="created"
+                  sort={sort}
+                  onSort={changeSort}
+                />
                 <TableHead>Tags</TableHead>
               </TableRow>
             </TableHeader>
@@ -642,6 +680,7 @@ function PersonRow({
       </TableCell>
       <TableCell>{person.owner?.fullName ?? "—"}</TableCell>
       <TableCell>{formatLastActivity(person.lastActivityAt)}</TableCell>
+      <TableCell>{formatDate(person.createdAt)}</TableCell>
       <TableCell>
         <span className="flex flex-wrap gap-1">
           {shownTags.map((tag) => (

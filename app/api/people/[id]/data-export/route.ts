@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { apiError } from "@/lib/api/errors";
+import { apiError, forbidden } from "@/lib/api/errors";
 import { toCsv } from "@/lib/format/csv";
 import {
   exportPersonData,
@@ -29,11 +29,10 @@ export async function GET(
       "This person doesn't exist or was removed.",
     );
   if (result.kind === "forbidden")
-    return apiError(
-      403,
-      "forbidden",
-      "You don't have access to export personal data.",
-    );
+    return forbidden(viewer, request, {
+      what: "export personal data",
+      resource: "person",
+    });
 
   const filename = `person-${id}-data.${format}`;
   const body =

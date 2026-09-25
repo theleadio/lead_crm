@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { permissionFor } from "@/lib/auth/permissions";
-import { apiError, validationError } from "@/lib/api/errors";
+import { apiError, forbidden, validationError } from "@/lib/api/errors";
 import { bulkUpdatePeople, InvalidBulkChange } from "@/lib/people/service";
 import { bulkPeopleSchema } from "@/lib/validation/people-query";
 
@@ -10,7 +10,10 @@ export async function POST(request: NextRequest) {
   const viewer = await getCurrentUser();
   if (!viewer) return apiError(401, "unauthenticated", "Sign in to continue.");
   if (!permissionFor(viewer, "person", "write").allowed)
-    return apiError(403, "forbidden", "You don't have access to edit people.");
+    return forbidden(viewer, request, {
+      what: "edit people",
+      resource: "person",
+    });
 
   const body = await request.json().catch(() => null);
   const parsed = bulkPeopleSchema.safeParse(body);

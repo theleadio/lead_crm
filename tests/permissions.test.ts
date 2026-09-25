@@ -9,6 +9,7 @@ import {
   PermissionError,
   requirePermission,
 } from "../lib/auth/permissions.ts";
+import { navFor } from "../lib/auth/nav.ts";
 import { maskEmail, maskPhone } from "../lib/format/mask.ts";
 import { findDuplicate } from "../lib/people/dedupe.ts";
 import { bulkPeopleSchema } from "../lib/validation/people-query.ts";
@@ -265,4 +266,23 @@ test("dedupe: a null company never matches; same name alone is not a match", () 
     findDuplicate({ ...same, companyNorm: "other" }, existing).kind,
     "none",
   );
+});
+
+const nav = (role: Parameters<typeof as>[0]) =>
+  navFor(as(role)).map((i) => i.label);
+
+test("nav: sidebar shows only areas the role can read (§9 Shell)", () => {
+  assert.deepEqual(nav("marketing"), [
+    "Dashboard",
+    "People",
+    "Companies",
+    "Deals",
+    "Classes",
+    "Tasks",
+  ]);
+  const partTime = nav("part_time");
+  for (const hidden of ["Deals", "Enrolments", "Settings"])
+    assert.ok(!partTime.includes(hidden), hidden);
+  assert.equal(nav("super_admin").length, 9);
+  assert.ok(!nav("management").includes("Settings"));
 });

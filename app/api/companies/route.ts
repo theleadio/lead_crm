@@ -1,36 +1,32 @@
 import type { NextRequest } from "next/server";
-import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { canWriteCompany, permissionFor } from "@/lib/auth/permissions";
-import { apiError, validationError } from "@/lib/api/errors";
+import { apiError, forbidden, validationError } from "@/lib/api/errors";
 import { createCompany, listCompanies } from "@/lib/companies/service";
-import { companyCreateSchema } from "@/lib/validation/company";
-
-const bool = z
-  .enum(["true", "false"])
-  .transform((v) => v === "true")
-  .optional();
-
-const querySchema = z.object({
-  q: z.string().trim().max(200).optional(),
-  hrdcRegistered: bool,
-  hasOpenDeal: bool,
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(25),
-});
+import {
+  companyCreateSchema,
+  companyListQuerySchema,
+} from "@/lib/validation/company";
 
 // GET /api/companies — spec §7 / §9.4 list (?q=&page=&limit=&filter[...]).
 export async function GET(request: NextRequest) {
   const viewer = await getCurrentUser();
   if (!viewer) return apiError(401, "unauthenticated", "Sign in to continue.");
   if (!permissionFor(viewer, "person", "read").allowed)
-    return apiError(403, "forbidden", "You don't have access to companies.");
+    return forbidden(viewer, request, {
+      what: "companies",
+      resource: "company",
+    });
 
   const sp = request.nextUrl.searchParams;
-  const parsed = querySchema.safeParse({
+  const parsed = companyListQuerySchema.safeParse({
     q: sp.get("q") ?? undefined,
     hrdcRegistered: sp.get("filter[hrdcRegistered]") ?? undefined,
     hasOpenDeal: sp.get("filter[hasOpenDeal]") ?? undefined,
+    similarTo: sp.get("filter[similarTo]") ?? undefined,
+    registrationNo: sp.get("filter[registrationNo]") ?? undefined,
+    excludeId: sp.get("filter[excludeId]") ?? undefined,
+    sort: sp.get("sort") ?? undefined,
     page: sp.get("page") ?? undefined,
     limit: sp.get("limit") ?? undefined,
   });
@@ -41,16 +37,15 @@ export async function GET(request: NextRequest) {
 }
 
 // POST /api/companies — spec §7 create. Duplicates only warn (see
-// /api/companies/similar); there is no hard-match rule in MVP (§15.3).
+// filter[similarTo] on the list); there is no hard-match rule in MVP (§15.3).
 export async function POST(request: NextRequest) {
   const viewer = await getCurrentUser();
   if (!viewer) return apiError(401, "unauthenticated", "Sign in to continue.");
   if (!canWriteCompany(viewer))
-    return apiError(
-      403,
-      "forbidden",
-      "You don't have access to add companies.",
-    );
+    return forbidden(viewer, request, {
+      what: "add companies",
+      resource: "company",
+    });
 
   const parsed = companyCreateSchema.safeParse(
     await request.json().catch(() => null),
@@ -63,10 +58,9 @@ export async function POST(request: NextRequest) {
       fields: result.fields,
     });
   if (result.kind !== "ok")
-    return apiError(
-      403,
-      "forbidden",
-      "You don't have access to add companies.",
-    );
+    return forbidden(viewer, request, {
+      what: "add companies",
+      resource: "company",
+    });
   return Response.json({ id: result.id }, { status: 201 });
 }

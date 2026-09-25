@@ -22,6 +22,9 @@ export type PersonListItem = {
   createdAt: string;
 };
 
+export type PeopleSort =
+  "name" | "-name" | "created" | "-created" | "lastActivity" | "-lastActivity";
+
 export type PeopleFilters = {
   q?: string;
   stage?: LifecycleStage;
@@ -32,6 +35,7 @@ export type PeopleFilters = {
   hasOpenDeal?: boolean;
   createdFrom?: string; // YYYY-MM-DD, Asia/Kuala_Lumpur
   createdTo?: string;
+  sort?: PeopleSort;
 };
 
 export type PeopleListQuery = PeopleFilters & { page: number; limit: number };

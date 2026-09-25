@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { TableCell, TableRow } from "@/components/ui/table";
+import { TableCell, TableHead, TableRow } from "@/components/ui/table";
 
 // Spec §9: every list screen has the same skeleton — title row, filter row,
 // table, pagination, empty state, row click opens detail. Shared here so
@@ -49,6 +49,41 @@ export function FilterSelect({
         </option>
       ))}
     </select>
+  );
+}
+
+// Spec §7 sort=: `column` sorts ascending, `-column` descending. Clicking the
+// active column reverses it; the state is also told to screen readers.
+export function SortableHead({
+  label,
+  column,
+  sort,
+  onSort,
+}: {
+  label: string;
+  column: string;
+  sort: string | undefined;
+  onSort: (sort: string) => void;
+}) {
+  const state =
+    sort === column
+      ? "ascending"
+      : sort === `-${column}`
+        ? "descending"
+        : "none";
+  return (
+    <TableHead aria-sort={state}>
+      <button
+        type="button"
+        onClick={() => onSort(state === "ascending" ? `-${column}` : column)}
+        className="focus-visible:outline-focus-ring inline-flex cursor-pointer items-center gap-1 font-medium hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
+      >
+        {label}
+        <span aria-hidden="true" className="w-3 text-xs">
+          {state === "ascending" ? "▲" : state === "descending" ? "▼" : ""}
+        </span>
+      </button>
+    </TableHead>
   );
 }
 

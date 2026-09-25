@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import type { SimilarCompany } from "@/lib/companies/types";
+import type { CompanyListItem } from "@/lib/companies/types";
 
 export type CompanyFormValues = {
   legalName: string;
@@ -83,7 +83,7 @@ function CompanyForm({
 }) {
   const [form, setForm] = useState<CompanyFormValues>(initial);
   const [owners, setOwners] = useState<Owner[]>([]);
-  const [similar, setSimilar] = useState<SimilarCompany[]>([]);
+  const [similar, setSimilar] = useState<CompanyListItem[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -102,10 +102,11 @@ function CompanyForm({
     const controller = new AbortController();
     const t = setTimeout(() => {
       const params = new URLSearchParams();
-      if (name) params.set("name", name);
-      if (reg) params.set("registrationNo", reg);
-      if (companyId) params.set("excludeId", companyId);
-      fetch(`/api/companies/similar?${params}`, { signal: controller.signal })
+      params.set("limit", "10");
+      if (name) params.set("filter[similarTo]", name);
+      if (reg) params.set("filter[registrationNo]", reg);
+      if (companyId) params.set("filter[excludeId]", companyId);
+      fetch(`/api/companies?${params}`, { signal: controller.signal })
         .then((r) => (r.ok ? r.json() : { data: [] }))
         .then((b) => setSimilar(b.data))
         .catch(() => {});
@@ -214,11 +215,6 @@ function CompanyForm({
                   >
                     {s.legalName}
                   </Link>
-                  <span>
-                    {" "}
-                    (same {s.matchedOn === "name" ? "name" : "registration no."}
-                    )
-                  </span>
                 </li>
               ))}
             </ul>

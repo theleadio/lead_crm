@@ -1,13 +1,13 @@
 import type { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { apiError, validationError } from "@/lib/api/errors";
+import { apiError, forbidden, validationError } from "@/lib/api/errors";
 import { deletePerson, reasonSchema } from "@/lib/people/delete-service";
 import { getPersonDetail, updatePerson } from "@/lib/people/detail-service";
 import { personUpdateSchema } from "@/lib/validation/person";
 
 // GET /api/people/:id — spec §7 detail with timeline.
 export async function GET(
-  _req: NextRequest,
+  request: NextRequest,
   ctx: RouteContext<"/api/people/[id]">,
 ) {
   const viewer = await getCurrentUser();
@@ -22,7 +22,10 @@ export async function GET(
       "This person doesn't exist or was removed.",
     );
   if (result.kind === "forbidden")
-    return apiError(403, "forbidden", "You don't have access to this person.");
+    return forbidden(viewer, request, {
+      what: "this person",
+      resource: "person",
+    });
   return Response.json(result.detail);
 }
 
@@ -34,7 +37,10 @@ export async function DELETE(
   const viewer = await getCurrentUser();
   if (!viewer) return apiError(401, "unauthenticated", "Sign in to continue.");
   if (viewer.role !== "super_admin")
-    return apiError(403, "forbidden", "Only a super admin can delete people.");
+    return forbidden(viewer, request, {
+      what: "delete people",
+      resource: "person",
+    });
 
   const parsed = reasonSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return validationError(parsed.error);
@@ -45,11 +51,10 @@ export async function DELETE(
     case "done":
       return new Response(null, { status: 204 });
     case "forbidden":
-      return apiError(
-        403,
-        "forbidden",
-        "Only a super admin can delete people.",
-      );
+      return forbidden(viewer, request, {
+        what: "delete people",
+        resource: "person",
+      });
     case "not_found":
       return apiError(
         404,
@@ -95,11 +100,10 @@ export async function PATCH(
         "This person doesn't exist or was removed.",
       );
     case "forbidden":
-      return apiError(
-        403,
-        "forbidden",
-        "You don't have access to edit this person.",
-      );
+      return forbidden(viewer, request, {
+        what: "edit this person",
+        resource: "person",
+      });
     case "stale":
       return apiError(
         409,

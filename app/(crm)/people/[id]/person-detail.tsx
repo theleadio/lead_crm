@@ -12,6 +12,8 @@ import {
   Row,
 } from "@/components/detail-kit";
 import { CompanyPicker } from "./company-picker";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { flash } from "@/components/flash-toast";
 import { Toast } from "@/components/toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -123,6 +125,12 @@ export function PersonDetailView({
   const { detail } = state;
   const p = detail.person;
   const displayName = p.fullName || p.phone || "Unnamed";
+  const counts: Counts = {
+    deals: detail.deals?.length ?? 0,
+    enrolments: detail.enrolments?.length ?? 0,
+    payments: detail.payments?.length ?? 0,
+    enquiries: detail.enquiries?.length ?? 0,
+  };
 
   return (
     <div className="space-y-6">
@@ -183,8 +191,8 @@ export function PersonDetailView({
                     Export data (CSV)
                   </a>
                 </Button>
-                <DeletePerson id={p.id} name={displayName} />
-                <ErasePerson id={p.id} name={displayName} />
+                <DeletePerson id={p.id} name={displayName} counts={counts} />
+                <ErasePerson id={p.id} name={displayName} counts={counts} />
               </>
             )}
           </>
@@ -718,20 +726,32 @@ function TimelinePanel({ personId }: { personId: string }) {
   );
 }
 
+type Counts = {
+  deals: number;
+  enrolments: number;
+  payments: number;
+  enquiries: number;
+};
+
+const plural = (n: number, one: string, many = `${one}s`) =>
+  `${n} ${n === 1 ? one : many}`;
+const countsText = (c: Counts) =>
+  `${plural(c.deals, "deal")}, ${plural(c.enrolments, "enrolment")}, ${plural(c.payments, "payment")} and ${plural(c.enquiries, "enquiry", "enquiries")}`;
+
 // Soft delete, super_admin only (button is UX; DELETE re-checks). Reason is
 // required and goes to the audit log.
-function DeletePerson({ id, name }: { id: string; name: string }) {
+function DeletePerson({
+  id,
+  name,
+  counts,
+}: {
+  id: string;
+  name: string;
+  counts: Counts;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  if (!open)
-    return (
-      <Button variant="destructive" onClick={() => setOpen(true)}>
-        Delete
-      </Button>
-    );
 
   async function remove() {
     const res = await fetch(`/api/people/${encodeURIComponent(id)}`, {
@@ -739,58 +759,59 @@ function DeletePerson({ id, name }: { id: string; name: string }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ reason }),
     });
-    if (res.ok) return router.push("/people");
-    setError((await res.json()).error?.message ?? "Couldn't delete.");
+    if (!res.ok) return (await res.json()).error?.message ?? "Couldn't delete.";
+    flash(`Deleted ${name}.`);
+    router.push("/people");
   }
 
   return (
-    <div className="w-full space-y-2 rounded-md border p-3 text-sm">
-      <p>
-        Delete <strong>{name}</strong>? They disappear from all lists. Use this
-        for test data or mistakes only.
-      </p>
-      <Input
-        aria-label="Reason for deleting"
-        placeholder="Reason (required)"
-        value={reason}
-        onChange={(e) => setReason(e.target.value)}
-      />
-      {error && (
-        <p role="alert" className="text-danger">
-          {error}
-        </p>
-      )}
-      <div className="flex gap-2">
-        <Button
-          variant="destructive"
-          disabled={!reason.trim()}
-          onClick={remove}
-        >
-          Confirm delete
-        </Button>
-        <Button variant="outline" onClick={() => setOpen(false)}>
-          Cancel
-        </Button>
-      </div>
-    </div>
+    <>
+      <Button variant="destructive" onClick={() => setOpen(true)}>
+        Delete
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={`Delete ${name}?`}
+        body={
+          <>
+            <p>
+              They disappear from all lists. Use this for test data or mistakes
+              only.
+            </p>
+            <p>Linked records: {countsText(counts)}.</p>
+          </>
+        }
+        confirmLabel="Delete"
+        canConfirm={Boolean(reason.trim())}
+        onConfirm={remove}
+      >
+        <Input
+          aria-label="Reason for deleting"
+          placeholder="Reason (required)"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+        />
+      </ConfirmDialog>
+    </>
   );
 }
 
 // PDPA erasure = anonymise (spec 12.10), on the person's request.
 // Irreversible, so the admin types the name first; the reason is audited.
-function ErasePerson({ id, name }: { id: string; name: string }) {
+function ErasePerson({
+  id,
+  name,
+  counts,
+}: {
+  id: string;
+  name: string;
+  counts: Counts;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [typed, setTyped] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  if (!open)
-    return (
-      <Button variant="destructive" onClick={() => setOpen(true)}>
-        Erase personal data
-      </Button>
-    );
 
   async function erase() {
     const res = await fetch(`/api/people/${encodeURIComponent(id)}/erase`, {
@@ -798,46 +819,46 @@ function ErasePerson({ id, name }: { id: string; name: string }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ reason }),
     });
-    if (res.ok) return router.push("/people");
-    setError((await res.json()).error?.message ?? "Couldn't erase.");
+    if (!res.ok) return (await res.json()).error?.message ?? "Couldn't erase.";
+    flash(`Erased personal data for ${name}.`);
+    router.push("/people");
   }
 
   return (
-    <div className="w-full space-y-2 rounded-md border p-3 text-sm">
-      <p>
-        Erase personal data for <strong>{name}</strong> (PDPA request)? Name,
-        email, phone, notes and messages are cleared. Deals, payments and
-        enrolments stay. <strong>This can&apos;t be undone.</strong>
-      </p>
-      <Input
-        aria-label="Reason for erasing"
-        placeholder="Reason (required)"
-        value={reason}
-        onChange={(e) => setReason(e.target.value)}
-      />
-      <Input
-        aria-label="Type the name to confirm"
-        placeholder={`Type "${name}" to confirm`}
-        value={typed}
-        onChange={(e) => setTyped(e.target.value)}
-      />
-      {error && (
-        <p role="alert" className="text-danger">
-          {error}
-        </p>
-      )}
-      <div className="flex gap-2">
-        <Button
-          variant="destructive"
-          disabled={!reason.trim() || typed.trim() !== name}
-          onClick={erase}
-        >
-          Confirm erase
-        </Button>
-        <Button variant="outline" onClick={() => setOpen(false)}>
-          Cancel
-        </Button>
-      </div>
-    </div>
+    <>
+      <Button variant="destructive" onClick={() => setOpen(true)}>
+        Erase personal data
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={`Erase personal data for ${name}?`}
+        body={
+          <>
+            <p>
+              PDPA request. Name, email, phone, notes and messages are cleared.{" "}
+              <strong>This can&apos;t be undone.</strong>
+            </p>
+            <p>Kept: {countsText(counts)}.</p>
+          </>
+        }
+        confirmLabel="Erase"
+        canConfirm={Boolean(reason.trim()) && typed.trim() === name}
+        onConfirm={erase}
+      >
+        <Input
+          aria-label="Reason for erasing"
+          placeholder="Reason (required)"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+        />
+        <Input
+          aria-label="Type the name to confirm"
+          placeholder={`Type "${name}" to confirm`}
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+        />
+      </ConfirmDialog>
+    </>
   );
 }

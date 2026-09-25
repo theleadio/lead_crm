@@ -23,6 +23,7 @@ import {
   listPeople,
 } from "../lib/people/service.ts";
 import { deletePerson, erasePerson } from "../lib/people/delete-service.ts";
+import { peopleListQuerySchema } from "../lib/validation/people-query.ts";
 import { findDuplicate } from "../lib/people/dedupe.ts";
 import { mergePeople } from "../lib/people/merge-service.ts";
 import { closeDb, db, rollbackAfter } from "../lib/sql.ts";
@@ -49,6 +50,12 @@ const lastAudit = async () =>
   (
     await db()`SELECT action, entity, after FROM audit_log ORDER BY at DESC, created_at DESC LIMIT 1`
   )[0];
+// Visible people, as listPeople counts them. The dev DB gets merged and
+// deleted by hand, so tests count instead of hard-coding a seed total.
+const visibleCount = async () =>
+  (
+    await db()`SELECT count(*)::int AS n FROM person WHERE deleted_at IS NULL AND merged_into_id IS NULL`
+  )[0].n as number;
 const all = (viewer: Viewer, f: object = {}) =>
   listPeople({ page: 1, limit: 100, ...f }, viewer);
 
@@ -58,9 +65,10 @@ const all = (viewer: Viewer, f: object = {}) =>
 it("list: paginates with a total (spec §7)", async () => {
   const first = await listPeople({ page: 1, limit: 25 }, admin);
   assert.equal(first.data.length, 25);
-  assert.equal(first.page.total, 61);
+  const total = await visibleCount();
+  assert.equal(first.page.total, total);
   const last = await listPeople({ page: 3, limit: 25 }, admin);
-  assert.equal(last.data.length, 11);
+  assert.equal(last.data.length, total - 50);
 });
 
 it("search: every phone shape finds the same person (spec §9.1)", async () => {
@@ -118,7 +126,7 @@ it("marketing: masked contact details, never the real values (§6 ¹)", async ()
 
 it("part_time: only people they own or have an enquiry/task for (§6 v1.2)", async () => {
   const { data } = await all(partTimer);
-  assert.ok(data.length > 0 && data.length < 61);
+  assert.ok(data.length > 0 && data.length < (await visibleCount()));
   const ids = data.map((p) => p.id);
   const [{ n }] = await db()`
     SELECT count(*)::int AS n FROM person p
@@ -224,7 +232,7 @@ it("bulk: part_time can't touch people not assigned to them", async () => {
 
 it("export: every matching row, audit-logged", async () => {
   const rows = await exportPeople({}, admin);
-  assert.equal(rows.length, 61);
+  assert.equal(rows.length, await visibleCount());
   assert.equal((await lastAudit()).action, "export");
 });
 
@@ -397,7 +405,11 @@ it("timeline: newest first, paginated; payments hidden from marketing", async ()
 });
 
 it("consent: marketing reads both purposes; part_time is forbidden", async () => {
-  const id = await idOf("Ali bin Hassan");
+  const [{ id }] = await db()`
+    SELECT p.id FROM person p
+    WHERE p.deleted_at IS NULL AND p.merged_into_id IS NULL
+      AND (SELECT count(*) FROM consent_current c WHERE c.person_id = p.id) = 2
+    LIMIT 1`;
   const r = await getPersonConsent(id, marketing);
   assert.equal(r.kind === "ok" && r.consent.length, 2);
   assert.equal((await getPersonConsent(id, partTimer)).kind, "forbidden");
@@ -569,5 +581,40 @@ it("soft match (a): typed company vs current company or company_name_given, via 
       norms,
     ).kind,
     "none",
+  );
+});
+
+it("sort: name A–Z ignoring case; -lastActivity puts nulls last; totals unchanged; unknown sort rejected", async () => {
+  const expected = (
+    await db()`
+    SELECT id FROM person WHERE deleted_at IS NULL AND merged_into_id IS NULL
+    ORDER BY lower(full_name), id LIMIT 100`
+  ).map((r) => r.id);
+  const byName = await all(admin, { sort: "name" });
+  assert.deepEqual(
+    byName.data.map((p) => p.id),
+    expected,
+  );
+  assert.equal(byName.page.total, await visibleCount());
+
+  const byActivity = await all(admin, { sort: "-lastActivity" });
+  assert.equal(byActivity.page.total, byName.page.total);
+  const times = byActivity.data.map((p) => p.lastActivityAt);
+  const firstNull = times.indexOf(null);
+  if (firstNull >= 0)
+    assert.ok(
+      times.slice(firstNull).every((t) => t === null),
+      "nulls last",
+    );
+  const known = times.filter((t): t is string => t !== null);
+  assert.deepEqual([...known].sort().reverse(), known);
+
+  const newest = await all(admin, { sort: "-created" });
+  const oldest = await all(admin, { sort: "created" });
+  assert.ok(newest.data[0].createdAt >= oldest.data[0].createdAt);
+
+  assert.equal(
+    peopleListQuerySchema.safeParse({ sort: "email_norm" }).success,
+    false,
   );
 });

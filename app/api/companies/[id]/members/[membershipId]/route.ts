@@ -1,12 +1,12 @@
 import type { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { canWriteCompany } from "@/lib/auth/permissions";
-import { apiError, validationError } from "@/lib/api/errors";
+import { canWriteCompany, type Viewer } from "@/lib/auth/permissions";
+import { apiError, forbidden, validationError } from "@/lib/api/errors";
 import { updateMembership } from "@/lib/companies/service";
 import { membershipUpdateSchema } from "@/lib/validation/company";
 
-const noAccess = () =>
-  apiError(403, "forbidden", "You don't have access to edit companies.");
+const noAccess = (viewer: Viewer, request: Request) =>
+  forbidden(viewer, request, { what: "edit companies", resource: "company" });
 
 // PATCH /api/companies/:id/members/:membershipId — spec §7.1 (v1.5). Edit
 // job title and HR/billing flags, or end the membership with `endDate`.
@@ -17,7 +17,7 @@ export async function PATCH(
 ) {
   const viewer = await getCurrentUser();
   if (!viewer) return apiError(401, "unauthenticated", "Sign in to continue.");
-  if (!canWriteCompany(viewer)) return noAccess();
+  if (!canWriteCompany(viewer)) return noAccess(viewer, request);
 
   const parsed = membershipUpdateSchema.safeParse(
     await request.json().catch(() => null),
@@ -30,7 +30,7 @@ export async function PATCH(
     case "ok":
       return new Response(null, { status: 204 });
     case "forbidden":
-      return noAccess();
+      return noAccess(viewer, request);
     case "not_found":
       return apiError(
         404,

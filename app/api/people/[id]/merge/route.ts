@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { apiError, validationError } from "@/lib/api/errors";
+import { apiError, forbidden, validationError } from "@/lib/api/errors";
 import { mergePeople, mergeSchema } from "@/lib/people/merge-service";
 
 // POST /api/people/:id/merge — spec §7. super_admin only, irreversible.
@@ -11,7 +11,10 @@ export async function POST(
   const viewer = await getCurrentUser();
   if (!viewer) return apiError(401, "unauthenticated", "Sign in to continue.");
   if (viewer.role !== "super_admin")
-    return apiError(403, "forbidden", "Only a super admin can merge people.");
+    return forbidden(viewer, request, {
+      what: "merge people",
+      resource: "person",
+    });
 
   const parsed = mergeSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return validationError(parsed.error);
@@ -22,7 +25,10 @@ export async function POST(
     case "merged":
       return Response.json({ targetId: result.targetId, moved: result.moved });
     case "forbidden":
-      return apiError(403, "forbidden", "Only a super admin can merge people.");
+      return forbidden(viewer, request, {
+        what: "merge people",
+        resource: "person",
+      });
     case "not_found":
       return apiError(404, "not_found", "One of these people doesn't exist.");
     case "invalid":

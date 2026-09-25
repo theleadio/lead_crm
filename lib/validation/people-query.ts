@@ -9,6 +9,17 @@ const isoDate = z
   .regex(/^\d{4}-\d{2}-\d{2}$/)
   .optional();
 
+// Spec §7 sort=: allow-listed, `-` prefix = descending. Never interpolated;
+// lib/people/service.ts maps each value to a fixed SQL fragment.
+export const PEOPLE_SORTS = [
+  "name",
+  "-name",
+  "created",
+  "-created",
+  "lastActivity",
+  "-lastActivity",
+] as const;
+
 // Spec §7 list conventions: ?q=&page=&limit=&filter[...]. Default limit 25, max 100.
 export const peopleFiltersSchema = z.object({
   q: z.string().trim().max(200).optional(),
@@ -20,6 +31,7 @@ export const peopleFiltersSchema = z.object({
   hasOpenDeal: bool,
   createdFrom: isoDate,
   createdTo: isoDate,
+  sort: z.enum(PEOPLE_SORTS).optional(),
 });
 
 export const peopleListQuerySchema = peopleFiltersSchema.extend({
@@ -42,6 +54,7 @@ export function readPeopleParams(sp: URLSearchParams) {
     hasOpenDeal: sp.get("filter[hasOpenDeal]") ?? undefined,
     createdFrom: sp.get("filter[createdFrom]") ?? undefined,
     createdTo: sp.get("filter[createdTo]") ?? undefined,
+    sort: sp.get("sort") ?? undefined,
   };
 }
 

@@ -17,7 +17,6 @@ import { isUuid, visibleSql } from "../people/service.ts";
 import type { ListResponse } from "../people/types.ts";
 import type {
   CompanyDetail,
-  SimilarCompany,
   CompanyListItem,
   CompanyListQuery,
 } from "./types.ts";
@@ -48,7 +47,30 @@ export async function listCompanies(
   const text = query.q?.trim();
   const openDeal = sql`EXISTS (SELECT 1 FROM deal d WHERE d.company_id = c.id
     AND d.deleted_at IS NULL AND d.stage NOT IN ('won', 'lost'))`;
+  // "Similar companies" (§9.4): the same name_norm (the database's
+  // normalise_company_name(), migration 003) or the same registration no.
+  // ignoring case, spaces and hyphens. A warning for the caller, not a block.
+  const similarTo = query.similarTo?.trim();
+  const reg = query.registrationNo?.trim();
+  const similar =
+    similarTo || reg
+      ? sql`AND (
+          ${
+            similarTo
+              ? sql`(c.name_norm IS NOT NULL AND c.name_norm = normalise_company_name(${similarTo}))`
+              : sql`false`
+          }
+          OR ${
+            reg
+              ? sql`(c.registration_no IS NOT NULL AND regexp_replace(lower(c.registration_no), '[\\s-]', '', 'g')
+                     = regexp_replace(lower(${reg}), '[\\s-]', '', 'g'))`
+              : sql`false`
+          }
+        )`
+      : sql``;
   const where = sql`${visibleCompanySql(sql, viewer)}
+    ${similar}
+    ${query.excludeId && isUuid(query.excludeId) ? sql`AND c.id <> ${query.excludeId}` : sql``}
     ${text ? sql`AND c.legal_name ILIKE ${`%${likeEscape(text)}%`}` : sql``}
     ${query.hrdcRegistered === undefined ? sql`` : sql`AND c.hrdc_registered = ${query.hrdcRegistered}`}
     ${query.hasOpenDeal === undefined ? sql`` : query.hasOpenDeal ? sql`AND ${openDeal}` : sql`AND NOT ${openDeal}`}`;
@@ -65,7 +87,7 @@ export async function listCompanies(
                AND d.stage NOT IN ('won', 'lost')) AS open_deals
     FROM company c
     WHERE ${where}
-    ORDER BY lower(c.legal_name), c.id
+    ORDER BY lower(c.legal_name) ${query.sort === "-name" ? sql`DESC` : sql`ASC`}, c.id
     LIMIT ${query.limit} OFFSET ${(query.page - 1) * query.limit}`;
   return {
     data: rows.map((r) => ({
@@ -320,50 +342,6 @@ export async function updateCompany(
     });
     return { kind: "ok", id };
   });
-}
-
-// "Similar companies" for Add company (§9.4): the same name_norm (the
-// database's normalise_company_name(), migration 003) or the same
-// registration no. ignoring case, spaces and hyphens. A warning, not a block.
-export async function similarCompanies(
-  q: { name?: string; registrationNo?: string; excludeId?: string },
-  viewer: Viewer,
-): Promise<SimilarCompany[]> {
-  const name = q.name?.trim();
-  const reg = q.registrationNo?.trim();
-  if (!name && !reg) return [];
-  const sql = db();
-  const rows = await sql`
-    SELECT c.id, c.legal_name, c.registration_no,
-           ${
-             name
-               ? sql`(c.name_norm IS NOT NULL AND c.name_norm = normalise_company_name(${name}))`
-               : sql`false`
-           } AS by_name
-    FROM company c
-    WHERE ${visibleCompanySql(sql, viewer)}
-      ${q.excludeId && isUuid(q.excludeId) ? sql`AND c.id <> ${q.excludeId}` : sql``}
-      AND (
-        ${
-          name
-            ? sql`(c.name_norm IS NOT NULL AND c.name_norm = normalise_company_name(${name}))`
-            : sql`false`
-        }
-        OR ${
-          reg
-            ? sql`(c.registration_no IS NOT NULL AND regexp_replace(lower(c.registration_no), '[\\s-]', '', 'g')
-                   = regexp_replace(lower(${reg}), '[\\s-]', '', 'g'))`
-            : sql`false`
-        }
-      )
-    ORDER BY lower(c.legal_name)
-    LIMIT 10`;
-  return rows.map((r) => ({
-    id: r.id,
-    legalName: r.legal_name,
-    registrationNo: r.registration_no,
-    matchedOn: r.by_name ? "name" : "registrationNo",
-  }));
 }
 
 export type AttachResult =
