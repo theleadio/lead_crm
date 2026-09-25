@@ -53,7 +53,9 @@ type PersonRow = {
   updated_at: string; // full microsecond precision, see selectPerson
   owner_id: string | null;
   owner_name: string | null;
+  company_id: string | null;
   company_name: string | null;
+  company_name_given: string | null;
   stage: "lead" | "student" | "customer";
 };
 
@@ -66,12 +68,14 @@ function selectPerson(sql: postgres.Sql) {
            p.needs_review, p.needs_review_reason, p.last_activity_at, p.created_at,
            to_char(p.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS updated_at,
            u.id AS owner_id, u.full_name AS owner_name,
-           (SELECT co.legal_name FROM company_membership m
-            JOIN company co ON co.id = m.company_id
-            WHERE m.person_id = p.id AND m.end_date IS NULL AND co.deleted_at IS NULL
-            ORDER BY m.created_at LIMIT 1) AS company_name,
+           cur.company_id, cur.company_name, p.company_name_given,
            ${stageSql(sql)} AS stage
-    FROM person p LEFT JOIN app_user u ON u.id = p.owner_user_id`;
+    FROM person p LEFT JOIN app_user u ON u.id = p.owner_user_id
+    LEFT JOIN LATERAL (
+      SELECT co.id AS company_id, co.legal_name AS company_name
+      FROM company_membership m JOIN company co ON co.id = m.company_id
+      WHERE m.person_id = p.id AND m.end_date IS NULL AND co.deleted_at IS NULL
+      ORDER BY m.created_at LIMIT 1) cur ON true`;
 }
 
 // Loads a person the viewer may see; tells "missing" apart from "not yours".
@@ -104,12 +108,14 @@ function toDetailPerson(p: PersonRow, viewer: Viewer): PersonDetail["person"] {
     notes: p.notes,
     stage: p.stage,
     owner: p.owner_id ? { id: p.owner_id, fullName: p.owner_name ?? "" } : null,
+    companyId: p.company_id,
     companyName: p.company_name,
+    companyNameGiven: p.company_name_given,
     needsReview: p.needs_review,
     needsReviewReason: reviewReason(p),
     lastActivityAt: p.last_activity_at?.toISOString() ?? null,
     createdAt: p.created_at.toISOString(),
-    updatedAt: p.updated_at,
+    version: p.updated_at,
   };
 }
 
@@ -449,7 +455,7 @@ export async function updatePerson(
       emailNorm:
         typeof set.email === "string" ? normalizeEmail(set.email) : null,
       phoneE164: patch.phone !== undefined ? newPhoneE164 : null,
-      companyName: null,
+      companyNorm: null,
     };
     if (candidate.emailNorm || candidate.phoneE164) {
       const dup = findDuplicate(

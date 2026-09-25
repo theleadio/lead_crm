@@ -3,6 +3,16 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import {
+  EmptyRow,
+  FilterRow,
+  FilterSelect,
+  ListError,
+  ListHeader,
+  Pagination,
+  SkeletonRows,
+  TableCard,
+} from "@/components/list-kit";
 import { Toast } from "@/components/toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -196,23 +206,18 @@ export function PeopleList({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold">People</h1>
-        <div className="flex gap-2">
-          {canExport && (
-            <Button variant="outline" asChild>
-              <a href={`/api/people/export?${filterParams(q, filters)}`}>
-                Export CSV
-              </a>
-            </Button>
-          )}
-          {canAdd && (
-            <Button onClick={() => setAddOpen(true)}>Add person</Button>
-          )}
-        </div>
-      </div>
+      <ListHeader title="People">
+        {canExport && (
+          <Button variant="outline" asChild>
+            <a href={`/api/people/export?${filterParams(q, filters)}`}>
+              Export CSV
+            </a>
+          </Button>
+        )}
+        {canAdd && <Button onClick={() => setAddOpen(true)}>Add person</Button>}
+      </ListHeader>
 
-      <div className="flex flex-wrap items-center gap-3">
+      <FilterRow>
         <Input
           type="search"
           aria-label="Search people"
@@ -295,7 +300,7 @@ export function PeopleList({
             Clear filters
           </Button>
         )}
-      </div>
+      </FilterRow>
 
       {canWrite && selected.size > 0 && (
         <BulkBar
@@ -312,24 +317,15 @@ export function PeopleList({
       )}
 
       {state.status === "error" ? (
-        <div
-          role="alert"
-          className="border-danger bg-danger-soft text-danger rounded-md border p-4 text-sm"
-        >
-          <p>{state.message}</p>
-          <Button
-            variant="outline"
-            className="mt-3"
-            onClick={() => {
-              setState({ status: "loading" });
-              reload();
-            }}
-          >
-            Retry
-          </Button>
-        </div>
+        <ListError
+          message={state.message}
+          onRetry={() => {
+            setState({ status: "loading" });
+            reload();
+          }}
+        />
       ) : (
-        <div className="border-line bg-surface-raised rounded-md border">
+        <TableCard>
           <Table>
             <TableHeader>
               <TableRow>
@@ -357,34 +353,26 @@ export function PeopleList({
               {state.status === "loading" ? (
                 <SkeletonRows columns={columnCount} />
               ) : rows.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={columnCount}
-                    className="text-ink-muted py-10 text-center"
-                  >
-                    {hasFilters ? (
-                      <>
-                        No people match these filters.{" "}
-                        <Button variant="link" onClick={clearFilters}>
-                          Clear filters
+                <EmptyRow columns={columnCount}>
+                  {hasFilters ? (
+                    <>
+                      No people match these filters.{" "}
+                      <Button variant="link" onClick={clearFilters}>
+                        Clear filters
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      No people yet. People appear here when a lead form is
+                      submitted or someone is added.{" "}
+                      {canAdd && (
+                        <Button variant="link" onClick={() => setAddOpen(true)}>
+                          Add a person
                         </Button>
-                      </>
-                    ) : (
-                      <>
-                        No people yet. People appear here when a lead form is
-                        submitted or someone is added.{" "}
-                        {canAdd && (
-                          <Button
-                            variant="link"
-                            onClick={() => setAddOpen(true)}
-                          >
-                            Add a person
-                          </Button>
-                        )}
-                      </>
-                    )}
-                  </TableCell>
-                </TableRow>
+                      )}
+                    </>
+                  )}
+                </EmptyRow>
               ) : (
                 rows.map((p) => (
                   <PersonRow
@@ -398,7 +386,7 @@ export function PeopleList({
               )}
             </TableBody>
           </Table>
-        </div>
+        </TableCard>
       )}
 
       {state.status === "ready" && state.result.page.total > 0 && (
@@ -669,85 +657,5 @@ function PersonRow({
         </span>
       </TableCell>
     </TableRow>
-  );
-}
-
-function SkeletonRows({ columns }: { columns: number }) {
-  return Array.from({ length: 8 }, (_, i) => (
-    <TableRow key={i}>
-      {Array.from({ length: columns }, (_, j) => (
-        <TableCell key={j}>
-          <div className="bg-surface-sunken h-4 w-full animate-pulse rounded-sm" />
-        </TableCell>
-      ))}
-    </TableRow>
-  ));
-}
-
-function FilterSelect({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: [string, string][];
-}) {
-  return (
-    <select
-      aria-label={label}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="border-input bg-surface-raised text-ink focus-visible:outline-focus-ring h-9 rounded-md border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
-    >
-      <option value="">{label}: all</option>
-      {options.map(([v, text]) => (
-        <option key={v} value={v}>
-          {text}
-        </option>
-      ))}
-    </select>
-  );
-}
-
-function Pagination({
-  page,
-  limit,
-  total,
-  onPage,
-}: {
-  page: number;
-  limit: number;
-  total: number;
-  onPage: (page: number) => void;
-}) {
-  const lastPage = Math.max(1, Math.ceil(total / limit));
-  const from = (page - 1) * limit + 1;
-  const to = Math.min(page * limit, total);
-
-  return (
-    <div className="text-ink-muted flex items-center justify-between text-sm">
-      <span>
-        {from}–{to} of {total}
-      </span>
-      <div className="flex gap-2">
-        <Button
-          variant="outline"
-          disabled={page <= 1}
-          onClick={() => onPage(page - 1)}
-        >
-          Previous
-        </Button>
-        <Button
-          variant="outline"
-          disabled={page >= lastPage}
-          onClick={() => onPage(page + 1)}
-        >
-          Next
-        </Button>
-      </div>
-    </div>
   );
 }

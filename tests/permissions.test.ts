@@ -99,14 +99,14 @@ const existing = [
     fullName: "Tan Wei Ming",
     emailNorm: "wm@example.com",
     phoneE164: "+60123456789",
-    companyName: "Acme Sdn Bhd",
+    companyNorms: ["acme"],
   },
   {
     id: "b",
     fullName: "Tan Wei Ming",
     emailNorm: null,
     phoneE164: null,
-    companyName: null,
+    companyNorms: [],
   },
 ];
 
@@ -116,7 +116,7 @@ test("dedupe: same email or phone is a hard match", () => {
       fullName: "Someone",
       emailNorm: "wm@example.com",
       phoneE164: null,
-      companyName: null,
+      companyNorm: null,
     },
     existing,
   );
@@ -126,7 +126,7 @@ test("dedupe: same email or phone is a hard match", () => {
       fullName: "Someone",
       emailNorm: null,
       phoneE164: "+60123456789",
-      companyName: null,
+      companyNorm: null,
     },
     existing,
   );
@@ -142,7 +142,7 @@ test("dedupe: same name + same company is a soft match", () => {
       fullName: "tan  wei ming",
       emailNorm: null,
       phoneE164: null,
-      companyName: "ACME SDN BHD",
+      companyNorm: "acme",
     },
     existing,
   );
@@ -155,7 +155,7 @@ test("dedupe: never matches on name alone", () => {
       fullName: "Tan Wei Ming",
       emailNorm: null,
       phoneE164: null,
-      companyName: null,
+      companyNorm: null,
     },
     existing,
   );
@@ -168,7 +168,7 @@ const person = (over: Partial<Parameters<typeof findDuplicate>[0]>) => ({
   fullName: "Tan Mei Ling",
   emailNorm: "tan.ml@gmail.com",
   phoneE164: "+60123456789",
-  companyName: null,
+  companyNorms: [],
   ...over,
 });
 
@@ -178,7 +178,7 @@ test("dedupe: spelling variants of a name normalise equal", () => {
       fullName: "TAN MEI-LING",
       emailNorm: "tan.ml@acme.com",
       phoneE164: null,
-      companyName: null,
+      companyNorm: null,
     },
     [person({})],
   );
@@ -188,7 +188,7 @@ test("dedupe: spelling variants of a name normalise equal", () => {
       fullName: "Tan Meiling",
       emailNorm: "tan.ml@acme.com",
       phoneE164: null,
-      companyName: null,
+      companyNorm: null,
     },
     [person({})],
   );
@@ -201,7 +201,7 @@ test("dedupe: same name + last 7 phone digits is a soft match", () => {
       fullName: "Tan Mei Ling",
       emailNorm: null,
       phoneE164: "+60193456789",
-      companyName: null,
+      companyNorm: null,
     },
     [person({})],
   );
@@ -214,7 +214,7 @@ test("dedupe: signals without a matching name never flag", () => {
       fullName: "Lim Wei Jie",
       emailNorm: "tan.ml@acme.com",
       phoneE164: "+60193456789",
-      companyName: null,
+      companyNorm: null,
     },
     [person({})],
   );
@@ -227,7 +227,7 @@ test("dedupe: an empty name never soft-matches", () => {
       fullName: "",
       emailNorm: "tan.ml@acme.com",
       phoneE164: null,
-      companyName: null,
+      companyNorm: null,
     },
     [person({ fullName: "" })],
   );
@@ -251,5 +251,18 @@ test("bulk body matches §7.1 shape", () => {
   assert.equal(
     ok({ personIds: Array(501).fill("a"), action: "add_tag", tagId: "t" }),
     false,
+  );
+});
+
+test("dedupe: a null company never matches; same name alone is not a match", () => {
+  const same = { fullName: "Tan Wei Ming", emailNorm: null, phoneE164: null };
+  // "N/A" and friends normalise to null in the database, so nothing matches.
+  assert.equal(
+    findDuplicate({ ...same, companyNorm: null }, existing).kind,
+    "none",
+  );
+  assert.equal(
+    findDuplicate({ ...same, companyNorm: "other" }, existing).kind,
+    "none",
   );
 });

@@ -4,10 +4,18 @@ export type DedupeCandidate = {
   fullName: string;
   emailNorm: string | null;
   phoneE164: string | null;
-  companyName: string | null;
+  // normalise_company_name(typed company), from the database (migration
+  // 003) — never re-implemented here. null = none typed, or a placeholder
+  // answer like "N/A".
+  companyNorm: string | null;
 };
 
-export type DedupeRecord = DedupeCandidate & { id: string };
+// An existing person: their current company's name_norm and
+// normalise_company_name(company_name_given). A null never matches.
+export type DedupeRecord = Omit<DedupeCandidate, "companyNorm"> & {
+  id: string;
+  companyNorms: string[];
+};
 
 export type SoftReason = "company" | "email" | "phone";
 
@@ -21,7 +29,6 @@ export type DedupeResult<T extends DedupeRecord> =
 export const normaliseName = (s: string) =>
   s.toLowerCase().replace(/[\s\-.'’]/g, "");
 
-const normCompany = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
 const emailLocal = (e: string) => e.slice(0, e.indexOf("@"));
 const emailDomain = (e: string) => e.slice(e.indexOf("@") + 1);
 const last7 = (e164: string) => e164.replace(/\D/g, "").slice(-7);
@@ -53,11 +60,7 @@ export function findDuplicate<T extends DedupeRecord>(
   for (const p of existing) {
     if (normaliseName(p.fullName) !== name) continue;
 
-    if (
-      candidate.companyName &&
-      p.companyName &&
-      normCompany(candidate.companyName) === normCompany(p.companyName)
-    )
+    if (candidate.companyNorm && p.companyNorms.includes(candidate.companyNorm))
       return { kind: "soft", match: p, on: "company" };
 
     if (

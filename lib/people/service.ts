@@ -214,8 +214,18 @@ type DupRow = {
   full_name: string;
   email_norm: string | null;
   phone_e164: string | null;
-  company_name: string | null;
+  company_norms: (string | null)[];
 };
+
+// normalise_company_name() from migration 003: the one rule for "same
+// company name" (§12.2 a). Call it for a typed company before findDuplicate.
+export async function normaliseCompanyName(
+  name: string | null | undefined,
+): Promise<string | null> {
+  if (!name?.trim()) return null;
+  const [r] = await db()`SELECT normalise_company_name(${name}) AS n`;
+  return r.n;
+}
 
 // Candidates for spec §12.2: hard matches on email/phone, plus people whose
 // normalised name matches. The pure findDuplicate decides what counts.
@@ -226,10 +236,13 @@ export async function dedupeCandidates(
   const sql = db();
   const rows = await sql<DupRow[]>`
     SELECT p.id, p.full_name, p.email_norm, p.phone_e164,
-           (SELECT co.legal_name FROM company_membership m
-            JOIN company co ON co.id = m.company_id
-            WHERE m.person_id = p.id AND m.end_date IS NULL AND co.deleted_at IS NULL
-            ORDER BY m.created_at LIMIT 1) AS company_name
+           ARRAY[
+             (SELECT co.name_norm FROM company_membership m
+              JOIN company co ON co.id = m.company_id
+              WHERE m.person_id = p.id AND m.end_date IS NULL AND co.deleted_at IS NULL
+              ORDER BY m.created_at LIMIT 1),
+             normalise_company_name(p.company_name_given)
+           ] AS company_norms
     FROM person p
     WHERE p.deleted_at IS NULL AND p.merged_into_id IS NULL
       ${excludeId ? sql`AND p.id <> ${excludeId}` : sql``}
@@ -253,7 +266,7 @@ export async function dedupeCandidates(
     fullName: r.full_name,
     emailNorm: r.email_norm,
     phoneE164: r.phone_e164,
-    companyName: r.company_name,
+    companyNorms: r.company_norms.filter((n): n is string => n !== null),
   }));
 }
 
@@ -279,7 +292,7 @@ export async function createPerson(
     fullName: input.fullName,
     emailNorm,
     phoneE164,
-    companyName: null,
+    companyNorm: null,
   };
 
   return withTransaction(async (): Promise<CreatePersonResult> => {

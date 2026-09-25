@@ -126,3 +126,13 @@ export function mergeAccess(role: Role): "full" | "propose" | "none" {
     return "propose";
   return "none";
 }
+
+// Spec §7 / §9.4 (v1.5): creating and editing companies, and their
+// memberships, is super_admin, sales and support. Other roles read only.
+export function canWriteCompany(viewer: Viewer): boolean {
+  return (
+    viewer.role === "super_admin" ||
+    viewer.role === "sales" ||
+    viewer.role === "support"
+  );
+}

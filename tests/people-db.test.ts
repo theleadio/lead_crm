@@ -16,11 +16,14 @@ import {
 import {
   bulkUpdatePeople,
   createPerson,
+  dedupeCandidates,
+  normaliseCompanyName,
   exportPeople,
   InvalidBulkChange,
   listPeople,
 } from "../lib/people/service.ts";
 import { deletePerson, erasePerson } from "../lib/people/delete-service.ts";
+import { findDuplicate } from "../lib/people/dedupe.ts";
 import { mergePeople } from "../lib/people/merge-service.ts";
 import { closeDb, db, rollbackAfter } from "../lib/sql.ts";
 import { SEED_USERS } from "../scripts/seed-ids.ts";
@@ -285,7 +288,7 @@ it("update: saves changed fields, audits only those, leaves last activity alone"
   const r = await updatePerson(
     id,
     { jobTitle: "HR Manager" },
-    d.detail.person.updatedAt,
+    d.detail.person.version,
     admin,
   );
   assert.equal(r.kind, "updated");
@@ -299,7 +302,7 @@ it("update: a stale updated_at is rejected (§7 concurrency)", async () => {
   const id = await idOf("Siti Nurhaliza");
   const d = await getPersonDetail(id, admin);
   if (d.kind !== "ok") throw new Error("setup");
-  const loaded = d.detail.person.updatedAt;
+  const loaded = d.detail.person.version;
   // Another save in between: force updated_at forward, as a separate request would.
   await db()`UPDATE person SET notes = 'someone else' WHERE id = ${id}`;
   await db()`UPDATE person SET updated_at = updated_at + interval '1 second' WHERE id = ${id}`;
@@ -316,7 +319,7 @@ it("update: phone that belongs to someone else is a duplicate", async () => {
   const r = await updatePerson(
     id,
     { phone: "012-000 0000" },
-    d.detail.person.updatedAt,
+    d.detail.person.version,
     admin,
   );
   assert.equal(
@@ -335,7 +338,7 @@ it("update: bad WhatsApp is a field error; bad phone flags, fixing it clears", a
   const bad = await updatePerson(
     id,
     { whatsapp: "123" },
-    (await load()).updatedAt,
+    (await load()).version,
     admin,
   );
   assert.equal(bad.kind === "invalid" && Boolean(bad.fields.whatsapp), true);
@@ -343,7 +346,7 @@ it("update: bad WhatsApp is a field error; bad phone flags, fixing it clears", a
   const flagged = await updatePerson(
     id,
     { phone: "999" },
-    (await load()).updatedAt,
+    (await load()).version,
     admin,
   );
   assert.equal(flagged.kind === "updated" && flagged.person.needsReview, true);
@@ -353,7 +356,7 @@ it("update: bad WhatsApp is a field error; bad phone flags, fixing it clears", a
   const fixed = await updatePerson(
     id,
     { phone: "019-876 5432" },
-    (await load()).updatedAt,
+    (await load()).version,
     admin,
   );
   assert.equal(fixed.kind === "updated" && fixed.person.needsReview, false);
@@ -523,4 +526,48 @@ it("needs_review_reason is set with the flag (migration 002)", async () => {
   const [row] =
     await db()`SELECT needs_review_reason FROM person WHERE id = ${r.person.id}`;
   assert.equal(row.needs_review_reason, "phone_unnormalised");
+});
+
+it("soft match (a): typed company vs current company or company_name_given, via the database rule (§12.2)", async () => {
+  const sql = db();
+  const id = await idOf("Chong Wei Ming");
+  await sql`UPDATE person SET company_name_given = 'Kilat Trading (M) Sdn. Bhd.' WHERE id = ${id}`;
+
+  const d = await getPersonDetail(id, admin);
+  assert.ok(d.kind === "ok");
+  assert.equal(d.detail.person.companyNameGiven, "Kilat Trading (M) Sdn. Bhd.");
+
+  const typed = await normaliseCompanyName("KILAT TRADING SDN BHD");
+  assert.equal(typed, "kilattrading");
+  assert.equal(await normaliseCompanyName("N/A"), null);
+
+  const norms = await dedupeCandidates(
+    { fullName: "Chong Wei Ming", emailNorm: null, phoneE164: null },
+    null,
+  );
+  const me = norms.find((p) => p.id === id);
+  assert.ok(me?.companyNorms.includes("kilattrading"));
+  const hit = findDuplicate(
+    {
+      fullName: "chong wei-ming",
+      emailNorm: null,
+      phoneE164: null,
+      companyNorm: typed,
+    },
+    norms,
+  );
+  assert.ok(hit.kind === "soft" && hit.on === "company");
+  // A null company (e.g. "N/A") never matches on its own.
+  assert.equal(
+    findDuplicate(
+      {
+        fullName: "chong wei-ming",
+        emailNorm: null,
+        phoneE164: null,
+        companyNorm: null,
+      },
+      norms,
+    ).kind,
+    "none",
+  );
 });

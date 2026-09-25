@@ -56,12 +56,16 @@ export type PersonDetail = {
     notes: string | null;
     stage: LifecycleStage;
     owner: { id: string; fullName: string } | null;
+    companyId: string | null;
     companyName: string | null;
+    // What the person typed on the latest public form (§9.2 "From form").
+    companyNameGiven: string | null;
     needsReview: boolean;
     needsReviewReason: string | null;
     lastActivityAt: string | null;
     createdAt: string;
-    updatedAt: string;
+    // updated_at::text with microseconds; send back as If-Match (§7).
+    version: string;
   };
   attribution: {
     firstTouch: Touchpoint | null;

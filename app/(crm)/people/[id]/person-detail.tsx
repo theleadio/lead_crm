@@ -3,6 +3,15 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import {
+  BackLink,
+  DetailError,
+  DetailHeader,
+  DetailSkeleton,
+  Panel,
+  Row,
+} from "@/components/detail-kit";
+import { CompanyPicker } from "./company-picker";
 import { Toast } from "@/components/toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -56,10 +65,12 @@ export function PersonDetailView({
   id,
   canWrite,
   canExportData,
+  canEditCompany,
 }: {
   id: string;
   canWrite: boolean;
   canExportData: boolean;
+  canEditCompany: boolean;
 }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
@@ -101,20 +112,12 @@ export function PersonDetailView({
 
   if (state.status === "error")
     return (
-      <div className="space-y-4">
-        <BackLink />
-        <div
-          role="alert"
-          className="border-line bg-surface-raised rounded-md border p-6 text-sm"
-        >
-          <p className="text-ink font-medium">{state.message}</p>
-          {state.code !== 404 && state.code !== 403 && (
-            <Button variant="outline" className="mt-3" onClick={reload}>
-              Retry
-            </Button>
-          )}
-        </div>
-      </div>
+      <DetailError
+        backHref="/people"
+        backLabel="People"
+        message={state.message}
+        onRetry={state.code !== 404 && state.code !== 403 ? reload : undefined}
+      />
     );
 
   const { detail } = state;
@@ -123,11 +126,11 @@ export function PersonDetailView({
 
   return (
     <div className="space-y-6">
-      <BackLink />
+      <BackLink href="/people" label="People" />
 
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold">
+      <DetailHeader
+        title={
+          <>
             {displayName}
             {p.preferredName && (
               <span className="text-ink-muted font-normal">
@@ -135,8 +138,10 @@ export function PersonDetailView({
                 ({p.preferredName})
               </span>
             )}
-          </h1>
-          <div className="text-ink-muted flex flex-wrap items-center gap-3 text-sm">
+          </>
+        }
+        meta={
+          <>
             <Badge
               variant={
                 p.stage === "customer"
@@ -152,37 +157,39 @@ export function PersonDetailView({
             <span>Owner: {p.owner?.fullName ?? "Unassigned"}</span>
             <span>{LANGUAGE[p.preferredLanguage]}</span>
             <span>Last activity: {formatLastActivity(p.lastActivityAt)}</span>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {p.email && !p.email.includes("•") && (
-            <Button variant="outline" asChild>
-              <a href={`mailto:${p.email}`}>Email</a>
-            </Button>
-          )}
-          {/* §14 PDPA portability, on the person's request (§7.1). */}
-          {canExportData && (
-            <>
+          </>
+        }
+        actions={
+          <>
+            {p.email && !p.email.includes("•") && (
               <Button variant="outline" asChild>
-                <a
-                  href={`/api/people/${encodeURIComponent(p.id)}/data-export?format=json`}
-                >
-                  Export data (JSON)
-                </a>
+                <a href={`mailto:${p.email}`}>Email</a>
               </Button>
-              <Button variant="outline" asChild>
-                <a
-                  href={`/api/people/${encodeURIComponent(p.id)}/data-export?format=csv`}
-                >
-                  Export data (CSV)
-                </a>
-              </Button>
-              <DeletePerson id={p.id} name={displayName} />
-              <ErasePerson id={p.id} name={displayName} />
-            </>
-          )}
-        </div>
-      </header>
+            )}
+            {/* §14 PDPA portability, on the person's request (§7.1). */}
+            {canExportData && (
+              <>
+                <Button variant="outline" asChild>
+                  <a
+                    href={`/api/people/${encodeURIComponent(p.id)}/data-export?format=json`}
+                  >
+                    Export data (JSON)
+                  </a>
+                </Button>
+                <Button variant="outline" asChild>
+                  <a
+                    href={`/api/people/${encodeURIComponent(p.id)}/data-export?format=csv`}
+                  >
+                    Export data (CSV)
+                  </a>
+                </Button>
+                <DeletePerson id={p.id} name={displayName} />
+                <ErasePerson id={p.id} name={displayName} />
+              </>
+            )}
+          </>
+        }
+      />
 
       {p.needsReview && (
         <p className="border-warning bg-warning-soft text-warning rounded-md border px-4 py-2 text-sm">
@@ -196,7 +203,9 @@ export function PersonDetailView({
           {canWrite ? (
             <EditForm
               canMerge={canExportData}
-              key={p.updatedAt}
+              canEditCompany={canEditCompany}
+              onNotice={setToast}
+              key={p.version}
               person={p}
               onSaved={(person) => {
                 setState({
@@ -290,11 +299,15 @@ export function PersonDetailView({
 
 function EditForm({
   canMerge,
+  canEditCompany,
+  onNotice,
   person,
   onSaved,
   onReload,
 }: {
   canMerge: boolean;
+  canEditCompany: boolean;
+  onNotice: (message: string) => void;
   person: Person;
   onSaved: (person: Person) => void;
   onReload: () => void;
@@ -340,7 +353,7 @@ function EditForm({
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          "If-Match": person.updatedAt,
+          "If-Match": person.version,
         },
         body: JSON.stringify(patch),
       });
@@ -474,10 +487,18 @@ function EditForm({
         />
       </Field>
       <Field id="company" label="Company">
-        <p id="company" className="text-ink-muted text-sm">
-          {person.companyName ?? "None"} — editable once Companies (9.4) is
-          built
-        </p>
+        <CompanyPicker
+          personId={person.id}
+          jobTitle={form.jobTitle}
+          current={
+            person.companyId && person.companyName
+              ? { id: person.companyId, name: person.companyName }
+              : null
+          }
+          givenName={person.companyNameGiven}
+          canWrite={canEditCompany}
+          onChanged={onNotice}
+        />
       </Field>
       <Field id="ownerId" label="Owner" error={fieldErrors.ownerId}>
         <select
@@ -572,31 +593,6 @@ function Field({
   );
 }
 
-function Panel({
-  title,
-  empty,
-  children,
-}: {
-  title: string;
-  empty?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="border-line bg-surface-raised rounded-md border p-4">
-      <h2 className="mb-2 text-sm font-semibold">{title}</h2>
-      {empty ? <p className="text-ink-muted text-sm">None yet.</p> : children}
-    </section>
-  );
-}
-
-function Row({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="border-line grid auto-cols-fr grid-flow-col gap-2 border-t py-2 text-sm first:border-t-0 [&>:last-child]:text-right">
-      {children}
-    </div>
-  );
-}
-
 function TouchLine({
   label: title,
   t,
@@ -616,28 +612,6 @@ function TouchLine({
   );
 }
 
-function BackLink() {
-  return (
-    <Link href="/people" className="text-blue-ink text-sm underline">
-      ← People
-    </Link>
-  );
-}
-
-function DetailSkeleton() {
-  return (
-    <div className="space-y-6" aria-busy="true">
-      <div className="bg-surface-sunken h-4 w-20 animate-pulse rounded-sm" />
-      <div className="bg-surface-sunken h-7 w-64 animate-pulse rounded-sm" />
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div className="bg-surface-sunken h-96 animate-pulse rounded-md" />
-        <div className="bg-surface-sunken h-96 animate-pulse rounded-md" />
-      </div>
-    </div>
-  );
-}
-
-// GET /api/consent/:personId (spec §7). Hidden for roles without consent read.
 function ConsentPanel({ personId }: { personId: string }) {
   const [consent, setConsent] = useState<ConsentState[] | null | "error">(null);
   const [hidden, setHidden] = useState(false);
