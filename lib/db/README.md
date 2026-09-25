@@ -9,10 +9,12 @@ passed 38 of 38 checks against it. The test script rolls itself back.
 
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/001_schema_v1.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/002_merge_erase.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/003_company_from_form.sql
     psql -d <db> -f lib/db/tests/schema_constraints.sql
     psql -d <db> -f lib/db/tests/002_merge_erase_tests.sql
+    psql -d <db> -f lib/db/tests/003_company_from_form_tests.sql
 
-Current result on PostgreSQL 16 with 001 + 002 applied: 38 of 38 and 42 of 42 (with and without Supabase's `anon`/`authenticated` roles present).
+Current result on PostgreSQL 16 with 001–003 applied: 38 of 38, 42 of 42 and 26 of 26 (with and without Supabase's `anon`/`authenticated` roles present).
 
 The tests live outside `migrations/` on purpose, so no migration runner ever executes them.
 
@@ -30,6 +32,17 @@ The tests live outside `migrations/` on purpose, so no migration runner ever exe
 | `soft_delete_person(person, actor, reason)` | For junk/test records only. Refused if the person has any enrolment or payment — use erase instead. The audit row stores the reason, not a copy of the record (`audit_log` is append-only, so anything written there can never be erased). |
 | Append-only exception | `touchpoint` and `consent` may have `person_id` / `is_first_touch` updated **only** while `lead.merge_in_progress` is `on`, which `merge_person()` sets and clears within its transaction. Every other column, every DELETE, and `audit_log` / `deal_stage_history` stay frozen. This guards against accidents, not against someone with direct database access who sets the flag on purpose. |
 | Function privileges | EXECUTE is revoked from PUBLIC and, on Supabase, from `anon` and `authenticated`, so the functions cannot be called through the Data API with the publishable key. Call them from the server via `DATABASE_URL`. `actor` is trusted — pass the signed-in user's id from the session, never a value from the request body. |
+
+## Migration 003 — company name from the lead form (24 Sep)
+
+| Change | What it means for the app |
+| --- | --- |
+| `normalise_company_name(text)` | The one rule for "same company name": lowercase; `(M)`, `(Malaysia)`, 有限公司, punctuation, spaces and the words sdn/bhd/berhad/plt removed. `Acme (M) Sdn. Bhd.` = `ACME SDN BHD` = `acme`. Placeholders (N/A, none, self-employed, student…) give `null`. Use it for the §12.2 soft match too — don't write a second version in TypeScript. |
+| `company.name_norm` | Generated from `legal_name`; the app never writes it. Indexed. Use it to show "similar companies" on Add company. |
+| `person.company_name_given` | What the person typed on the latest public form (max 200). Informational — memberships are the truth. |
+| `link_company_from_form(person, typed name)` returns uuid or null | Call it from POST /api/public/leads and /register, in the same transaction, after the person is found or created. Stores the text; links to a company **only** if the person has no current membership and exactly one live company has the same `name_norm`. **Never creates a company.** |
+| `erase_person()` | Re-created: now also clears `company_name_given`. |
+| Privileges | `link_company_from_form` and `erase_person` revoked from PUBLIC/`anon`/`authenticated`. `normalise_company_name` stays callable — it reads and changes nothing. |
 
 ## Where this is stricter or more specific than the spec
 
