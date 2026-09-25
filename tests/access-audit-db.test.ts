@@ -86,7 +86,7 @@ const STAFF_EMAIL = async () =>
 const failRows = async () =>
   await db()`
     SELECT user_id, entity_id, before, after FROM audit_log
-    WHERE action = 'sign_in_failed' ORDER BY at DESC LIMIT 20`;
+    WHERE action = 'sign_in_failed' ORDER BY at DESC`;
 const failNTimes = async (email: string, n: number) => {
   for (let i = 0; i < n; i++) await signIn(email, "wrong", null, stub("right"));
 };
@@ -118,6 +118,7 @@ it("sign-in: unknown email stores no email and no user", async () => {
 
 it("sign-in: 5 failures lock the 6th attempt even with the right password", async () => {
   const email = await STAFF_EMAIL();
+  const before = (await failRows()).length;
   await failNTimes(email, 5);
   const r = await signIn(email, "right", null, stub("right"));
   assert.equal(r.ok, false);
@@ -126,7 +127,7 @@ it("sign-in: 5 failures lock the 6th attempt even with the right password", asyn
     /^Too many attempts\. Try again in \d+ minutes?\.$/,
   );
   // A refused attempt is not itself a failure row, so the window can end.
-  assert.equal((await failRows()).length, 5);
+  assert.equal((await failRows()).length, before + 5);
 });
 
 it("sign-in: 4 failures don't lock", async () => {
