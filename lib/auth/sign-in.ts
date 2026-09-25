@@ -58,8 +58,7 @@ export async function signIn(
 
   // ponytail: two simultaneous attempts can both pass this check and allow a
   // 6th failure; add a per-user advisory lock if that ever matters.
-  // Dev escape hatch: SIGN_IN_LOCKOUT=off in .env.local. Never set in production.
-  if (userId && process.env.SIGN_IN_LOCKOUT !== "off") {
+  if (userId) {
     const mins = await lockedMinutes(userId);
     if (mins > 0)
       return {
