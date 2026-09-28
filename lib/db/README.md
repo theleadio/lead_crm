@@ -10,11 +10,13 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/001_schema_v1.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/002_merge_erase.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/003_company_from_form.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/004_hrdc_task_guard.sql
     psql -d <db> -f lib/db/tests/schema_constraints.sql
     psql -d <db> -f lib/db/tests/002_merge_erase_tests.sql
     psql -d <db> -f lib/db/tests/003_company_from_form_tests.sql
+    psql -d <db> -f lib/db/tests/004_hrdc_task_guard_tests.sql
 
-Current result on PostgreSQL 16 with 001–003 applied: 38 of 38, 42 of 42 and 26 of 26 (with and without Supabase's `anon`/`authenticated` roles present).
+Current result on PostgreSQL 16 with 001–004 applied: 38 of 38, 42 of 42, 26 of 26 and 8 of 8 (with and without Supabase's `anon`/`authenticated` roles present).
 
 The tests live outside `migrations/` on purpose, so no migration runner ever executes them.
 
@@ -43,6 +45,10 @@ The tests live outside `migrations/` on purpose, so no migration runner ever exe
 | `link_company_from_form(person, typed name)` returns uuid or null | Call it from POST /api/public/leads and /register, in the same transaction, after the person is found or created. Stores the text; links to a company **only** if the person has no current membership and exactly one live company has the same `name_norm`. **Never creates a company.** |
 | `erase_person()` | Re-created: now also clears `company_name_given`. |
 | Privileges | `link_company_from_form` and `erase_person` revoked from PUBLIC/`anon`/`authenticated`. `normalise_company_name` stays callable — it reads and changes nothing. |
+
+## Migration 004 — HRDC deadline task guard (28 Sep)
+
+At most one open `hrdc_deadline` task per deal (unique index on `deal_id` where `type = 'hrdc_deadline'` and `done_at IS NULL`), and an `hrdc_deadline` task must have a `deal_id`. The app still creates and updates the task (spec 12.6); a second insert while one is open fails with a unique violation — catch it and update the open task instead.
 
 ## Where this is stricter or more specific than the spec
 
