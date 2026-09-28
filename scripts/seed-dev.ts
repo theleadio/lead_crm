@@ -42,8 +42,9 @@ const NOW = Date.now();
 const daysAgo = (d: number) => new Date(NOW - d * DAY);
 
 async function reset() {
-  // TRUNCATE skips the append-only row triggers; keeps lost_reason and
-  // app_setting (seeded by the migration).
+  // TRUNCATE skips the append-only row triggers. CASCADE on app_user also
+  // empties lost_reason and app_setting (their created_by/updated_by FKs);
+  // restoreReferenceData() puts the migration's rows back.
   await sql`
     TRUNCATE audit_log, message_log, consent, task, payment, enquiry,
              deal_stage_history, enrolment, deal, class_notice, class, course,
@@ -51,7 +52,33 @@ async function reset() {
              event_outbox, integration_event, person, app_user CASCADE`;
 }
 
+// Reference rows migration 001 inserts. Copied here because TRUNCATE ...
+// app_user CASCADE wipes them; ON CONFLICT keeps any edits. Runs on every
+// seed, so an already-wiped database is repaired without --reset.
+async function restoreReferenceData() {
+  await sql`
+    INSERT INTO lost_reason (code, label_en, sort_order) VALUES
+      ('price',              'Price',                     10),
+      ('timing',             'Timing / date',             20),
+      ('language',           'Language',                  30),
+      ('competitor',         'Chose a competitor',        40),
+      ('no_hrdc_budget',     'No HRDC budget',            50),
+      ('not_decision_maker', 'Not the decision-maker',    60),
+      ('no_response',        'No response',               70),
+      ('not_a_fit',          'Not a fit',                 80)
+    ON CONFLICT (code) DO NOTHING`;
+  await sql`
+    INSERT INTO app_setting (key, value) VALUES
+      ('reservation_expiry_hours',   '48'),
+      ('first_response_sla_minutes', '60'),
+      ('idle_timeout_hours',         '8'),
+      ('hrdc_grant_lead_days',       'null'),
+      ('hrdc_claim_window_days',     'null')
+    ON CONFLICT (key) DO NOTHING`;
+}
+
 async function seed() {
+  await restoreReferenceData();
   const [{ n }] = await sql`SELECT count(*)::int AS n FROM person`;
   if (n > 0) {
     console.log(`person already has ${n} rows — use --reset to reseed.`);
@@ -194,6 +221,120 @@ async function seed() {
         INSERT INTO message_log (person_id, channel, direction, status, sent_at)
         VALUES (${p.id}, 'whatsapp', 'in', 'received', ${new Date(created.getTime() + 3 * 3600e3)})`;
     }
+
+    // Deals board (§9.5): every stage of both pipelines, some aged past the
+    // amber (7 days) and red (14 days) marks, and corporate deals that hit
+    // each §12.5/§12.6 guard.
+    const [price] = await tx`SELECT id FROM lost_reason WHERE code = 'price'`;
+    const members = await tx`
+      SELECT person_id, company_id FROM company_membership ORDER BY created_at LIMIT 8`;
+    const deal = async (
+      d: Record<string, unknown> & { stage: string; days: number },
+    ) => {
+      const { days, from, ...cols } = d;
+      const changed = daysAgo(days);
+      const row = {
+        ...cols,
+        stage_changed_at: changed,
+        won_at: d.stage === "won" ? changed : null,
+        lost_at: d.stage === "lost" ? changed : null,
+        lost_reason_id: d.stage === "lost" ? price.id : null,
+      };
+      const [r] = await tx`INSERT INTO deal ${tx(row)} RETURNING id`;
+      await tx`INSERT INTO deal_stage_history (deal_id, from_stage, to_stage, changed_at)
+               VALUES (${r.id}, ${(from as string) ?? null}, ${d.stage}, ${changed})`;
+    };
+    const m = (i: number) => members[i % members.length];
+    const corp = (i: number) => ({
+      pipeline: "corporate",
+      person_id: m(i).person_id,
+      company_id: m(i).company_id,
+      course_id: aia.id,
+      owner_user_id: i % 2 ? SEED_USERS.weiPing : null,
+    });
+    await deal({ ...corp(0), stage: "new", days: 1, company_id: null });
+    // No headcount: blocked from proposal_sent (§12.5).
+    await deal({
+      ...corp(1),
+      stage: "discovery",
+      from: "new",
+      days: 9,
+      funding_type: "company",
+      amount_myr: 16000,
+    });
+    await deal({
+      ...corp(2),
+      stage: "discovery",
+      from: "new",
+      days: 3,
+      headcount: 8,
+      funding_type: "company",
+      amount_myr: 25600,
+    });
+    await deal({
+      ...corp(3),
+      stage: "proposal_sent",
+      from: "discovery",
+      days: 16,
+      headcount: 12,
+      funding_type: "hrdc",
+      amount_myr: 38400,
+      hrdc_deadline_date: "2026-11-30",
+    });
+    // HRDC without a grant ref: blocked from won (§12.6).
+    await deal({
+      ...corp(4),
+      stage: "funding",
+      from: "proposal_sent",
+      days: 5,
+      headcount: 10,
+      funding_type: "hrdc",
+      amount_myr: 32000,
+      hrdc_approval_date: "2026-09-20",
+      hrdc_deadline_date: "2026-12-15",
+    });
+    await deal({
+      ...corp(5),
+      stage: "won",
+      from: "funding",
+      days: 20,
+      headcount: 6,
+      funding_type: "hrdc",
+      amount_myr: 19200,
+      hrdc_grant_ref: "HRD-2026-0412",
+      hrdc_approval_date: "2026-08-30",
+      hrdc_deadline_date: "2026-10-30",
+    });
+    await deal({
+      ...corp(6),
+      stage: "lost",
+      from: "discovery",
+      days: 30,
+      headcount: 4,
+      funding_type: "self",
+      amount_myr: 12800,
+    });
+    const ind = (i: number) => ({
+      pipeline: "individual",
+      person_id: m(i).person_id,
+      course_id: aim.id,
+      amount_myr: 4800,
+      owner_user_id: SEED_USERS.weiPing,
+    });
+    await deal({ ...ind(0), stage: "qualified", from: "engaged", days: 9 });
+    await deal({
+      ...ind(1),
+      stage: "checkout_sent",
+      from: "qualified",
+      days: 16,
+    });
+    await deal({
+      ...ind(2),
+      stage: "lost",
+      from: "qualified",
+      days: 4,
+      amount_myr: null,
+    });
 
     // Spec §4: a phone that couldn't be normalised is kept and flagged.
     await tx`
