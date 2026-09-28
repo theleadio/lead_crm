@@ -1,4 +1,4 @@
-// Spec §6 permission matrix, as code. One place, used by every API route.
+// Spec 6 permission matrix, as code. One place, used by every API route.
 // F = full, E = create/edit, R = read, A = assigned records only, - = none.
 
 export type Role =
@@ -80,7 +80,7 @@ export class PermissionError extends Error {
   }
 }
 
-// Spec §6: requirePermission(session, 'enrolment', 'write', { recordOwnerId })
+// Spec 6: requirePermission(session, 'enrolment', 'write', { recordOwnerId })
 export function requirePermission(
   viewer: Viewer,
   resource: Resource,
@@ -135,4 +135,10 @@ export function canWriteCompany(viewer: Viewer): boolean {
     viewer.role === "sales" ||
     viewer.role === "support"
   );
+}
+
+// Spec 6 deal row: super_admin, sales and support move and edit deals;
+// management, marketing and operations read; part_time has no access.
+export function canWriteDeal(viewer: Viewer): boolean {
+  return permissionFor(viewer, "deal", "write").allowed;
 }

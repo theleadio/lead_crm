@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   canAddPersonStandalone,
+  canWriteDeal,
   canExportPeople,
   masksContactDetails,
   mergeAccess,
@@ -71,6 +72,23 @@ test("no-access cells throw", () => {
     () => requirePermission(as("management"), "settings", "read"),
     PermissionError,
   );
+});
+
+test("deal: read and write per role (§6 deal row)", () => {
+  const expected: Record<string, [boolean, boolean]> = {
+    super_admin: [true, true],
+    management: [true, false],
+    marketing: [true, false],
+    sales: [true, true],
+    support: [true, true],
+    operations: [true, false],
+    part_time: [false, false],
+  };
+  for (const [role, [read, write]] of Object.entries(expected)) {
+    const v = as(role as Parameters<typeof as>[0]);
+    assert.equal(permissionFor(v, "deal", "read").allowed, read, role);
+    assert.equal(canWriteDeal(v), write, role);
+  }
 });
 
 test("export, masking and merge follow the matrix footnotes", () => {

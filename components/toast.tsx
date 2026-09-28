@@ -3,11 +3,12 @@
 import { useEffect } from "react";
 
 // Spec §13: toasts last 5 seconds, are dismissible, and name what happened.
+// A message may carry a link (e.g. "Open deal"), never the only copy of it.
 export function Toast({
   message,
   onDismiss,
 }: {
-  message: string | null;
+  message: React.ReactNode | null;
   onDismiss: () => void;
 }) {
   useEffect(() => {
