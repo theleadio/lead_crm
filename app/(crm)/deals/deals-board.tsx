@@ -15,13 +15,13 @@ import { addMyr } from "@/lib/deals/format";
 import {
   STAGE_LABELS,
   STAGES,
-  type CourseOption,
   type DealCard as Deal,
   type DealListResponse,
   type Pipeline,
   type Stage,
   type StageTotal,
 } from "@/lib/deals/types";
+import type { CourseListItem } from "@/lib/courses/service";
 import { formatMoneyMyr } from "@/lib/format/money";
 import type { OwnerOption } from "@/lib/people/types";
 import { DealCard } from "./deal-card";
@@ -133,7 +133,7 @@ export function DealsBoard({
   const [lostFor, setLostFor] = useState<Deal | null>(null);
   const [loadingMore, setLoadingMore] = useState<Stage | null>(null);
   const [owners, setOwners] = useState<OwnerOption[]>([]);
-  const [courses, setCourses] = useState<CourseOption[]>([]);
+  const [courses, setCourses] = useState<CourseListItem[]>([]);
   const [toast, setToast] = useState<React.ReactNode | null>(null);
   const dismissToast = useCallback(() => setToast(null), []);
   const filtersRef = useRef(filters);
@@ -153,7 +153,9 @@ export function DealsBoard({
         .then((b) => set(b.data))
         .catch(() => {});
     load("/api/users/options", setOwners);
-    load("/api/courses/options", setCourses);
+    // All courses, retired ones too, so their deals stay findable (§9.5 v1.6).
+    // ponytail: first 100 only; page or add search if the catalogue grows.
+    load("/api/courses?limit=100", setCourses);
   }, []);
 
   // One request per column (design decision 2). Every response carries the
@@ -375,7 +377,10 @@ export function DealsBoard({
           label="Course"
           value={filters.course}
           onChange={(course) => update({ course })}
-          options={courses.map((c) => [c.id, c.name])}
+          options={courses.map((c) => [
+            c.id,
+            c.isActive ? c.nameEn : `${c.nameEn} (inactive)`,
+          ])}
         />
         <FilterSelect
           label="Funding"

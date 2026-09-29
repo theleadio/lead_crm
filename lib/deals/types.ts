@@ -68,4 +68,3 @@ export type DealListResponse = {
 };
 
 export type LostReasonOption = { id: string; code: string; labelEn: string };
-export type CourseOption = { id: string; name: string };

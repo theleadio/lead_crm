@@ -3,7 +3,6 @@ import type { Viewer } from "../auth/permissions.ts";
 import { db } from "../sql.ts";
 import {
   STAGES,
-  type CourseOption,
   type DealCard,
   type DealListQuery,
   type DealListResponse,
@@ -97,11 +96,4 @@ export async function listLostReasons(): Promise<LostReasonOption[]> {
     SELECT id, code, label_en FROM lost_reason
     WHERE is_active ORDER BY sort_order, label_en`;
   return rows.map((r) => ({ id: r.id, code: r.code, labelEn: r.label_en }));
-}
-
-// GET /api/courses/options — board course filter until 9.7 lands.
-export async function listCourseOptions(): Promise<CourseOption[]> {
-  const rows = await db()`
-    SELECT id, name_en FROM course WHERE is_active ORDER BY lower(name_en)`;
-  return rows.map((r) => ({ id: r.id, name: r.name_en }));
 }

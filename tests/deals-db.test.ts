@@ -5,11 +5,7 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import type { Viewer } from "../lib/auth/permissions.ts";
 import { moveDealStage } from "../lib/deals/stage-service.ts";
-import {
-  listCourseOptions,
-  listDeals,
-  listLostReasons,
-} from "../lib/deals/service.ts";
+import { listDeals, listLostReasons } from "../lib/deals/service.ts";
 import type { DealListQuery } from "../lib/deals/types.ts";
 import { closeDb, db, rollbackAfter } from "../lib/sql.ts";
 import { SEED_USERS } from "../scripts/seed-ids.ts";
@@ -187,7 +183,7 @@ it("list: deleted deals excluded; oldest in stage first, ties by id", async () =
   assert.match(card.version, /^\d{4}-\d{2}-\d{2} /);
 });
 
-it("options: inactive lost reasons and courses are excluded", async () => {
+it("lost reasons: active only, in sort order", async () => {
   const code = (n: string) => `t_${n}_${crypto.randomUUID()}`;
   const [b, a, off] = [code("b"), code("a"), code("off")];
   await db()`
@@ -196,12 +192,6 @@ it("options: inactive lost reasons and courses are excluded", async () => {
   const codes = (await listLostReasons()).map((r) => r.code);
   assert.ok(codes.indexOf(a) >= 0 && codes.indexOf(a) < codes.indexOf(b));
   assert.ok(!codes.includes(off));
-
-  const active = await newCourse(true);
-  const inactive = await newCourse(false);
-  const courses = await listCourseOptions();
-  assert.ok(courses.some((c) => c.id === active));
-  assert.ok(!courses.some((c) => c.id === inactive));
 });
 
 // ---------------------------------------------------------------------------
@@ -433,4 +423,104 @@ it("move: HRDC deal entering funding raises one hrdc_deadline task", async () =>
     "ok",
   );
   assert.equal((await tasks(noDate)).length, 0);
+});
+
+it("move: re-entering funding moves the open task to the new deadline (migration 004)", async () => {
+  const id = await insertDeal(await newCourse(), {
+    pipeline: "corporate",
+    stage: "proposal_sent",
+    company: await anyCompany(),
+    headcount: 5,
+    funding: "hrdc",
+    owner: sales.id,
+    hrdc: { ref: null, approval: null, deadline: "2026-11-15" },
+  });
+  const move = async (toStage: string) =>
+    assert.equal((await moveDealStage(id, { toStage }, sales)).kind, "ok");
+  const tasks = () => db()`
+    SELECT (due_at AT TIME ZONE 'Asia/Kuala_Lumpur')::date::text AS due, done_at
+    FROM task WHERE deal_id = ${id} AND type = 'hrdc_deadline' ORDER BY created_at`;
+
+  await move("funding");
+  await db()`UPDATE deal SET hrdc_deadline_date = '2026-12-01' WHERE id = ${id}`;
+  await move("proposal_sent");
+  await move("funding");
+  let t = await tasks();
+  assert.equal(t.length, 1);
+  assert.equal(t[0].due, "2026-12-01");
+
+  // Once the open task is done, entering funding again raises a new one.
+  await db()`UPDATE task SET done_at = now(), done_by = ${sales.id} WHERE deal_id = ${id}`;
+  await move("proposal_sent");
+  await move("funding");
+  t = await tasks();
+  assert.equal(t.length, 2);
+  assert.equal(t.filter((x) => x.done_at === null).length, 1);
+});
+
+// §12.5 (v1.6): a won deal with live money can't leave won.
+async function wonDeal(): Promise<string> {
+  const id = await insertDeal(await newCourse());
+  assert.equal((await moveDealStage(id, { toStage: "won" }, admin)).kind, "ok");
+  return id;
+}
+
+async function pay(dealId: string, status: string, viaEnrolment = false) {
+  const sql = db();
+  let enrolmentId: string | null = null;
+  if (viaEnrolment) {
+    const [e] = await sql`
+      INSERT INTO enrolment (person_id, class_id, deal_id)
+      SELECT d.person_id, (SELECT id FROM class LIMIT 1), d.id
+      FROM deal d WHERE d.id = ${dealId}
+      RETURNING id`;
+    enrolmentId = e.id;
+  }
+  await sql`
+    INSERT INTO payment (enrolment_id, deal_id, method, status, amount_myr, refunded_amount_myr)
+    VALUES (${enrolmentId}, ${viaEnrolment ? null : dealId}, 'stripe_card', ${status},
+            100, ${status === "refunded" ? 100 : 0})`;
+}
+
+it("move: leaving won with a live payment is 409 deal_has_payment", async () => {
+  for (const [status, viaEnrolment] of [
+    ["succeeded", false],
+    ["succeeded", true],
+    ["partially_refunded", false],
+    ["pending", false],
+  ] as const) {
+    const id = await wonDeal();
+    await pay(id, status, viaEnrolment);
+    const before = await counts(id);
+    assert.deepEqual(
+      await moveDealStage(id, { toStage: "checkout_sent" }, admin),
+      { kind: "deal_has_payment" },
+      `${status} via enrolment: ${viaEnrolment}`,
+    );
+    assert.equal((await dealRow(id)).stage, "won");
+    assert.deepEqual(await counts(id), before);
+  }
+});
+
+it("move: leaving won is allowed when every payment is refunded or failed", async () => {
+  const id = await wonDeal();
+  await pay(id, "refunded");
+  await pay(id, "failed", true);
+  assert.equal(
+    (await moveDealStage(id, { toStage: "qualified" }, admin)).kind,
+    "ok",
+  );
+  const d = await dealRow(id);
+  assert.equal(d.stage, "qualified");
+  assert.equal(d.won_at, null);
+});
+
+it("move: invalid_stage still wins over deal_has_payment", async () => {
+  const id = await wonDeal();
+  await pay(id, "succeeded");
+  assert.deepEqual(await moveDealStage(id, { toStage: "discovery" }, admin), {
+    kind: "rule",
+    code: "invalid_stage",
+    missing: undefined,
+  });
 });

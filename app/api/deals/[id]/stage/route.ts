@@ -36,6 +36,12 @@ export async function POST(
       );
     case "forbidden":
       return denied();
+    case "deal_has_payment":
+      return apiError(
+        409,
+        "deal_has_payment",
+        "This deal has a payment that isn't refunded. Refund or cancel the payment first.",
+      );
     case "rule":
       return Response.json(
         {

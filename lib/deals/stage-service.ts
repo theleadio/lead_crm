@@ -6,7 +6,7 @@ import { db, withTransaction } from "../sql.ts";
 import type { DealStageBody } from "../validation/deal.ts";
 import { cardSql, toCard } from "./service.ts";
 import { checkMove, type MoveCode } from "./stage-rules.ts";
-import type { DealCard, LostReasonOption } from "./types.ts";
+import { STAGES, type DealCard, type LostReasonOption } from "./types.ts";
 
 export type MovedDeal = DealCard & { lostReason: LostReasonOption | null };
 
@@ -14,6 +14,7 @@ export type MoveResult =
   | { kind: "ok"; deal: MovedDeal }
   | { kind: "not_found" }
   | { kind: "forbidden" }
+  | { kind: "deal_has_payment" }
   | { kind: "rule"; code: MoveCode; missing?: string[] };
 
 // POST /api/deals/:id/stage — spec §12.5 (+ §12.6 won guard and
@@ -48,6 +49,17 @@ export async function moveDealStage(
     const [reason] = reasonId
       ? await sql`SELECT id, code, label_en, is_active FROM lost_reason WHERE id = ${reasonId}`
       : [];
+
+    // §12.5 (v1.6): a won deal with live money stays won, so revenue and the
+    // board agree. Checked after invalid_stage, before the other rules.
+    const leavingWon =
+      deal.stage === "won" &&
+      toStage !== "won" &&
+      (
+        STAGES[deal.pipeline as keyof typeof STAGES] as readonly string[]
+      ).includes(toStage);
+    if (leavingWon && (await hasLivePayment(dealId)))
+      return { kind: "deal_has_payment" };
 
     const check = checkMove(
       {
@@ -118,30 +130,35 @@ export async function moveDealStage(
   });
 }
 
-// Spec §12.6: entering funding on an HRDC deal raises one hrdc_deadline
-// task, due on the deadline date (start of that day in Kuala Lumpur),
-// assigned to the owner. No date, no task — 9.6 raises it when the date is
-// entered. Never a second open one for the same deal.
+// Spec §12.6 (v1.6): entering funding on an HRDC deal raises the
+// hrdc_deadline task, due on the deadline date (start of that day in Kuala
+// Lumpur), assigned to the owner. No date, no task — deal edit (9.6) raises
+// it when the date is entered. Migration 004 allows one open task per deal;
+// if one is open, its due date follows the deal instead.
 async function raiseHrdcDeadlineTask(deal: postgres.Row, viewer: Viewer) {
   if (deal.funding_type !== "hrdc" || !deal.hrdc_deadline_date) return;
   const sql = db();
-  const [open] = await sql`
-    SELECT 1 FROM task
-    WHERE deal_id = ${deal.id} AND type = 'hrdc_deadline' AND done_at IS NULL`;
-  if (open) return;
   const [task] = await sql`
+    WITH prev AS (
+      SELECT due_at FROM task
+      WHERE deal_id = ${deal.id} AND type = 'hrdc_deadline' AND done_at IS NULL
+    )
     INSERT INTO task (type, title, person_id, deal_id, assigned_user_id, due_at, created_by)
     VALUES ('hrdc_deadline', 'HRDC deadline', ${deal.person_id}, ${deal.id},
             ${deal.owner_user_id},
             (${deal.hrdc_deadline_date}::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur'),
             ${viewer.id})
-    RETURNING id`;
+    ON CONFLICT (deal_id) WHERE type = 'hrdc_deadline' AND done_at IS NULL
+    DO UPDATE SET due_at = EXCLUDED.due_at
+    RETURNING id, (xmax = 0) AS inserted, due_at,
+              (SELECT due_at FROM prev) AS prev_due`;
+  if (!task.inserted && +task.prev_due === +task.due_at) return;
   await writeAudit({
     userId: viewer.id,
-    action: "create",
+    action: task.inserted ? "create" : "update",
     entity: "task",
     entityId: task.id,
-    before: null,
+    before: task.inserted ? null : { due_at: task.prev_due },
     after: {
       type: "hrdc_deadline",
       dealId: deal.id,
@@ -149,4 +166,17 @@ async function raiseHrdcDeadlineTask(deal: postgres.Row, viewer: Viewer) {
       dueDate: deal.hrdc_deadline_date,
     },
   });
+}
+
+// A payment on the deal, directly or through its enrolments, that isn't
+// failed or fully refunded. Pending counts: it can still be paid ("refund
+// or cancel the payment first").
+async function hasLivePayment(dealId: string): Promise<boolean> {
+  const [row] = await db()`
+    SELECT 1 FROM payment pay
+    LEFT JOIN enrolment e ON e.id = pay.enrolment_id
+    WHERE (pay.deal_id = ${dealId} OR e.deal_id = ${dealId})
+      AND pay.status NOT IN ('failed', 'refunded')
+    LIMIT 1`;
+  return Boolean(row);
 }
