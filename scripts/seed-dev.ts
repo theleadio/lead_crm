@@ -241,8 +241,11 @@ async function seed() {
         lost_reason_id: d.stage === "lost" ? price.id : null,
       };
       const [r] = await tx`INSERT INTO deal ${tx(row)} RETURNING id`;
-      await tx`INSERT INTO deal_stage_history (deal_id, from_stage, to_stage, changed_at)
-               VALUES (${r.id}, ${(from as string) ?? null}, ${d.stage}, ${changed})`;
+      await tx`INSERT INTO deal_stage_history (deal_id, from_stage, to_stage, changed_at, changed_by, created_by)
+               VALUES (${r.id}, ${(from as string) ?? null}, ${d.stage}, ${changed},
+                       ${(cols.owner_user_id as string) ?? SEED_USERS.admin},
+                       ${SEED_USERS.admin})`;
+      return r.id as string;
     };
     const m = (i: number) => members[i % members.length];
     const corp = (i: number) => ({
@@ -281,9 +284,13 @@ async function seed() {
       amount_myr: 38400,
       hrdc_deadline_date: "2026-11-30",
     });
-    // HRDC without a grant ref: blocked from won (§12.6).
-    await deal({
+    // HRDC without a grant ref: blocked from won (§12.6). In Funding with a
+    // deadline, so it carries the open hrdc_deadline task 9.6 re-dates.
+    // Owned, because §12.6 assigns the reminder to the deal owner — an
+    // unassigned deal would seed a task belonging to nobody.
+    const hrdcFunding = await deal({
       ...corp(4),
+      owner_user_id: SEED_USERS.weiPing,
       stage: "funding",
       from: "proposal_sent",
       days: 5,
@@ -293,6 +300,14 @@ async function seed() {
       hrdc_approval_date: "2026-09-20",
       hrdc_deadline_date: "2026-12-15",
     });
+    // Assignee read off the deal, exactly as lib/deals/hrdc-task.ts does.
+    await tx`
+      INSERT INTO task (type, title, person_id, deal_id, assigned_user_id, due_at, created_by)
+      SELECT 'hrdc_deadline', 'HRDC deadline', d.person_id, d.id, d.owner_user_id,
+             (d.hrdc_deadline_date::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur'),
+             ${SEED_USERS.admin}
+      FROM deal d WHERE d.id = ${hrdcFunding}`;
+    // Won with no enrolment, so 9.6 shows the prompt to create one.
     await deal({
       ...corp(5),
       stage: "won",

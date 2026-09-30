@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   checkMove,
+  missingCorporateFields,
   moveErrorMessage,
   type DealForMove,
 } from "../lib/deals/stage-rules.ts";
@@ -154,4 +155,28 @@ test("messages name the missing fields and the target stage", () => {
     ]),
     "Add headcount on the deal before moving it to Proposal sent.",
   );
+});
+
+// missingCorporateFields is shared with the deal edit (9.6), which refuses
+// the same fields with the same names before the 001 CHECK can fire.
+test("missingCorporateFields: names every empty corporate field", () => {
+  assert.deepEqual(
+    missingCorporateFields({
+      pipeline: "corporate",
+      companyId: null,
+      headcount: null,
+      fundingType: null,
+    }),
+    ["companyId", "headcount", "fundingType"],
+  );
+  assert.deepEqual(missingCorporateFields({ ...corporate, headcount: null }), [
+    "headcount",
+  ]);
+  assert.deepEqual(missingCorporateFields(corporate), []);
+});
+
+test("missingCorporateFields: an individual deal never has any", () => {
+  assert.deepEqual(missingCorporateFields(individual), []);
+  // Headcount 0 would be a CHECK violation, but it is not "missing".
+  assert.deepEqual(missingCorporateFields({ ...corporate, headcount: 0 }), []);
 });

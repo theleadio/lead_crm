@@ -1,9 +1,9 @@
-import type postgres from "postgres";
 import { canWriteDeal, type Viewer } from "../auth/permissions.ts";
 import { writeAudit } from "../audit.ts";
 import { isUuid } from "../people/service.ts";
 import { db, withTransaction } from "../sql.ts";
 import type { DealStageBody } from "../validation/deal.ts";
+import { raiseHrdcDeadlineTask } from "./hrdc-task.ts";
 import { cardSql, toCard } from "./service.ts";
 import { checkMove, type MoveCode } from "./stage-rules.ts";
 import { STAGES, type DealCard, type LostReasonOption } from "./types.ts";
@@ -111,7 +111,18 @@ export async function moveDealStage(
         },
         after: { stage: toStage, lost_reason_id: lostReasonId },
       });
-      if (toStage === "funding") await raiseHrdcDeadlineTask(deal, viewer);
+      if (toStage === "funding")
+        await raiseHrdcDeadlineTask(
+          {
+            id: deal.id,
+            personId: deal.person_id,
+            ownerUserId: deal.owner_user_id,
+            stage: toStage,
+            fundingType: deal.funding_type,
+            hrdcDeadlineDate: deal.hrdc_deadline_date,
+          },
+          viewer,
+        );
     }
 
     const [row] = await sql`SELECT ${cardSql(sql)} WHERE d.id = ${dealId}`;
@@ -127,44 +138,6 @@ export async function moveDealStage(
           : null,
       },
     };
-  });
-}
-
-// Spec §12.6 (v1.6): entering funding on an HRDC deal raises the
-// hrdc_deadline task, due on the deadline date (start of that day in Kuala
-// Lumpur), assigned to the owner. No date, no task — deal edit (9.6) raises
-// it when the date is entered. Migration 004 allows one open task per deal;
-// if one is open, its due date follows the deal instead.
-async function raiseHrdcDeadlineTask(deal: postgres.Row, viewer: Viewer) {
-  if (deal.funding_type !== "hrdc" || !deal.hrdc_deadline_date) return;
-  const sql = db();
-  const [task] = await sql`
-    WITH prev AS (
-      SELECT due_at FROM task
-      WHERE deal_id = ${deal.id} AND type = 'hrdc_deadline' AND done_at IS NULL
-    )
-    INSERT INTO task (type, title, person_id, deal_id, assigned_user_id, due_at, created_by)
-    VALUES ('hrdc_deadline', 'HRDC deadline', ${deal.person_id}, ${deal.id},
-            ${deal.owner_user_id},
-            (${deal.hrdc_deadline_date}::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur'),
-            ${viewer.id})
-    ON CONFLICT (deal_id) WHERE type = 'hrdc_deadline' AND done_at IS NULL
-    DO UPDATE SET due_at = EXCLUDED.due_at
-    RETURNING id, (xmax = 0) AS inserted, due_at,
-              (SELECT due_at FROM prev) AS prev_due`;
-  if (!task.inserted && +task.prev_due === +task.due_at) return;
-  await writeAudit({
-    userId: viewer.id,
-    action: task.inserted ? "create" : "update",
-    entity: "task",
-    entityId: task.id,
-    before: task.inserted ? null : { due_at: task.prev_due },
-    after: {
-      type: "hrdc_deadline",
-      dealId: deal.id,
-      assignedUserId: deal.owner_user_id,
-      dueDate: deal.hrdc_deadline_date,
-    },
   });
 }
 

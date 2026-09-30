@@ -26,6 +26,27 @@ export type MoveCheck =
   | { ok: true; noop: boolean }
   | { ok: false; code: MoveCode; missing?: string[] };
 
+// Spec §12.5: a corporate deal past discovery needs a company, a headcount
+// and a funding type — the 001 CHECK in other words. Shared by the stage
+// move (below) and the deal edit (9.6), which must refuse the same fields
+// with the same names before the CHECK can fire.
+export function missingCorporateFields(
+  deal: Pick<
+    DealForMove,
+    "pipeline" | "companyId" | "headcount" | "fundingType"
+  >,
+): string[] {
+  if (deal.pipeline !== "corporate") return [];
+  return [
+    !deal.companyId && "companyId",
+    deal.headcount == null && "headcount",
+    !deal.fundingType && "fundingType",
+  ].filter((f): f is string => !!f);
+}
+
+// The stages a corporate deal cannot hold without those three fields.
+export const CORPORATE_GATED_STAGES = ["proposal_sent", "funding", "won"];
+
 // `reason` is the lost_reason row named by lostReasonId, or null when none
 // was sent or it doesn't exist. Ignored unless toStage is lost.
 export function checkMove(
@@ -40,15 +61,8 @@ export function checkMove(
   if (toStage === "lost" && !reason?.isActive)
     return { ok: false, code: "lost_reason_required" };
 
-  if (
-    deal.pipeline === "corporate" &&
-    ["proposal_sent", "funding", "won"].includes(toStage)
-  ) {
-    const missing = [
-      !deal.companyId && "companyId",
-      deal.headcount == null && "headcount",
-      !deal.fundingType && "fundingType",
-    ].filter((f): f is string => !!f);
+  if (CORPORATE_GATED_STAGES.includes(toStage)) {
+    const missing = missingCorporateFields(deal);
     if (missing.length)
       return { ok: false, code: "corporate_fields_missing", missing };
   }
@@ -74,6 +88,17 @@ const FIELD_LABELS: Record<string, string> = {
   hrdcApprovalDate: "HRDC approval date",
   hrdcDeadlineDate: "HRDC deadline date",
 };
+
+// The edit's wording for the same rule (9.6): the deal is already in the
+// gated stage, so it cannot be moved to it — the field has to stay.
+export function keepCorporateFieldsMessage(
+  stage: string,
+  missing: string[],
+): string {
+  const at = STAGE_LABELS[stage as Stage] ?? stage;
+  const fields = missing.map((f) => FIELD_LABELS[f] ?? f).join(", ");
+  return `A corporate deal in ${at} needs ${fields}. Move it back to Discovery first if you need to clear that.`;
+}
 
 // Spec §13: say what happened and what to do.
 export function moveErrorMessage(

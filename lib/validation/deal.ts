@@ -62,3 +62,41 @@ export const dealStageBodySchema = z.object({
   lostReasonId: z.string().max(100).nullish(),
 });
 export type DealStageBody = z.infer<typeof dealStageBodySchema>;
+
+// PATCH /api/deals/:id — spec §9.6 / §7. Strict: an unknown key is a 400,
+// `stage` above all, because stage moves through POST /api/deals/:id/stage
+// and a silently ignored `stage` would hide a missing history row.
+// `.optional()` (not `.nullish()`) keeps "not sent" (untouched) apart from
+// "sent as null" (clear).
+const nullableUuid = uuid.nullable().optional();
+
+export const dealUpdateSchema = z
+  .object({
+    companyId: nullableUuid,
+    courseId: nullableUuid,
+    ownerId: nullableUuid,
+    headcount: z
+      .number()
+      .int("Headcount is a whole number")
+      .positive("Headcount is at least 1")
+      .nullable()
+      .optional(),
+    // numeric(12,2) as a string — never a JS number (spec §4, §12.7).
+    amountMyr: z
+      .string()
+      .regex(/^\d{1,10}(\.\d{1,2})?$/, "Enter an amount like 4500 or 4500.00")
+      .nullable()
+      .optional(),
+    fundingType: z.enum(FUNDING_TYPES).nullable().optional(),
+    hrdcGrantRef: z.string().trim().max(100).nullable().optional(),
+    hrdcApprovalDate: z.iso.date().nullable().optional(),
+    hrdcDeadlineDate: z.iso.date().nullable().optional(),
+    // Only a correction on an already-lost deal; the service refuses it on
+    // any other stage, and refuses clearing it (§12.5, proposal Q4).
+    lostReasonId: nullableUuid,
+  })
+  .strict()
+  .refine((b) => Object.keys(b).length > 0, {
+    message: "Nothing to save",
+  });
+export type DealUpdateBody = z.infer<typeof dealUpdateSchema>;

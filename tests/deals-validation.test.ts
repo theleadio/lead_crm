@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   dealListQuerySchema,
   dealStageBodySchema,
+  dealUpdateSchema,
   readDealParams,
 } from "../lib/validation/deal.ts";
 
@@ -55,4 +56,59 @@ test("stage body: toStage required; lostReasonId optional", () => {
     dealStageBodySchema.safeParse({ toStage: "lost", lostReasonId: ID })
       .success,
   );
+});
+
+// PATCH /api/deals/:id body — spec §9.6. Nine editable fields plus the
+// lost-reason correction; everything else is a 400.
+const patch = (body: unknown) => dealUpdateSchema.safeParse(body);
+
+test("deal update: stage is never writable here", () => {
+  assert.equal(patch({ stage: "won" }).success, false);
+  assert.equal(patch({ amountMyr: "100", stage: "won" }).success, false);
+});
+
+test("deal update: unknown keys and an empty body are refused", () => {
+  assert.equal(patch({ pipeline: "corporate" }).success, false);
+  assert.equal(patch({ personId: ID }).success, false);
+  assert.equal(patch({ classId: ID }).success, false);
+  assert.equal(patch({ wonAt: "2026-09-30" }).success, false);
+  assert.equal(patch({}).success, false);
+});
+
+test("deal update: headcount is a positive whole number", () => {
+  assert.equal(patch({ headcount: 0 }).success, false);
+  assert.equal(patch({ headcount: 1.5 }).success, false);
+  assert.equal(patch({ headcount: -2 }).success, false);
+  assert.equal(patch({ headcount: 12 }).success, true);
+  assert.equal(patch({ headcount: null }).success, true);
+});
+
+test("deal update: amount is a string with at most two decimals", () => {
+  assert.equal(patch({ amountMyr: "-50" }).success, false);
+  assert.equal(patch({ amountMyr: "4500.123" }).success, false);
+  assert.equal(patch({ amountMyr: "4,500" }).success, false);
+  assert.equal(patch({ amountMyr: 4500 }).success, false);
+  assert.equal(patch({ amountMyr: "4500" }).success, true);
+  assert.equal(patch({ amountMyr: "4500.00" }).success, true);
+  assert.equal(patch({ amountMyr: null }).success, true);
+});
+
+test("deal update: dates are plain YYYY-MM-DD and funding type is an enum", () => {
+  assert.equal(patch({ hrdcDeadlineDate: "30/11/2026" }).success, false);
+  assert.equal(
+    patch({ hrdcDeadlineDate: "2026-11-30T00:00:00Z" }).success,
+    false,
+  );
+  assert.equal(patch({ hrdcDeadlineDate: "2026-11-30" }).success, true);
+  assert.equal(patch({ hrdcApprovalDate: null }).success, true);
+  assert.equal(patch({ fundingType: "grant" }).success, false);
+  assert.equal(patch({ fundingType: "hrdc" }).success, true);
+});
+
+test("deal update: nullable ids accept null and reject junk", () => {
+  assert.equal(patch({ companyId: null }).success, true);
+  assert.equal(patch({ companyId: "not-a-uuid" }).success, false);
+  assert.equal(patch({ ownerId: ID }).success, true);
+  // Refusing to clear it is the service's job (422), not the schema's.
+  assert.equal(patch({ lostReasonId: null }).success, true);
 });
