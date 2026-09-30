@@ -524,3 +524,118 @@ it("move: invalid_stage still wins over deal_has_payment", async () => {
     missing: undefined,
   });
 });
+
+// Incomplete corporate deals (§12.5 surfaced on the board, 9.5). The 001
+// CHECK means only new/discovery/lost can hold one.
+it("list: missingFields names the empty corporate fields", async () => {
+  const course = await newCourse();
+  const [co] = await db()`
+    INSERT INTO company (legal_name) VALUES (${`Co ${crypto.randomUUID()}`}) RETURNING id`;
+  const corp = { pipeline: "corporate" as const, company: co.id };
+
+  await insertDeal(course, { ...corp, stage: "discovery" }); // headcount + funding missing
+  await insertDeal(course, {
+    ...corp,
+    stage: "discovery",
+    headcount: 5,
+    funding: "company",
+  });
+  await insertDeal(course, {
+    ...corp,
+    stage: "funding",
+    headcount: 5,
+    funding: "company",
+  });
+  // Individual deals are never gated, however empty.
+  await insertDeal(course, { stage: "new" });
+
+  const corpRows = await listDeals(q(course, { pipeline: "corporate" }), admin);
+  // Picked by content, not position: the two discovery deals share
+  // stage_changed_at here, so their order is a tie-break on a random id.
+  const discovery = corpRows.data.filter((d) => d.stage === "discovery");
+  assert.equal(discovery.length, 2);
+  assert.deepEqual(discovery.map((d) => d.missingFields.join(",")).sort(), [
+    "",
+    "headcount,fundingType",
+  ]);
+  assert.deepEqual(
+    corpRows.data.find((d) => d.stage === "funding")!.missingFields,
+    [],
+  );
+
+  const ind = await listDeals(q(course), admin);
+  assert.deepEqual(ind.data[0].missingFields, []);
+});
+
+it("list: an incomplete lost deal is not marked", async () => {
+  const course = await newCourse();
+  const [reason] =
+    await db()`SELECT id FROM lost_reason WHERE is_active LIMIT 1`;
+  // lost needs lost_at and a reason (001 CHECKs), so it bypasses insertDeal.
+  await db()`
+    INSERT INTO deal (pipeline, stage, person_id, course_id, lost_at, lost_reason_id)
+    VALUES ('corporate', 'lost', ${await anyPerson()}, ${course}, now(), ${reason.id})`;
+
+  const r = await listDeals(q(course, { pipeline: "corporate" }), admin);
+  assert.equal(r.data.length, 1);
+  // Incomplete, but not going forward — marking it would be noise.
+  assert.deepEqual(r.data[0].missingFields, []);
+
+  const inc = await listDeals(
+    q(course, { pipeline: "corporate", incomplete: true }),
+    admin,
+  );
+  assert.deepEqual(inc.data, []);
+});
+
+it("list: filter[incomplete] narrows cards and stageTotals together", async () => {
+  const course = await newCourse();
+  const [co] = await db()`
+    INSERT INTO company (legal_name) VALUES (${`Co ${crypto.randomUUID()}`}) RETURNING id`;
+  const corp = { pipeline: "corporate" as const, company: co.id };
+
+  await insertDeal(course, { ...corp, stage: "new", amount: "10" });
+  await insertDeal(course, { ...corp, stage: "discovery", amount: "20" });
+  await insertDeal(course, {
+    ...corp,
+    stage: "discovery",
+    headcount: 5,
+    funding: "company",
+    amount: "40",
+  });
+  await insertDeal(course, {
+    ...corp,
+    stage: "funding",
+    headcount: 5,
+    funding: "company",
+    amount: "80",
+  });
+
+  const r = await listDeals(
+    q(course, { pipeline: "corporate", incomplete: true }),
+    admin,
+  );
+  assert.deepEqual(r.data.map((d) => d.stage).sort(), ["discovery", "new"]);
+  assert.equal(r.page.total, 2);
+  assert.deepEqual(totalsOf(r), {
+    new: [1, "10.00"],
+    discovery: [1, "20.00"],
+    proposal_sent: [0, "0.00"],
+    funding: [0, "0.00"],
+    won: [0, "0.00"],
+    lost: [0, "0.00"],
+  });
+});
+
+it("list: filter[incomplete] on the individual pipeline is empty, not an error", async () => {
+  const course = await newCourse();
+  await insertDeal(course, { stage: "new", amount: "10" });
+
+  const r = await listDeals(q(course, { incomplete: true }), admin);
+  assert.deepEqual(r.data, []);
+  assert.equal(r.page.total, 0);
+  assert.deepEqual(
+    r.stageTotals.map((t) => t.count),
+    [0, 0, 0, 0, 0, 0],
+  );
+});

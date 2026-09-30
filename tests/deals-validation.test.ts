@@ -112,3 +112,15 @@ test("deal update: nullable ids accept null and reject junk", () => {
   // Refusing to clear it is the service's job (422), not the schema's.
   assert.equal(patch({ lostReasonId: null }).success, true);
 });
+
+test("filter[incomplete] parses true/false and rejects junk", () => {
+  const base = "filter[pipeline]=corporate";
+  const on = parse(`${base}&filter[incomplete]=true`);
+  assert.equal(on.success && on.data.incomplete, true);
+  const off = parse(`${base}&filter[incomplete]=false`);
+  assert.equal(off.success && off.data.incomplete, false);
+  assert.equal(parse(`${base}&filter[incomplete]=yes`).success, false);
+  // Absent stays undefined, so the filter is not applied.
+  const none = parse(base);
+  assert.equal(none.success && none.data.incomplete, undefined);
+});

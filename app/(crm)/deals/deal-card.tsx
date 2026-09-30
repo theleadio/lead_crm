@@ -12,6 +12,14 @@ const TONE = {
   red: "bg-danger-soft text-danger rounded-sm px-1.5 font-medium",
 };
 
+// Same names the stage route's corporate_fields_missing uses (§12.5), so a
+// card and a refused move say the same thing.
+const FIELD_LABELS: Record<string, string> = {
+  companyId: "company",
+  headcount: "headcount",
+  fundingType: "funding type",
+};
+
 // Spec §9.5 card: person, course, value, owner initials, days in stage.
 // Write roles can drag it or use "Move to…" (the keyboard and touch path);
 // both call the same onMove.
@@ -64,6 +72,20 @@ export function DealCard({
       <p className="text-ink-muted truncate">
         {deal.course?.name ?? "No course"}
       </p>
+      {/* §12.5: this corporate deal cannot leave discovery yet. Muted, not
+          amber or red — those mean stage aging, and this deal is not late. */}
+      {deal.missingFields.length > 0 && (
+        <p
+          title={`Needs ${deal.missingFields.map((f) => FIELD_LABELS[f] ?? f).join(", ")}`}
+          className="bg-surface-sunken text-ink-muted inline-block rounded-sm px-1.5 text-xs font-medium"
+        >
+          <span aria-hidden="true">Incomplete</span>
+          <span className="sr-only">
+            Incomplete — needs{" "}
+            {deal.missingFields.map((f) => FIELD_LABELS[f] ?? f).join(", ")}
+          </span>
+        </p>
+      )}
       <div className="flex items-center justify-between gap-2 pt-1">
         <span>{deal.amountMyr ? formatMoneyMyr(deal.amountMyr) : "—"}</span>
         <span className={TONE[agingTone(deal.stage, days)]}>

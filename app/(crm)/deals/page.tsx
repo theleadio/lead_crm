@@ -48,6 +48,8 @@ export default async function DealsPage({
     to: ifMatch(one(sp.to), DATE),
     // "My deals" defaults on for sales when the URL doesn't say (§9.5).
     mine: mine ? mine === "1" : user.role === "sales",
+    // Corporate only, off by default; ignored on the individual tab.
+    incomplete: one(sp.incomplete) === "1" && pipeline === "corporate",
   };
 
   return <DealsBoard initial={initial} canWrite={canWriteDeal(user)} />;

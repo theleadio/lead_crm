@@ -256,6 +256,16 @@ async function seed() {
       owner_user_id: i % 2 ? SEED_USERS.weiPing : null,
     });
     await deal({ ...corp(0), stage: "new", days: 1, company_id: null });
+    // Missing company, headcount and funding type: the board's Incomplete
+    // chip names more than one field (9.5).
+    await deal({
+      ...corp(7),
+      stage: "discovery",
+      from: "new",
+      days: 4,
+      company_id: null,
+      amount_myr: 9000,
+    });
     // No headcount: blocked from proposal_sent (§12.5).
     await deal({
       ...corp(1),

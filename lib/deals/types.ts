@@ -43,6 +43,10 @@ export type DealCard = {
   owner: { id: string; fullName: string } | null;
   stageChangedAt: string;
   fundingType: FundingType | null;
+  // Which of companyId, headcount, fundingType are empty (§12.5), in the
+  // order the stage route's corporate_fields_missing uses. Empty for
+  // individual deals and for any corporate deal outside INCOMPLETE_STAGES.
+  missingFields: string[];
   version: string;
 };
 
@@ -57,6 +61,7 @@ export type DealListQuery = {
   createdFrom?: string;
   createdTo?: string;
   mine?: boolean;
+  incomplete?: boolean;
   page: number;
   limit: number;
 };

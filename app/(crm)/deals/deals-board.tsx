@@ -35,6 +35,8 @@ export type BoardFilters = {
   from: string;
   to: string;
   mine: boolean;
+  // Corporate only: deals that can't leave discovery yet (§12.5).
+  incomplete: boolean;
 };
 
 const PER_COLUMN = 50;
@@ -66,6 +68,7 @@ async function fetchDeals(
   if (f.from) p.set("filter[createdFrom]", f.from);
   if (f.to) p.set("filter[createdTo]", f.to);
   if (f.mine) p.set("filter[mine]", "true");
+  if (f.incomplete) p.set("filter[incomplete]", "true");
   let res: Response;
   try {
     res = await fetch(`/api/deals?${p}`, { signal });
@@ -200,6 +203,7 @@ export function DealsBoard({
     set("from", filters.from);
     set("to", filters.to);
     set("mine", filters.mine ? "1" : "0");
+    set("incomplete", filters.incomplete ? "1" : "");
     window.history.replaceState(null, "", url);
   }, [filters]);
 
@@ -222,7 +226,8 @@ export function DealsBoard({
     filters.funding ||
     filters.from ||
     filters.to ||
-    filters.mine,
+    filters.mine ||
+    filters.incomplete,
   );
   const clearFilters = () =>
     update({
@@ -232,6 +237,7 @@ export function DealsBoard({
       from: "",
       to: "",
       mine: false,
+      incomplete: false,
     });
 
   // After each move the headers are re-read from the server; the cards are
@@ -354,7 +360,13 @@ export function DealsBoard({
             role="tab"
             type="button"
             aria-selected={filters.pipeline === p}
-            onClick={() => filters.pipeline !== p && update({ pipeline: p })}
+            onClick={() =>
+              filters.pipeline !== p &&
+              update({
+                pipeline: p,
+                ...(p === "individual" && { incomplete: false }),
+              })
+            }
             className={`focus-visible:outline-focus-ring -mb-px border-b-2 px-4 py-2 text-sm font-medium focus-visible:outline-2 ${
               filters.pipeline === p
                 ? "border-lead-yellow text-ink"
@@ -417,6 +429,17 @@ export function DealsBoard({
           />
           My deals
         </label>
+        {filters.pipeline === "corporate" && (
+          <label className="text-ink flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={filters.incomplete}
+              onChange={(e) => update({ incomplete: e.target.checked })}
+              className="size-4"
+            />
+            Incomplete only
+          </label>
+        )}
         {hasFilters && (
           <Button variant="ghost" onClick={clearFilters}>
             Clear filters

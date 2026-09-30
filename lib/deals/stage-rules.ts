@@ -47,6 +47,12 @@ export function missingCorporateFields(
 // The stages a corporate deal cannot hold without those three fields.
 export const CORPORATE_GATED_STAGES = ["proposal_sent", "funding", "won"];
 
+// Where an incomplete corporate deal can actually be found, and so where the
+// board marks one (9.5). Complements CORPORATE_GATED_STAGES rather than
+// repeating it: `lost` is in neither — a lost deal may be incomplete, but it
+// is not moving forward, so marking it would be noise.
+export const INCOMPLETE_STAGES = ["new", "discovery"];
+
 // `reason` is the lost_reason row named by lostReasonId, or null when none
 // was sent or it doesn't exist. Ignored unless toStage is lost.
 export function checkMove(

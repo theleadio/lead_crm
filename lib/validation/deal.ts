@@ -29,6 +29,11 @@ export const dealListQuerySchema = z
       .enum(["true", "false"])
       .transform((v) => v === "true")
       .optional(),
+    // Corporate deals in new/discovery missing a §12.5 field (9.5).
+    incomplete: z
+      .enum(["true", "false"])
+      .transform((v) => v === "true")
+      .optional(),
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(100).default(25),
   })
@@ -49,6 +54,7 @@ export function readDealParams(sp: URLSearchParams) {
     createdFrom: get("filter[createdFrom]"),
     createdTo: get("filter[createdTo]"),
     mine: get("filter[mine]"),
+    incomplete: get("filter[incomplete]"),
     page: get("page"),
     limit: get("limit"),
   };

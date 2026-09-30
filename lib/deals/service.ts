@@ -1,6 +1,7 @@
 import type postgres from "postgres";
 import type { Viewer } from "../auth/permissions.ts";
 import { db } from "../sql.ts";
+import { INCOMPLETE_STAGES, missingCorporateFields } from "./stage-rules.ts";
 import {
   STAGES,
   type DealCard,
@@ -18,6 +19,7 @@ import {
 export function cardSql(sql: postgres.Sql) {
   return sql`
     d.id, d.pipeline, d.stage, d.amount_myr, d.funding_type, d.stage_changed_at,
+    d.company_id, d.headcount,
     d.updated_at::text AS version,
     p.id AS person_id, p.full_name AS person_name,
     co.id AS course_id, co.name_en AS course_name,
@@ -39,6 +41,16 @@ export function toCard(r: postgres.Row): DealCard {
     owner: r.owner_id ? { id: r.owner_id, fullName: r.owner_name } : null,
     stageChangedAt: new Date(r.stage_changed_at).toISOString(),
     fundingType: r.funding_type,
+    // The stage gate lives here, not in missingCorporateFields(): the stage
+    // move asks the same question about the stage it is moving *to*.
+    missingFields: INCOMPLETE_STAGES.includes(r.stage)
+      ? missingCorporateFields({
+          pipeline: r.pipeline,
+          companyId: r.company_id,
+          headcount: r.headcount,
+          fundingType: r.funding_type,
+        })
+      : [],
     version: r.version,
   };
 }
@@ -52,6 +64,12 @@ function filterSql(sql: postgres.Sql, q: DealListQuery, viewer: Viewer) {
     ${q.mine ? sql`AND d.owner_user_id = ${viewer.id}` : sql``}
     ${q.course ? sql`AND d.course_id = ${q.course}` : sql``}
     ${q.funding ? sql`AND d.funding_type = ${q.funding}` : sql``}
+    ${
+      q.incomplete
+        ? sql`AND d.pipeline = 'corporate' AND d.stage IN ${sql(INCOMPLETE_STAGES)}
+              AND (d.company_id IS NULL OR d.headcount IS NULL OR d.funding_type IS NULL)`
+        : sql``
+    }
     ${q.createdFrom ? sql`AND d.created_at >= (${q.createdFrom}::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')` : sql``}
     ${q.createdTo ? sql`AND d.created_at < ((${q.createdTo}::date + 1)::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')` : sql``}`;
 }
