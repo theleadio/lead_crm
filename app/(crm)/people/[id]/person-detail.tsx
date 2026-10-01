@@ -361,7 +361,7 @@ function EditForm({
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          "If-Match": person.version,
+          "If-Match": String(person.version),
         },
         body: JSON.stringify(patch),
       });

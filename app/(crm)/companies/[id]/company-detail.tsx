@@ -251,8 +251,9 @@ export function CompanyDetailView({
         </div>
       </div>
 
-      {canWrite && (
+      {canWrite && c && (
         <CompanyFormDialog
+          version={c.version}
           open={editOpen}
           onOpenChange={setEditOpen}
           companyId={id}

@@ -68,8 +68,8 @@ export type PersonDetail = {
     needsReviewReason: string | null;
     lastActivityAt: string | null;
     createdAt: string;
-    // updated_at::text with microseconds; send back as If-Match (§7).
-    version: string;
+    // Integer row version (migration 005); send back as If-Match (§7 v1.7).
+    version: number;
   };
   attribution: {
     firstTouch: Touchpoint | null;

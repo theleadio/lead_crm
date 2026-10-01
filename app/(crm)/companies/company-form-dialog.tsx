@@ -45,6 +45,7 @@ export function CompanyFormDialog({
   open,
   onOpenChange,
   companyId,
+  version,
   initial,
   onSaved,
 }: {
@@ -52,6 +53,8 @@ export function CompanyFormDialog({
   onOpenChange: (open: boolean) => void;
   // Set when editing; also excluded from the similar-companies check.
   companyId?: string;
+  // The loaded row version, sent as If-Match when editing (§7 v1.7).
+  version?: number;
   initial: CompanyFormValues;
   onSaved: (company: { id: string; legalName: string }) => void;
 }) {
@@ -61,6 +64,7 @@ export function CompanyFormDialog({
         {/* Mounted only while open, so it starts from `initial` every time. */}
         <CompanyForm
           companyId={companyId}
+          version={version}
           initial={initial}
           onClose={() => onOpenChange(false)}
           onSaved={onSaved}
@@ -72,11 +76,13 @@ export function CompanyFormDialog({
 
 function CompanyForm({
   companyId,
+  version,
   initial,
   onClose,
   onSaved,
 }: {
   companyId?: string;
+  version?: number;
   initial: CompanyFormValues;
   onClose: () => void;
   onSaved: (company: { id: string; legalName: string }) => void;
@@ -135,7 +141,13 @@ function CompanyForm({
         companyId ? `/api/companies/${companyId}` : "/api/companies",
         {
           method: companyId ? "PATCH" : "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            // §7 (v1.7): only an edit carries a version; a create has none.
+            ...(companyId && version !== undefined
+              ? { "If-Match": String(version) }
+              : {}),
+          },
           body: JSON.stringify({ ...form, ownerId: form.ownerId || null }),
         },
       );

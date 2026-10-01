@@ -50,7 +50,7 @@ type PersonRow = {
   needs_review_reason: string | null;
   last_activity_at: Date | null;
   created_at: Date;
-  updated_at: string; // full microsecond precision, see selectPerson
+  version: number; // integer row version (migration 005), see selectPerson
   owner_id: string | null;
   owner_name: string | null;
   company_id: string | null;
@@ -60,13 +60,14 @@ type PersonRow = {
 };
 
 function selectPerson(sql: postgres.Sql) {
-  // updated_at as text with microseconds: the stale-edit check (spec §7)
-  // compares it exactly, and a JS Date would drop the microseconds.
+  // §7 (v1.7): the stale-edit check matches on the integer version the 005
+  // trigger raises. Cast to int because postgres.js hands bigint back as a
+  // string, which would make `version + 1` concatenate.
   return sql`
     SELECT p.id, p.full_name, p.preferred_name, p.email, p.phone, p.phone_e164,
            p.whatsapp_e164, p.preferred_language, p.job_title, p.notes,
            p.needs_review, p.needs_review_reason, p.last_activity_at, p.created_at,
-           to_char(p.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS updated_at,
+           p.version::int AS version,
            u.id AS owner_id, u.full_name AS owner_name,
            cur.company_id, cur.company_name, p.company_name_given,
            ${stageSql(sql)} AS stage
@@ -115,7 +116,7 @@ function toDetailPerson(p: PersonRow, viewer: Viewer): PersonDetail["person"] {
     needsReviewReason: reviewReason(p),
     lastActivityAt: p.last_activity_at?.toISOString() ?? null,
     createdAt: p.created_at.toISOString(),
-    version: p.updated_at,
+    version: p.version,
   };
 }
 
@@ -379,7 +380,7 @@ const blankToNull = (s: string) => (s === "" ? null : s);
 export async function updatePerson(
   id: string,
   patch: PersonUpdate,
-  loadedUpdatedAt: string,
+  ifMatch: number,
   viewer: Viewer,
 ): Promise<UpdateResult> {
   if (!permissionFor(viewer, "person", "write").allowed)
@@ -389,11 +390,9 @@ export async function updatePerson(
     const sql = db();
     const found = await findVisible(id, viewer);
     if (found.kind !== "ok") return found;
-    // Lock the row so the stale check and the write can't interleave (§7).
-    const [locked] = await sql`
-      SELECT to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS updated_at
-      FROM person WHERE id = ${id} FOR UPDATE`;
-    if (locked.updated_at !== loadedUpdatedAt) return { kind: "stale" };
+    // Locked because the dedupe check and the audit below both read this
+    // row; the stale check itself rides on the UPDATE's WHERE (design 2).
+    await sql`SELECT 1 FROM person WHERE id = ${id} FOR UPDATE`;
     const p = found.person;
 
     const set: Record<string, string | boolean | null> = {};
@@ -471,7 +470,16 @@ export async function updatePerson(
     }
 
     const columns = Object.keys(set);
-    await sql`UPDATE person SET ${sql(set, columns)} WHERE id = ${id}`;
+    // §7 (v1.7): check and write in one statement. No row means the version
+    // moved, or the person is gone — distinguished below.
+    const [updated] = await sql`
+      UPDATE person SET ${sql(set, columns)}
+      WHERE id = ${id} AND version = ${ifMatch}
+      RETURNING id`;
+    if (!updated) {
+      const [alive] = await sql`SELECT 1 FROM person WHERE id = ${id}`;
+      return alive ? { kind: "stale" } : { kind: "not_found" };
+    }
     // §12.9: editing a field never touches last_activity_at.
 
     const row = p as unknown as Record<string, unknown>;

@@ -35,7 +35,8 @@ export type CompanyDetail = {
     billingAddress: string | null;
     billingEmail: string | null;
     owner: { id: string; fullName: string } | null;
-    updatedAt: string;
+    // Integer row version (migration 005); send back as If-Match (§7 v1.7).
+    version: number;
   };
   members: {
     membershipId: string;

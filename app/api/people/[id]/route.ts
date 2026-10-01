@@ -75,8 +75,10 @@ export async function PATCH(
   const viewer = await getCurrentUser();
   if (!viewer) return apiError(401, "unauthenticated", "Sign in to continue.");
 
-  const loadedUpdatedAt = request.headers.get("If-Match");
-  if (!loadedUpdatedAt)
+  // §7 (v1.7): If-Match is the integer row version from the GET.
+  const header = request.headers.get("If-Match");
+  const ifMatch = header === null ? NaN : Number(header);
+  if (!Number.isInteger(ifMatch) || ifMatch < 1)
     return apiError(
       428,
       "precondition_required",
@@ -88,7 +90,7 @@ export async function PATCH(
   if (!parsed.success) return validationError(parsed.error);
 
   const { id } = await ctx.params;
-  const result = await updatePerson(id, parsed.data, loadedUpdatedAt, viewer);
+  const result = await updatePerson(id, parsed.data, ifMatch, viewer);
 
   switch (result.kind) {
     case "updated":

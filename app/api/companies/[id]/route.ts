@@ -45,18 +45,35 @@ export async function PATCH(
       resource: "company",
     });
 
+  // §7 (v1.7): If-Match is the integer row version from the GET. New here —
+  // company edit had no stale check at all before (record-concurrency).
+  const header = request.headers.get("If-Match");
+  const ifMatch = header === null ? NaN : Number(header);
+  if (!Number.isInteger(ifMatch) || ifMatch < 1)
+    return apiError(
+      428,
+      "precondition_required",
+      "Reload this company and try again.",
+    );
+
   const parsed = companyUpdateSchema.safeParse(
     await request.json().catch(() => null),
   );
   if (!parsed.success) return validationError(parsed.error);
 
   const { id } = await ctx.params;
-  const result = await updateCompany(id, parsed.data, viewer);
+  const result = await updateCompany(id, parsed.data, ifMatch, viewer);
   switch (result.kind) {
     case "ok":
       return Response.json({ id: result.id });
     case "not_found":
       return notFound();
+    case "stale":
+      return apiError(
+        409,
+        "stale_edit",
+        "Someone else changed this company while you were editing. Reload to see their version.",
+      );
     case "invalid":
       return apiError(
         400,

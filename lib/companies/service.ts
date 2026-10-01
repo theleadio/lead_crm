@@ -116,7 +116,7 @@ export async function getCompanyDetail(
   const sql = db();
   const [c] = await sql`
     SELECT c.*,
-           to_char(c.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS updated_at_text,
+           c.version::int AS version,
            u.id AS owner_id, u.full_name AS owner_name
     FROM company c LEFT JOIN app_user u ON u.id = c.owner_user_id
     WHERE c.id = ${id} AND ${visibleCompanySql(sql, viewer)}`;
@@ -193,7 +193,7 @@ export async function getCompanyDetail(
         billingAddress: c.billing_address,
         billingEmail: c.billing_email,
         owner: c.owner_id ? { id: c.owner_id, fullName: c.owner_name } : null,
-        updatedAt: c.updated_at_text,
+        version: c.version,
       },
       members: members.map((m) => ({
         membershipId: m.membership_id,
@@ -251,6 +251,7 @@ export type WriteResult =
   | { kind: "ok"; id: string }
   | { kind: "forbidden" }
   | { kind: "not_found" }
+  | { kind: "stale" }
   | { kind: "invalid"; fields: Record<string, string> };
 
 export async function createCompany(
@@ -294,6 +295,7 @@ export async function createCompany(
 export async function updateCompany(
   id: string,
   patch: CompanyUpdate,
+  ifMatch: number,
   viewer: Viewer,
 ): Promise<WriteResult> {
   if (!canWriteCompany(viewer)) return { kind: "forbidden" };
@@ -329,9 +331,22 @@ export async function updateCompany(
       set.owner_user_id = owner.id;
     }
     const columns = Object.keys(set);
-    if (!columns.length) return { kind: "ok", id };
+    // §7 (v1.7): a save that changes nothing still has to be based on the
+    // current version, or it would be the one way to bypass the check.
+    if (!columns.length)
+      // `before` comes from SELECT c.*, so version is the raw bigint —
+      // postgres.js hands those back as strings (design 1).
+      return Number(before.version) === ifMatch
+        ? { kind: "ok", id }
+        : { kind: "stale" };
 
-    await sql`UPDATE company SET ${sql(set, columns)} WHERE id = ${id}`;
+    const [updated] = await sql`
+      UPDATE company SET ${sql(set, columns)}
+      WHERE id = ${id} AND version = ${ifMatch}
+      RETURNING id`;
+    // The row was read FOR UPDATE above, so it exists; no match means the
+    // version moved under us.
+    if (!updated) return { kind: "stale" };
     await writeAudit({
       userId: viewer.id,
       action: "update",

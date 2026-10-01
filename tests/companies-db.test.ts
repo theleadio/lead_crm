@@ -17,6 +17,13 @@ import { SEED_USERS } from "../scripts/seed-ids.ts";
 
 after(closeDb);
 
+// §7 (v1.7): the version to send back as If-Match.
+const companyVersion = async (id: string): Promise<number> => {
+  const [row] =
+    await db()`SELECT version::int AS version FROM company WHERE id = ${id}`;
+  return row.version as number;
+};
+
 const it = (name: string, fn: () => Promise<void>) =>
   test(name, { skip: !process.env.DATABASE_URL && "no DATABASE_URL" }, () =>
     rollbackAfter(fn),
@@ -173,7 +180,7 @@ it("company write: super_admin, sales and support only; audited (§7)", async ()
   );
 
   assert.equal(
-    (await updateCompany(r.id, { industry: "Freight" }, marketing)).kind,
+    (await updateCompany(r.id, { industry: "Freight" }, 1, marketing)).kind,
     "forbidden",
   );
   assert.equal(
@@ -181,6 +188,7 @@ it("company write: super_admin, sales and support only; audited (§7)", async ()
       await updateCompany(
         r.id,
         { industry: "Freight", legalName: "Nova Freight Bhd" },
+        await companyVersion(r.id),
         sales,
       )
     ).kind,
@@ -339,5 +347,51 @@ it("sort: name is A–Z ignoring case, -name reverses, total unchanged; unknown 
   assert.equal(
     companyListQuerySchema.safeParse({ sort: "-name" }).success,
     true,
+  );
+});
+
+// §7 (v1.7): company edit had no stale check at all before this — two
+// people editing one company silently overwrote each other (record-concurrency).
+const aCompany = async (): Promise<string> => {
+  const r = await createCompany(
+    { legalName: `Vers ${crypto.randomUUID()}` } as never,
+    admin,
+  );
+  assert.equal(r.kind, "ok");
+  return r.kind === "ok" ? r.id : "";
+};
+
+it("concurrency: two saves from the same version — the second is refused", async () => {
+  const id = await aCompany();
+  const loaded = await companyVersion(id);
+
+  const first = await updateCompany(id, { industry: "First" }, loaded, admin);
+  assert.equal(first.kind, "ok");
+  assert.equal(await companyVersion(id), loaded + 1);
+
+  const second = await updateCompany(id, { industry: "Second" }, loaded, admin);
+  assert.equal(second.kind, "stale");
+  const [row] = await db()`SELECT industry FROM company WHERE id = ${id}`;
+  assert.equal(row.industry, "First");
+});
+
+it("concurrency: a save that changes nothing still needs the current version", async () => {
+  const id = await aCompany();
+  const loaded = await companyVersion(id);
+  await updateCompany(id, { industry: "Moved" }, loaded, admin);
+
+  // Empty patch on a stale version must not be the one way past the check.
+  assert.equal((await updateCompany(id, {}, loaded, admin)).kind, "stale");
+  assert.equal((await updateCompany(id, {}, loaded + 1, admin)).kind, "ok");
+});
+
+it("concurrency: a save whose row is gone is not_found", async () => {
+  const id = await aCompany();
+  const loaded = await companyVersion(id);
+  await db()`UPDATE company SET deleted_at = now() WHERE id = ${id}`;
+
+  assert.equal(
+    (await updateCompany(id, { industry: "x" }, loaded, admin)).kind,
+    "not_found",
   );
 });

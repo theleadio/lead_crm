@@ -373,7 +373,7 @@ it("update: bad WhatsApp is a field error; bad phone flags, fixing it clears", a
 it("update: marketing can't edit", async () => {
   const id = await idOf("Kavitha Raman");
   assert.equal(
-    (await updatePerson(id, { jobTitle: "x" }, "anything", marketing)).kind,
+    (await updatePerson(id, { jobTitle: "x" }, 1, marketing)).kind,
     "forbidden",
   );
 });
@@ -617,4 +617,53 @@ it("sort: name A–Z ignoring case; -lastActivity puts nulls last; totals unchan
     peopleListQuerySchema.safeParse({ sort: "email_norm" }).success,
     false,
   );
+});
+
+// §7 (v1.7) concurrency: the integer row version from migration 005.
+// A real two-save test, which updated_at could not support — it is the
+// transaction start time, so it does not move inside one transaction.
+const personVersion = async (id: string): Promise<number> => {
+  const r = await getPersonDetail(id, admin);
+  assert.equal(r.kind, "ok");
+  return r.kind === "ok" ? r.detail.person.version : 0;
+};
+
+it("concurrency: two saves from the same version — the second is refused", async () => {
+  const id = await idOf("Kavitha Raman");
+  const loaded = await personVersion(id);
+
+  const first = await updatePerson(id, { jobTitle: "First" }, loaded, admin);
+  assert.equal(first.kind, "updated");
+  assert.equal(await personVersion(id), loaded + 1);
+
+  // The second tab still holds `loaded`.
+  const second = await updatePerson(id, { jobTitle: "Second" }, loaded, admin);
+  assert.equal(second.kind, "stale");
+  const [row] = await db()`SELECT job_title FROM person WHERE id = ${id}`;
+  assert.equal(row.job_title, "First");
+});
+
+it("concurrency: the version goes up by exactly one per save", async () => {
+  const id = await idOf("Kavitha Raman");
+  const start = await personVersion(id);
+  for (let i = 1; i <= 3; i++) {
+    const r = await updatePerson(
+      id,
+      { jobTitle: `Title ${i}` },
+      start + i - 1,
+      admin,
+    );
+    assert.equal(r.kind, "updated");
+    assert.equal(await personVersion(id), start + i);
+  }
+});
+
+it("concurrency: a save whose row is gone is not_found, not stale", async () => {
+  const id = await idOf("Kavitha Raman");
+  const loaded = await personVersion(id);
+  // soft_delete_person is the real path; deleted_at hides it from findVisible.
+  await db()`UPDATE person SET deleted_at = now() WHERE id = ${id}`;
+
+  const r = await updatePerson(id, { jobTitle: "x" }, loaded, admin);
+  assert.equal(r.kind, "not_found");
 });
