@@ -47,7 +47,7 @@ export type DealCard = {
   // order the stage route's corporate_fields_missing uses. Empty for
   // individual deals and for any corporate deal outside INCOMPLETE_STAGES.
   missingFields: string[];
-  version: string;
+  version: number;
 };
 
 export type StageTotal = { stage: Stage; count: number; totalMyr: string };
@@ -135,8 +135,8 @@ export type DealDetail = {
   checkoutUrl: string | null;
   checkoutSentAt: string | null;
   createdAt: string;
-  // updated_at::text with microseconds; send back as If-Match (§7).
-  version: string;
+  // Integer row version (migration 005); send back as If-Match (§7 v1.7).
+  version: number;
   stageHistory: StageHistoryEntry[];
   tasks: DealTask[];
   enquiry: LinkedEnquiry | null;

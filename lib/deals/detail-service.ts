@@ -89,7 +89,7 @@ function dealSql(sql: postgres.Sql) {
     d.hrdc_deadline_date::text AS hrdc_deadline_date,
     d.won_at, d.lost_at, d.stage_changed_at, d.created_at,
     d.checkout_url, d.checkout_sent_at,
-    d.updated_at::text AS version,
+    d.version::int AS version,
     p.id AS person_id, p.full_name AS person_name,
     comp.id AS company_id, comp.legal_name AS company_name,
     co.id AS course_id, co.name_en AS course_name,
@@ -196,7 +196,7 @@ const COLUMNS = {
 export async function updateDeal(
   id: string,
   body: DealUpdate,
-  ifMatch: string,
+  ifMatch: number,
   viewer: Viewer,
 ): Promise<UpdateResult> {
   if (!canWriteDeal(viewer)) return { kind: "forbidden" };
@@ -246,16 +246,13 @@ export async function updateDeal(
         return { kind: "corporate_fields_missing", stage: deal.stage, missing };
     }
 
-    // updated_at is set by the 001 set_updated_at trigger, not here.
-    //
-    // The stale check compares the *text* on both sides (§7). Casting the
-    // parameter instead — `updated_at = ${ifMatch}::timestamptz` — makes
-    // postgres.js type it as a timestamp and serialise it through a JS Date,
-    // which keeps milliseconds only: .635978 arrives as .635 and no row ever
-    // matches. `version` is rendered by the same ::text, so the two agree.
+    // §7 (v1.7): the row's integer version, bumped by the 005 trigger. No
+    // row matched means either someone else saved first or the deal is gone
+    // — the deal was read FOR UPDATE above, so it still exists here and the
+    // answer is `stale`; a deleted deal already returned not_found.
     const [updated] = await sql`
       UPDATE deal SET ${sql(patch)}
-      WHERE id = ${id} AND updated_at::text = ${ifMatch}
+      WHERE id = ${id} AND version = ${ifMatch}
       RETURNING id`;
     if (!updated) return { kind: "stale" };
 

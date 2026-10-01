@@ -180,7 +180,7 @@ it("list: deleted deals excluded; oldest in stage first, ties by id", async () =
   const card = r.data[0];
   assert.equal(card.course?.name, "Test course");
   assert.equal(card.owner, null);
-  assert.match(card.version, /^\d{4}-\d{2}-\d{2} /);
+  assert.equal(Number.isInteger(card.version), true);
 });
 
 it("lost reasons: active only, in sort order", async () => {

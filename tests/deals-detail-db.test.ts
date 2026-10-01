@@ -73,10 +73,10 @@ async function insertDeal(row: DealRow = {}): Promise<string> {
   return d.id;
 }
 
-async function version(id: string): Promise<string> {
+async function version(id: string): Promise<number> {
   const r = await getDealDetail(id, admin);
   assert.equal(r.kind, "ok");
-  return r.kind === "ok" ? r.deal.version : "";
+  return r.kind === "ok" ? r.deal.version : 0;
 }
 
 // Edit with the deal's current version, unless one is given.
@@ -84,7 +84,7 @@ async function edit(
   id: string,
   body: DealUpdate,
   viewer: Viewer = admin,
-  ifMatch?: string,
+  ifMatch?: number,
 ) {
   return updateDeal(id, body, ifMatch ?? (await version(id)), viewer);
 }
@@ -188,7 +188,7 @@ it("detail: part_time is refused; unknown, junk and deleted ids are 404", async 
 it("detail: version round-trips straight back as If-Match", async () => {
   const id = await insertDeal();
   const v = await version(id);
-  assert.match(v, /\.\d{4,6}/); // microseconds kept, never via a JS Date
+  assert.equal(Number.isInteger(v), true);
   assert.equal((await edit(id, { amountMyr: "100" }, admin, v)).kind, "ok");
 });
 
@@ -212,29 +212,34 @@ it("edit: super_admin, sales and support may edit; read-only roles cannot", asyn
 
 // -------------------------------------------------------- concurrency (6.2)
 
-it("edit: an If-Match that no longer matches the row writes nothing", async () => {
+it("edit: two saves from the same version — the second is refused", async () => {
   const id = await insertDeal({ amount: "100" });
-  const current = await version(id);
-  // What a second tab holds after someone else saved: a version string that
-  // is no longer the row's. (It cannot be produced by saving twice here —
-  // now() is fixed for this rollback transaction and the 001 trigger sets
-  // updated_at := now(), so a save inside one transaction cannot advance it.)
-  const stale = current.replace(
-    /\.(\d{6})/,
-    (_m, us) => `.${String(Number(us) - 1).padStart(6, "0")}`,
-  );
-  assert.notEqual(stale, current);
+  const loaded = await version(id);
 
-  const r = await edit(id, { amountMyr: "300" }, admin, stale);
-  assert.equal(r.kind, "stale");
-  const [row] = await db()`SELECT amount_myr FROM deal WHERE id = ${id}`;
-  assert.equal(row.amount_myr, "100.00");
-
-  // The current version still saves.
+  // Both tabs hold `loaded`. The first save wins and bumps the version.
+  // This is a real two-save test now: the 005 trigger bumps on every UPDATE,
+  // where updated_at = now() could not move inside one transaction.
   assert.equal(
-    (await edit(id, { amountMyr: "200" }, admin, current)).kind,
+    (await edit(id, { amountMyr: "200" }, admin, loaded)).kind,
     "ok",
   );
+  assert.equal(await version(id), loaded + 1);
+
+  // The second, still holding the old version, writes nothing.
+  const second = await edit(id, { amountMyr: "300" }, admin, loaded);
+  assert.equal(second.kind, "stale");
+  const [row] = await db()`SELECT amount_myr FROM deal WHERE id = ${id}`;
+  assert.equal(row.amount_myr, "200.00");
+});
+
+it("edit: the version goes up by exactly one per save", async () => {
+  const id = await insertDeal();
+  const start = await version(id);
+  for (let i = 1; i <= 3; i++) {
+    const r = await edit(id, { amountMyr: String(100 * i) });
+    assert.equal(r.kind, "ok");
+    if (r.kind === "ok") assert.equal(r.deal.version, start + i);
+  }
 });
 
 it("edit: a fresh version comes back, so a second save needs no reload", async () => {

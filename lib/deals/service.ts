@@ -20,7 +20,7 @@ export function cardSql(sql: postgres.Sql) {
   return sql`
     d.id, d.pipeline, d.stage, d.amount_myr, d.funding_type, d.stage_changed_at,
     d.company_id, d.headcount,
-    d.updated_at::text AS version,
+    d.version::int AS version,
     p.id AS person_id, p.full_name AS person_name,
     co.id AS course_id, co.name_en AS course_name,
     u.id AS owner_id, u.full_name AS owner_name
