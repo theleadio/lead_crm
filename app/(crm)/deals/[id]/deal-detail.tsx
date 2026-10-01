@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { LostReasonDialog } from "../lost-reason-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { CompanySelect } from "./company-select";
 import {
   BackLink,
   DetailError,
@@ -665,18 +666,12 @@ function EditForm({
       </Field>
 
       <Field id="companyId" label="Company" error={fieldErrors.companyId}>
-        {/* 9.4 owns company search; here it is the deal's current company or
-            none, so a corporate deal can be detached during discovery. */}
-        <Select
-          id="companyId"
+        {/* A corporate deal needs one before it can leave discovery (§12.5),
+            so it must be possible to attach one here, not only clear it. */}
+        <CompanySelect
           value={form.companyId}
-          onChange={set("companyId")}
-          placeholder="No company"
-          options={
-            deal.company
-              ? [{ value: deal.company.id, label: deal.company.name }]
-              : []
-          }
+          currentName={deal.company?.name ?? null}
+          onChange={(companyId) => set("companyId")(companyId)}
         />
       </Field>
 
