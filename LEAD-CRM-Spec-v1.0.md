@@ -1,11 +1,13 @@
-# LEAD CRM — Software Specification v1.5
+# LEAD CRM — Software Specification v1.7
 
-_Last updated 24 Sep 2026 · Owner: Shawn_
+_Last updated 1 Oct 2026 · Owner: Shawn_
 
 ## Changelog
 
 | Version | Date | Changes |
 | --- | --- | --- |
+| v1.7 | 1 Oct 2026 | From Zixuan's release notes: concurrency now uses an integer `version` instead of `updated_at` (§7, migration 005); in-place lost-reason correction (§12.5); withdrawn HRDC task closed with `done_at` (§12.6); schema-change tables for 004 and 005 (§5). |
+| v1.6 | 28 Sep 2026 | From Zixuan's 9.5 review: course list via existing GET /api/courses (§7, §9.5); leaving Won/Lost rules and stage aging (§12.5); HRDC deadline task rules + migration 004 (§12.6). |
 | v1.5 | 24 Sep 2026 | Companies from Zixuan's 9.4 question: Add/Edit company, Add person, edit and end memberships on 9.4; `replaceCurrent` on POST members; new PATCH members route (§7, §7.1); company decisions recorded (§15.3). |
 | v1.4 | 24 Sep 2026 | What the lead form's `companyName` does — it was sent but never saved. Migration 003: `person.company_name_given`, `company.name_norm`, `link_company_from_form()` (§5, §8.2, §8.3); company picker on person detail (§9.2); soft-match "company matches" defined (§12.2). |
 | v1.3 | 24 Sep 2026 | Migration 002: `needs_review_reason` and `erased_at` on person (§5); merge, erasure and soft delete as tested database functions (§12.10); merge route body and two new routes (§7, §7.1); concurrency switched to If-Match with a microsecond version (§7); open items O11–O15 (§15.3). |
@@ -180,7 +182,7 @@ Rule: strip non-digit/non-leading-`+`; starts `0` → replace with `+60`; starts
 
 ## 5. Data Model
 
-23 tables for MVP (4 added 22 Sep, `app_setting` added 24 Sep). DDL: schema v1 (`001_schema_v1.sql`, issued 24 Sep) `002_merge_erase.sql` and `003_company_from_form.sql` (24 Sep), all in `lib/db/migrations/`. Shawn owns migrations; this is the contract Zixuan codes against. Every table has standard columns from Section 4 (`id`, `created_at`, `updated_at`, `created_by`) — not repeated below.
+23 tables for MVP (4 added 22 Sep, `app_setting` added 24 Sep). DDL: schema v1 (`001_schema_v1.sql`, issued 24 Sep) `002_merge_erase.sql`, `003_company_from_form.sql` (24 Sep) and `004_hrdc_task_guard.sql` (28 Sep), all in `lib/db/migrations/`. Shawn owns migrations; this is the contract Zixuan codes against. Every table has standard columns from Section 4 (`id`, `created_at`, `updated_at`, `created_by`) — not repeated below.
 
 ### Entity relationships
 
@@ -358,6 +360,18 @@ Only one `pending` notice per class at a time — a second edit while one is pen
 | company | add `name_norm` (generated) + index | One "same company name" rule for form linking, the soft match and "similar companies" on Add company |
 | functions | `normalise_company_name(text)`, `link_company_from_form(person, text)`; `erase_person` also clears `company_name_given` | Same reasons as 002 |
 
+**Schema changes 28 Sep, migration 004 (v1.6)**
+
+| Table | Change | Why |
+| --- | --- | --- |
+| task | CHECK: an `hrdc_deadline` task must have a `deal_id`; unique index: one open `hrdc_deadline` task per deal | §12.6 — the app creates the task, so the database stops duplicates |
+
+**Schema changes 1 Oct, migration 005 (v1.7)**
+
+| Table | Change | Why |
+| --- | --- | --- |
+| 15 editable tables | add `version bigint NOT NULL DEFAULT 1`; `bump_version()` trigger adds exactly 1 on every UPDATE and ignores any value the app writes | Optimistic concurrency for If-Match (§7). `updated_at` could not do this reliably. Not on `message_log`, `event_outbox`, `integration_event` (system-written) |
+
 **Onboarding templates have no table, deliberately.** WhatsApp templates must be Meta-approved and live in WATI; email templates live in the ESP. Settings links out to both.
 
 **Deferred to January:** `campaign`, `ad`, `ad_metric_daily`, `content_item`, `attendance`, `class_session`. Do not build screens for these.
@@ -444,7 +458,7 @@ REST under `/api`, JSON, session cookie auth. Shared zod schema validation (form
 | PATCH /api/deals/:id                          | Update fields                    | Zixuan |                                                                                          |
 | POST /api/deals/:id/stage                     | Move stage                       | Zixuan | body `{toStage, lostReasonId?}`; writes history + outbox event; 422 if lost without an active reason |
 | POST /api/deals/:id/checkout-link             | Generate Stripe link             | Shawn  | Returns `{url}` and stores it on the deal (§7.1); Zixuan calls from deal screen                                           |
-| GET/POST/PATCH /api/courses[/:id]             | Course catalogue                 | Zixuan |                                                                                          |
+| GET/POST/PATCH /api/courses[/:id]             | Course catalogue                 | Zixuan | GET readable by every role that reads deals (§6). Optional `?active=true` (v1.6). Used for the 9.5 course filter and the deal course picker — no separate options route |
 | GET /api/classes                              | List with seat counts            | Zixuan | Returns capacity, confirmedCount, reservedCount, seatsAvailable                          |
 | POST/PATCH /api/classes[/:id]                 | Create/edit                      | Zixuan | Takes optional `notice: 'prepare' \| 'skip'`; see §7.1 (409 `notice_decision_required`)   |
 | POST /api/classes/:id/cancel                  | Cancel class                     | Zixuan | Requires reason; sets all enrolments cancelled; raises event                             |
@@ -499,7 +513,9 @@ From Zixuan's review of §9–11 against the table above.
 - PATCH /api/classes/:id takes optional `notice: 'prepare' | 'skip'`. If the edit touches a notice field on a class with confirmed enrolments and `notice` is absent → **409 `notice_decision_required`** with `{recipientCount}`, nothing saved. UI shows the 9.9 dialog and resubmits with the choice. The server decides whether a notice is needed, never the client.
 - POST /api/deals/:id/checkout-link stores `checkout_url`, `checkout_session_id`, `checkout_sent_at` on the deal as well as returning it.
 
-**Concurrency** (revised 24 Sep, v1.3). GET on person/deal/class/enrolment returns `version` = `updated_at::text` — the Postgres text form with full microseconds. Don't round-trip it through a JS `Date`, which keeps milliseconds only and would never match. PATCH sends `If-Match: <version>`; the server runs `UPDATE … WHERE id = $1 AND updated_at = $2::timestamptz`. 0 rows → 409, client shows "someone else changed this record — reload". Missing header → 428. This replaces `If-Unmodified-Since`, which works in whole seconds and would miss two edits in the same second.
+**Concurrency** (revised 1 Oct, v1.7). Every editable table has an integer `version` (migration 005) that the database raises by exactly 1 on every update; the app cannot set it. GET on a record returns `version`. PATCH sends `If-Match: <version>`; the server runs `UPDATE … WHERE id = $1 AND version = $2`. 0 rows → look the row up: gone → 404, otherwise 409, and the client shows "someone else changed this record — reload". Missing header → 428. Any update bumps the version, including system ones (for example `last_activity_at` when a message arrives), so an open form can conflict with a background change — that is expected, not a bug. A merge also bumps the survivor.
+
+**Why not `updated_at` (v1.3–v1.6 used it).** Tested on PostgreSQL 16 on 1 Oct: the string form with full microseconds matches, but a value that has passed through a JS `Date` keeps milliseconds only and silently matches nothing (Zixuan's catch). Comparing `updated_at::text` instead depends on the session timezone and drops trailing zeros. `updated_at` is also set from `now()`, the transaction start time, so two writes in one transaction leave it unchanged. This replaces `If-Unmodified-Since`, which works in whole seconds and would miss two edits in the same second.
 
 **Transactions.** Anything touching seats or money: check + write in one DB transaction with row locked — never check-then-write across two calls. Two people paying for the last seat simultaneously → one confirmed enrolment, one clean 409.
 
@@ -646,7 +662,7 @@ Server behaviour, in order:
 - Ended memberships move to a collapsed "Past employees" list.
 - No delete and no company merge in MVP (§15.3).
 
-**9.5 Deals board** — Two tabs: Individual / Corporate (separate pipelines, not a filter). Kanban per stage, count + summed value. Cards: person, course, value, owner initials circle, days in stage (amber >7, red >14). Drag → POST /api/deals/:id/stage. Drag to Lost → required reason dialog. Optimistic move + revert/toast on failure. Filters: owner, course, date range, funding type. "My deals" toggle, default on for sales.
+**9.5 Deals board** — Two tabs: Individual / Corporate (separate pipelines, not a filter). Kanban per stage, count + summed value. Cards: person, course, value, owner initials circle, days in stage (amber >7, red >14). Drag → POST /api/deals/:id/stage. Drag to Lost → required reason dialog. Optimistic move + revert/toast on failure. Filters: owner, course, date range, funding type. "My deals" toggle, default on for sales. **(v1.6)** Course filter lists all courses from GET /api/courses, inactive ones marked "(inactive)", so deals on a retired course can still be found; the course picker on a new/edited deal shows active courses only (`?active=true`). Dropping a card back on its own column is not a move: no API call, no history row, no reset of days in stage.
 
 **9.6 Deal detail** — Fields: pipeline, stage, person, company, course, class, headcount, amount, funding type, HRDC grant ref/dates, owner, lost reason. Actions: Send checkout link, Create enrolment, Add task, Change stage. Panels: stage history, tasks, linked enquiry. Rules: corporate deals can't leave `discovery` without company/headcount/funding type; lost requires reason; won with no enrolment prompts to create one.
 
@@ -845,6 +861,10 @@ Any transition not on this diagram → 422. UI only offers legal next statuses �
 - Corporate deals can't pass `discovery` without company, headcount, funding type.
 - Every change writes deal_stage_history + raises DealStageChanged.
 - won_at/lost_at set by service, never by a form.
+- **Leaving Won or Lost (v1.6).** Moving a deal out of `won` clears `won_at`; out of `lost` clears `lost_at` and `lost_reason_id`. Entering `won`/`lost` again sets them fresh. The previous stages stay in `deal_stage_history`.
+- **Won with money (v1.6).** A deal can't leave `won` while any payment linked to it (directly or through its enrolments) is not fully refunded → 409 `deal_has_payment`, "Refund or cancel the payment first". Otherwise revenue reports and the board disagree.
+- **Correcting a lost reason (v1.7).** On a deal already in `lost`, PATCH /api/deals/:id may change `lost_reason_id` on its own: it must be an **active** reason and cannot be cleared. The stage does not change, so no `deal_stage_history` row is written and no `DealStageChanged` is raised; the change is in `audit_log`. Reports must read `lost_reason_id` from the deal, never from stage history.
+- **Days in stage (v1.6).** `stage_changed_at` resets on every real stage move, as before — a deal that goes back and forth starts from 0 each time. Every move is kept in `deal_stage_history`, so the dashboards can flag deals that keep bouncing.
 
 ### 12.6 HRDC
 
@@ -852,7 +872,8 @@ MVP scope: fields and reminders only — no document generation, no portal autom
 
 - funding_type = hrdc makes hrdc_grant_ref, hrdc_approval_date, hrdc_deadline_date visible+required before deal reaches `won`.
 - HRDC enrolment stays payment_pending, not confirmed, until manual payment/approval recorded — must not count as paid revenue.
-- Task type hrdc_deadline created when deal enters `funding`, due on hrdc_deadline_date.
+- **HRDC deadline task (revised v1.6).** Created by the app, in the same transaction as the save, when a deal with `funding_type = hrdc` enters `funding` with an `hrdc_deadline_date`, **or** gets a deadline date while already in `funding`. Due on `hrdc_deadline_date`, assigned to the deal owner. If the deadline date changes, update the open task's `due_at`. At most one open `hrdc_deadline` task per deal — enforced by the database (migration 004); on a unique violation, update the open task instead of inserting. **No worker creates this task** — Shawn's `DealStageChanged` handler only does SLA tracking and notifications (§11.1). Whether the reminder should fall due some days before the deadline depends on O7.
+- **Withdrawn HRDC task (v1.7).** When the deadline date is cleared, or `funding_type` is changed away from `hrdc`, the app closes the open `hrdc_deadline` task by setting `done_at` and `done_by` (the user making the change) in the same transaction. It is not deleted, and there is no `cancelled` state, so reports cannot tell a withdrawn reminder from a completed one. If that distinction matters, add a `cancelled` state before the 16 Oct schema freeze. Closing it frees the one-open-task slot, so a new deadline creates a fresh task.
 - Grant lead time and claim window are configurable settings, not constants (guidance conflicts and changes).
 
 ### 12.7 Money

@@ -19,3 +19,24 @@ export const personSchema = z.object({
 });
 
 export type PersonInput = z.infer<typeof personSchema>;
+
+// PATCH /api/people/:id — partial (spec §7). A field left out is unchanged;
+// an empty string clears it. Full name can change but never be emptied.
+const clearable = z.string().trim().max(500);
+export const personUpdateSchema = z.object({
+  fullName: z.string().trim().min(1, "Full name is required").optional(),
+  preferredName: clearable.optional(),
+  email: z
+    .string()
+    .trim()
+    .refine((v) => v === "" || isValidEmail(v), "Enter a valid email address")
+    .optional(),
+  phone: clearable.optional(),
+  whatsapp: clearable.optional(),
+  preferredLanguage: z.enum(["en", "zh"]).optional(),
+  jobTitle: clearable.optional(),
+  notes: z.string().max(10_000).optional(),
+  ownerId: z.string().nullable().optional(),
+});
+
+export type PersonUpdate = z.infer<typeof personUpdateSchema>;

@@ -1,0 +1,138 @@
+import type { NextRequest } from "next/server";
+import { getCurrentUser } from "@/lib/auth/current-user";
+import { apiError, forbidden, validationError } from "@/lib/api/errors";
+import { deletePerson, reasonSchema } from "@/lib/people/delete-service";
+import { getPersonDetail, updatePerson } from "@/lib/people/detail-service";
+import { personUpdateSchema } from "@/lib/validation/person";
+
+// GET /api/people/:id — spec §7 detail with timeline.
+export async function GET(
+  request: NextRequest,
+  ctx: RouteContext<"/api/people/[id]">,
+) {
+  const viewer = await getCurrentUser();
+  if (!viewer) return apiError(401, "unauthenticated", "Sign in to continue.");
+
+  const { id } = await ctx.params;
+  const result = await getPersonDetail(id, viewer);
+  if (result.kind === "not_found")
+    return apiError(
+      404,
+      "not_found",
+      "This person doesn't exist or was removed.",
+    );
+  if (result.kind === "forbidden")
+    return forbidden(viewer, request, {
+      what: "this person",
+      resource: "person",
+    });
+  return Response.json(result.detail);
+}
+
+// DELETE /api/people/:id — soft delete, super_admin only, reason required.
+export async function DELETE(
+  request: NextRequest,
+  ctx: RouteContext<"/api/people/[id]">,
+) {
+  const viewer = await getCurrentUser();
+  if (!viewer) return apiError(401, "unauthenticated", "Sign in to continue.");
+  if (viewer.role !== "super_admin")
+    return forbidden(viewer, request, {
+      what: "delete people",
+      resource: "person",
+    });
+
+  const parsed = reasonSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return validationError(parsed.error);
+
+  const { id } = await ctx.params;
+  const result = await deletePerson(id, parsed.data.reason, viewer);
+  switch (result.kind) {
+    case "done":
+      return new Response(null, { status: 204 });
+    case "forbidden":
+      return forbidden(viewer, request, {
+        what: "delete people",
+        resource: "person",
+      });
+    case "not_found":
+      return apiError(
+        404,
+        "not_found",
+        "This person doesn't exist or was removed.",
+      );
+    case "conflict":
+      return apiError(409, "delete_blocked", result.message);
+  }
+}
+
+// PATCH /api/people/:id — spec §7 partial update, audit-logged, with the
+// If-Match stale-edit check.
+export async function PATCH(
+  request: NextRequest,
+  ctx: RouteContext<"/api/people/[id]">,
+) {
+  const viewer = await getCurrentUser();
+  if (!viewer) return apiError(401, "unauthenticated", "Sign in to continue.");
+
+  // §7 (v1.7): If-Match is the integer row version from the GET.
+  const header = request.headers.get("If-Match");
+  const ifMatch = header === null ? NaN : Number(header);
+  if (!Number.isInteger(ifMatch) || ifMatch < 1)
+    return apiError(
+      428,
+      "precondition_required",
+      "Reload this person and try again.",
+    );
+
+  const body = await request.json().catch(() => null);
+  const parsed = personUpdateSchema.safeParse(body);
+  if (!parsed.success) return validationError(parsed.error);
+
+  const { id } = await ctx.params;
+  const result = await updatePerson(id, parsed.data, ifMatch, viewer);
+
+  switch (result.kind) {
+    case "updated":
+      return Response.json(result.person);
+    case "not_found":
+      return apiError(
+        404,
+        "not_found",
+        "This person doesn't exist or was removed.",
+      );
+    case "forbidden":
+      return forbidden(viewer, request, {
+        what: "edit this person",
+        resource: "person",
+      });
+    case "stale":
+      return apiError(
+        409,
+        "stale_edit",
+        "Someone else changed this person while you were editing. Reload to see their version.",
+      );
+    case "invalid":
+      return apiError(
+        400,
+        "validation_failed",
+        "Check the highlighted fields.",
+        {
+          fields: result.fields,
+        },
+      );
+    case "duplicate": {
+      const what = result.on === "phone" ? "phone number" : "email";
+      const name = result.existing.fullName || "another person";
+      return apiError(
+        409,
+        "duplicate",
+        `This ${what} already belongs to ${name}. Open their record, or merge them.`,
+        {
+          fields: { [result.on]: `Already belongs to ${name}` },
+          existing: result.existing,
+        },
+      );
+    }
+  }
+}

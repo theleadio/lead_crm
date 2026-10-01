@@ -1,10 +1,9 @@
-export default function CompaniesPage() {
-  return (
-    <div>
-      <h1 className="text-xl font-semibold">Companies</h1>
-      <p className="text-ink-muted mt-2 text-sm">
-        Screen not built yet — see spec Section 9.
-      </p>
-    </div>
-  );
+import { getCurrentUser } from "@/lib/auth/current-user";
+import { canWriteCompany } from "@/lib/auth/permissions";
+import { CompaniesList } from "./companies-list";
+
+// Spec §9.4. Hiding the Add button is UX only — the API re-checks (spec §6).
+export default async function CompaniesPage() {
+  const user = await getCurrentUser();
+  return <CompaniesList canWrite={user ? canWriteCompany(user) : false} />;
 }
