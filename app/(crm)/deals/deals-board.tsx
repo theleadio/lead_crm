@@ -11,13 +11,13 @@ import {
 import { Toast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { boardParams, PER_COLUMN, type BoardFilters } from "@/lib/deals/board";
 import { addMyr } from "@/lib/deals/format";
 import {
   STAGE_LABELS,
   STAGES,
   type DealCard as Deal,
   type DealListResponse,
-  type Pipeline,
   type Stage,
   type StageTotal,
 } from "@/lib/deals/types";
@@ -27,19 +27,6 @@ import type { OwnerOption } from "@/lib/people/types";
 import { DealCard } from "./deal-card";
 import { LostReasonDialog } from "./lost-reason-dialog";
 
-export type BoardFilters = {
-  pipeline: Pipeline;
-  owner: string;
-  course: string;
-  funding: string;
-  from: string;
-  to: string;
-  mine: boolean;
-  // Corporate only: deals that can't leave discovery yet (§12.5).
-  incomplete: boolean;
-};
-
-const PER_COLUMN = 50;
 const FUNDING: [string, string][] = [
   ["self", "Self"],
   ["company", "Company"],
@@ -60,14 +47,7 @@ async function fetchDeals(
   f: BoardFilters,
   extra: Record<string, string>,
 ): Promise<DealListResponse> {
-  const p = new URLSearchParams({ "filter[pipeline]": f.pipeline, ...extra });
-  if (f.owner) p.set("filter[owner]", f.owner);
-  if (f.course) p.set("filter[course]", f.course);
-  if (f.funding) p.set("filter[funding]", f.funding);
-  if (f.from) p.set("filter[createdFrom]", f.from);
-  if (f.to) p.set("filter[createdTo]", f.to);
-  if (f.mine) p.set("filter[mine]", "true");
-  if (f.incomplete) p.set("filter[incomplete]", "true");
+  const p = boardParams(f, extra);
   let res: Response;
   try {
     res = await fetch(`/api/deals?${p}`);
@@ -120,13 +100,18 @@ function placeCard(board: Board, card: Deal): Board {
 // stage through POST /api/deals/:id/stage.
 export function DealsBoard({
   initial,
+  initialBoard,
   canWrite,
 }: {
   initial: BoardFilters;
+  initialBoard: Extract<Board, { status: "ready" }> | null;
   canWrite: boolean;
 }) {
   const [filters, setFilters] = useState(initial);
-  const [board, setBoard] = useState<Board>({ status: "loading" });
+  const [board, setBoard] = useState<Board>(
+    initialBoard ?? { status: "loading" },
+  );
+
   const [reloadKey, setReloadKey] = useState(0);
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
   const [dragging, setDragging] = useState<Deal | null>(null);
@@ -164,6 +149,8 @@ export function DealsBoard({
   useEffect(() => {
     // Ignore flag, not AbortController: an abort mid-read errors the response
     // body stream, and that rejection reaches no catch of ours.
+    // The server rendered these columns for exactly these filters.
+    if (initialBoard && reloadKey === 0 && filters === initial) return;
     let ignore = false;
     const cols = STAGES[filters.pipeline];
     Promise.all(
@@ -190,7 +177,7 @@ export function DealsBoard({
     return () => {
       ignore = true;
     };
-  }, [filters, reloadKey]);
+  }, [initial, initialBoard, filters, reloadKey]);
 
   // Filters live in the URL so reload and sharing work (design decision 8).
   useEffect(() => {

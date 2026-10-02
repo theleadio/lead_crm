@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { db } from "../sql";
 import { getSession } from "./server";
 import { ROLES, type Role, type Viewer } from "./permissions";
@@ -7,7 +8,7 @@ export type CurrentUser = Viewer & { email: string | null; fullName: string };
 // Spec §6 + v1.2: the signed-in auth user maps to an app_user through
 // auth_user_id. A deactivated or unlinked user gets no access on their
 // next request (null → 401).
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const session = await getSession();
   if (!session) return null;
 
@@ -32,4 +33,4 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     fullName: user.full_name,
     role: override && ROLES.includes(override) ? override : user.role_code,
   };
-}
+});

@@ -94,11 +94,13 @@ function filterParams(q: string, f: Filters): URLSearchParams {
 
 export function PeopleList({
   initialQ,
+  initial,
   canWrite,
   canExport,
   canAdd,
 }: {
   initialQ: string;
+  initial: ListResponse<PersonListItem> | null;
   canWrite: boolean;
   canExport: boolean;
   canAdd: boolean;
@@ -108,7 +110,10 @@ export function PeopleList({
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState<PeopleSort | undefined>(undefined);
-  const [state, setState] = useState<LoadState>({ status: "loading" });
+  const [state, setState] = useState<LoadState>(
+    initial ? { status: "ready", result: initial } : { status: "loading" },
+  );
+
   const [reloadKey, setReloadKey] = useState(0);
   const [owners, setOwners] = useState<OwnerOption[]>([]);
   const [tags, setTags] = useState<TagOption[]>([]);
@@ -159,6 +164,17 @@ export function PeopleList({
     // response body stream, and that rejection reaches no catch of ours
     // ("Uncaught (in promise) AbortError" in dev). A late response is simply
     // dropped instead.
+    // The server rendered exactly this query into `initial`; only refetch
+    // once something moves off it.
+    if (
+      initial &&
+      reloadKey === 0 &&
+      q === initialQ &&
+      filters === NO_FILTERS &&
+      page === 1 &&
+      !sort
+    )
+      return;
     let ignore = false;
     const params = filterParams(q, filters);
     if (sort) params.set("sort", sort);
@@ -185,7 +201,7 @@ export function PeopleList({
     return () => {
       ignore = true;
     };
-  }, [q, filters, sort, page, reloadKey]);
+  }, [initial, initialQ, q, filters, sort, page, reloadKey]);
 
   function changeSort(next: string) {
     setSort(next as PeopleSort);
@@ -252,7 +268,7 @@ export function PeopleList({
           placeholder="Search name, email or phone…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-72"
+          className="w-full sm:w-72"
         />
         <FilterSelect
           label="Stage"

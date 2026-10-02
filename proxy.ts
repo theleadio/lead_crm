@@ -28,6 +28,15 @@ export async function proxy(request: NextRequest) {
     },
   );
 
+  // API routes authenticate themselves (every handler calls getCurrentUser),
+  // so this only has to keep the session cookie fresh for them. getSession()
+  // reads the cookie locally and refreshes only when the token has expired —
+  // getUser() is a round trip to Supabase on every single list fetch.
+  if (request.nextUrl.pathname.startsWith("/api")) {
+    await supabase.auth.getSession();
+    return response;
+  }
+
   const { data } = await supabase.auth.getUser();
   const isCrmRoute =
     request.nextUrl.pathname.startsWith("/(crm)") ||

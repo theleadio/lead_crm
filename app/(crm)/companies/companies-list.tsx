@@ -39,14 +39,23 @@ type State =
   | { status: "ready"; result: ListResponse<CompanyListItem> };
 
 // Spec §9.4 list: name, industry, size, HRDC registered, people count, open deals.
-export function CompaniesList({ canWrite }: { canWrite: boolean }) {
+export function CompaniesList({
+  initial,
+  canWrite,
+}: {
+  initial: ListResponse<CompanyListItem> | null;
+  canWrite: boolean;
+}) {
   const [q, setQ] = useState("");
   const [search, setSearch] = useState("");
   const [hrdc, setHrdc] = useState("");
   const [openDeal, setOpenDeal] = useState("");
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState("name");
-  const [state, setState] = useState<State>({ status: "loading" });
+  const [state, setState] = useState<State>(
+    initial ? { status: "ready", result: initial } : { status: "loading" },
+  );
+
   const [reloadKey, setReloadKey] = useState(0);
   const [addOpen, setAddOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -65,6 +74,17 @@ export function CompaniesList({ canWrite }: { canWrite: boolean }) {
     // React's ignore flag, not AbortController: aborting mid-read errors the
     // response body stream, and that rejection reaches no catch of ours
     // ("Uncaught (in promise) AbortError" in dev).
+    // Same query the server already rendered into `initial`.
+    if (
+      initial &&
+      reloadKey === 0 &&
+      !search &&
+      !hrdc &&
+      !openDeal &&
+      sort === "name" &&
+      page === 1
+    )
+      return;
     let ignore = false;
     const params = new URLSearchParams({
       page: String(page),
@@ -95,7 +115,7 @@ export function CompaniesList({ canWrite }: { canWrite: boolean }) {
     return () => {
       ignore = true;
     };
-  }, [search, hrdc, openDeal, sort, page, reloadKey]);
+  }, [initial, search, hrdc, openDeal, sort, page, reloadKey]);
 
   const hasFilters = Boolean(search || hrdc || openDeal);
   const clearFilters = () => {
@@ -126,7 +146,7 @@ export function CompaniesList({ canWrite }: { canWrite: boolean }) {
           placeholder="Search by company name…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          className="w-72"
+          className="w-full sm:w-72"
         />
         <FilterSelect
           label="HRDC registered"

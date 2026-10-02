@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 
@@ -29,9 +30,12 @@ export async function createClient() {
   );
 }
 
-export async function getSession() {
+// cache(): every auth check is a network round trip to Supabase (~150ms), and
+// a single navigation asks for the session several times — layout, page, and
+// anything they call. React dedupes those to one call per request.
+export const getSession = cache(async () => {
   const supabase = await createClient();
   const { data, error } = await supabase.auth.getUser();
   if (error || !data.user) return null;
   return data.user;
-}
+});

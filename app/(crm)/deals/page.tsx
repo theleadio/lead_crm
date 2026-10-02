@@ -1,7 +1,10 @@
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { canWriteDeal, permissionFor } from "@/lib/auth/permissions";
-import { FUNDING_TYPES, PIPELINES } from "@/lib/deals/types";
-import { DealsBoard, type BoardFilters } from "./deals-board";
+import { boardParams, PER_COLUMN, type BoardFilters } from "@/lib/deals/board";
+import { listDeals } from "@/lib/deals/service";
+import { FUNDING_TYPES, PIPELINES, STAGES } from "@/lib/deals/types";
+import { dealListQuerySchema, readDealParams } from "@/lib/validation/deal";
+import { DealsBoard } from "./deals-board";
 
 type Params = Record<string, string | string[] | undefined>;
 const one = (v: string | string[] | undefined) =>
@@ -52,5 +55,37 @@ export default async function DealsPage({
     incomplete: one(sp.incomplete) === "1" && pipeline === "corporate",
   };
 
-  return <DealsBoard initial={initial} canWrite={canWriteDeal(user)} />;
+  // The columns on the server: the board used to paint six empty columns and
+  // then fire six parallel /api/deals requests, each paying its own auth round
+  // trip. Filter changes and "load more" still go through the API.
+  const stages = STAGES[initial.pipeline];
+  const columns = await Promise.all(
+    stages.map((stage) =>
+      listDeals(
+        dealListQuerySchema.parse(
+          readDealParams(
+            boardParams(initial, {
+              "filter[stage]": stage,
+              limit: String(PER_COLUMN),
+            }),
+          ),
+        ),
+        user,
+      ),
+    ),
+  );
+
+  return (
+    <DealsBoard
+      initial={initial}
+      initialBoard={{
+        status: "ready",
+        columns: Object.fromEntries(
+          stages.map((stage, i) => [stage, columns[i].data]),
+        ),
+        totals: columns[0].stageTotals,
+      }}
+      canWrite={canWriteDeal(user)}
+    />
+  );
 }
