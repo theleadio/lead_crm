@@ -472,7 +472,7 @@ export function DealsBoard({
               )}
             </p>
           )}
-          <div className="grid auto-cols-[minmax(15rem,1fr)] grid-flow-col gap-3 overflow-x-auto pb-2">
+          <div className="grid auto-cols-fr grid-flow-col gap-3 overflow-x-auto pb-2">
             {stages.map((stage) => {
               const total = ready?.totals.find((t) => t.stage === stage);
               const cards = ready?.columns[stage] ?? [];
@@ -496,12 +496,12 @@ export function DealsBoard({
                     if (dragging) requestMove(dragging, stage);
                     setDragging(null);
                   }}
-                  className={`bg-surface-sunken flex min-h-64 flex-col gap-2 rounded-md p-2 ${
+                  className={`bg-surface-sunken flex min-h-64 min-w-[10rem] flex-col gap-2 rounded-md p-2 ${
                     dropTarget === stage ? "outline-lead-blue outline-2" : ""
                   }`}
                 >
                   <header className="px-1">
-                    <h2 className="text-ink text-sm font-semibold">
+                    <h2 className="text-ink text-sm font-semibold text-balance">
                       {STAGE_LABELS[stage]}{" "}
                       <span className="text-ink-muted font-normal">
                         {total?.count ?? "–"}

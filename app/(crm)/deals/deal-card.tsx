@@ -87,7 +87,7 @@ export function DealCard({
           </span>
         </p>
       )}
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-[13px] font-bold">
           {deal.amountMyr ? formatMoneyMyr(deal.amountMyr) : "—"}
         </span>

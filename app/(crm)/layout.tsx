@@ -35,7 +35,7 @@ export default async function CrmLayout({
 
   return (
     <div className="bg-surface flex min-h-screen gap-4 p-4">
-      <aside className="bg-charcoal border-line w-56 shrink-0 rounded-lg border px-3.5 py-5">
+      <aside className="bg-charcoal border-line sticky top-4 h-[calc(100vh-2rem)] w-56 shrink-0 overflow-y-auto rounded-lg border px-3.5 py-5">
         <div className="mb-4 flex items-center gap-2.5 px-1.5 pb-2">
           <span
             aria-hidden="true"
@@ -54,9 +54,13 @@ export default async function CrmLayout({
         </div>
         <NavLinks items={navFor(user)} />
       </aside>
-      <div className="flex flex-1 flex-col gap-4">
+      <div className="flex min-w-0 flex-1 flex-col gap-4">
         <header className="border-line bg-surface-raised flex items-center justify-between gap-4 rounded-full border py-2.5 pr-2.5 pl-3.5">
-          <form action="/people" method="get" className="relative">
+          <form
+            action="/people"
+            method="get"
+            className="relative min-w-0 flex-1"
+          >
             <Search
               aria-hidden="true"
               className="text-ink-subtle pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
@@ -68,10 +72,10 @@ export default async function CrmLayout({
               pattern=".*\S.*"
               aria-label="Search people"
               placeholder="Search people, companies…"
-              className="bg-surface-sunken text-ink placeholder:text-ink-subtle focus-visible:outline-focus-ring w-80 rounded-full py-2 pr-3 pl-9 text-[13px] focus-visible:outline-2 focus-visible:outline-offset-2"
+              className="bg-surface-sunken text-ink placeholder:text-ink-subtle focus-visible:outline-focus-ring w-full max-w-80 rounded-full py-2 pr-3 pl-9 text-[13px] focus-visible:outline-2 focus-visible:outline-offset-2"
             />
           </form>
-          <div className="text-ink flex items-center gap-3 text-sm">
+          <div className="text-ink flex shrink-0 items-center gap-3 text-sm">
             <span>{user.email}</span>
             <SignOutButton />
             <span
@@ -82,7 +86,7 @@ export default async function CrmLayout({
             </span>
           </div>
         </header>
-        <main className="text-ink flex-1">{children}</main>
+        <main className="text-ink min-w-0 flex-1">{children}</main>
         <FlashToast />
       </div>
     </div>
