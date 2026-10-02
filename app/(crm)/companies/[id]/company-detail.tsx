@@ -49,12 +49,13 @@ export function CompanyDetailView({
   const dismissToast = useCallback(() => setToast(null), []);
 
   useEffect(() => {
-    const controller = new AbortController();
-    fetch(`/api/companies/${encodeURIComponent(id)}`, {
-      signal: controller.signal,
-    })
+    // Ignore flag, not AbortController: an abort mid-read errors the response
+    // body stream, and that rejection reaches no catch of ours.
+    let ignore = false;
+    fetch(`/api/companies/${encodeURIComponent(id)}`)
       .then(async (res) => {
         const body = await res.json();
+        if (ignore) return;
         if (!res.ok)
           setState({
             status: "error",
@@ -63,15 +64,17 @@ export function CompanyDetailView({
           });
         else setState({ status: "ready", detail: body });
       })
-      .catch((err: Error) => {
-        if (err.name !== "AbortError")
+      .catch(() => {
+        if (!ignore)
           setState({
             status: "error",
             code: null,
             message: "Couldn't load this company — check your connection.",
           });
       });
-    return () => controller.abort();
+    return () => {
+      ignore = true;
+    };
   }, [id, reloadKey]);
 
   // Reload in place: the page keeps showing the old data until the new
@@ -406,7 +409,7 @@ function MemberRow({
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="border-input bg-surface-raised text-ink h-9 rounded-md border px-2"
+              className="border-line-strong bg-surface-sunken text-ink h-9 rounded-sm border px-2"
             />
           </label>
           {error && (
@@ -452,23 +455,22 @@ function AddPerson({
 
   useEffect(() => {
     if (!open || !q.trim()) return;
-    const controller = new AbortController();
+    let ignore = false;
     const t = setTimeout(() => {
       const params = new URLSearchParams({ q: q.trim(), limit: "8" });
-      fetch(`/api/people?${params}`, { signal: controller.signal })
+      fetch(`/api/people?${params}`)
         .then(async (res) => {
           const body = await res.json();
           if (!res.ok) throw new Error(body.error?.message);
-          setResults((body as ListResponse<PersonListItem>).data);
+          if (!ignore) setResults((body as ListResponse<PersonListItem>).data);
         })
         .catch((err: Error) => {
-          if (err.name !== "AbortError")
-            setError(err.message || "Couldn't search people.");
+          if (!ignore) setError(err.message || "Couldn't search people.");
         });
     }, 300);
     return () => {
       clearTimeout(t);
-      controller.abort();
+      ignore = true;
     };
   }, [open, q]);
 

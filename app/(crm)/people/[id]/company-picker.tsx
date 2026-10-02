@@ -44,24 +44,23 @@ export function CompanyPicker({
 
   useEffect(() => {
     if (!open) return;
-    const controller = new AbortController();
+    let ignore = false;
     const t = setTimeout(() => {
       const params = new URLSearchParams({ limit: "8" });
       if (q.trim()) params.set("q", q.trim());
-      fetch(`/api/companies?${params}`, { signal: controller.signal })
+      fetch(`/api/companies?${params}`)
         .then(async (res) => {
           const body = await res.json();
           if (!res.ok) throw new Error(body.error?.message);
-          setResults((body as ListResponse<CompanyListItem>).data);
+          if (!ignore) setResults((body as ListResponse<CompanyListItem>).data);
         })
         .catch((err: Error) => {
-          if (err.name !== "AbortError")
-            setError(err.message || "Couldn't load companies.");
+          if (!ignore) setError(err.message || "Couldn't load companies.");
         });
     }, 300);
     return () => {
       clearTimeout(t);
-      controller.abort();
+      ignore = true;
     };
   }, [open, q]);
 

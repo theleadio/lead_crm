@@ -80,12 +80,13 @@ export function PersonDetailView({
   const dismissToast = useCallback(() => setToast(null), []);
 
   useEffect(() => {
-    const controller = new AbortController();
-    fetch(`/api/people/${encodeURIComponent(id)}`, {
-      signal: controller.signal,
-    })
+    // Ignore flag, not AbortController: an abort mid-read errors the response
+    // body stream, and that rejection reaches no catch of ours.
+    let ignore = false;
+    fetch(`/api/people/${encodeURIComponent(id)}`)
       .then(async (res) => {
         const body = await res.json();
+        if (ignore) return;
         if (!res.ok)
           setState({
             status: "error",
@@ -94,15 +95,17 @@ export function PersonDetailView({
           });
         else setState({ status: "ready", detail: body });
       })
-      .catch((err: Error) => {
-        if (err.name === "AbortError") return;
+      .catch(() => {
+        if (ignore) return;
         setState({
           status: "error",
           code: null,
           message: "Couldn't load this person — check your connection.",
         });
       });
-    return () => controller.abort();
+    return () => {
+      ignore = true;
+    };
   }, [id, reloadKey]);
 
   const reload = () => {
@@ -481,7 +484,7 @@ function EditForm({
           id="preferredLanguage"
           value={form.preferredLanguage}
           onChange={(e) => set("preferredLanguage")(e.target.value)}
-          className="border-input bg-surface-raised text-ink focus-visible:outline-focus-ring h-9 w-full rounded-md border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+          className="border-line-strong bg-surface-sunken text-ink focus-visible:outline-focus-ring h-9 w-full rounded-sm border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
         >
           <option value="en">English</option>
           <option value="zh">Chinese</option>
@@ -513,7 +516,7 @@ function EditForm({
           id="ownerId"
           value={form.ownerId}
           onChange={(e) => set("ownerId")(e.target.value)}
-          className="border-input bg-surface-raised text-ink focus-visible:outline-focus-ring h-9 w-full rounded-md border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+          className="border-line-strong bg-surface-sunken text-ink focus-visible:outline-focus-ring h-9 w-full rounded-sm border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
         >
           <option value="">Unassigned</option>
           {owners.map((o) => (
@@ -529,7 +532,7 @@ function EditForm({
           rows={4}
           value={form.notes}
           onChange={(e) => set("notes")(e.target.value)}
-          className="border-input bg-surface-raised text-ink focus-visible:outline-focus-ring w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+          className="border-line-strong bg-surface-sunken text-ink focus-visible:outline-focus-ring w-full rounded-sm border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
         />
       </Field>
 

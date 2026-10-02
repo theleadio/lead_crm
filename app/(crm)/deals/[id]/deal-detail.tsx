@@ -89,12 +89,13 @@ export function DealDetailView({
   const dismissToast = useCallback(() => setToast(null), []);
 
   useEffect(() => {
-    const controller = new AbortController();
-    fetch(`/api/deals/${encodeURIComponent(id)}`, {
-      signal: controller.signal,
-    })
+    // Ignore flag, not AbortController: an abort mid-read errors the response
+    // body stream, and that rejection reaches no catch of ours.
+    let ignore = false;
+    fetch(`/api/deals/${encodeURIComponent(id)}`)
       .then(async (res) => {
         const body = await res.json();
+        if (ignore) return;
         if (!res.ok)
           setState({
             status: "error",
@@ -103,15 +104,17 @@ export function DealDetailView({
           });
         else setState({ status: "ready", deal: body });
       })
-      .catch((err: Error) => {
-        if (err.name === "AbortError") return;
+      .catch(() => {
+        if (ignore) return;
         setState({
           status: "error",
           code: null,
           message: "Couldn't load this deal — check your connection.",
         });
       });
-    return () => controller.abort();
+    return () => {
+      ignore = true;
+    };
   }, [id, reloadKey]);
 
   const reload = () => {
@@ -169,7 +172,7 @@ export function DealDetailView({
             <Badge
               variant={
                 d.stage === "won"
-                  ? "default"
+                  ? "success"
                   : d.stage === "lost"
                     ? "destructive"
                     : "secondary"
@@ -414,7 +417,7 @@ function StageControl({
             if (to === "lost") setAskLost(true);
             else void move(to);
           }}
-          className="border-input bg-surface-raised text-ink focus-visible:outline-focus-ring h-9 w-full rounded-md border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+          className="border-line-strong bg-surface-sunken text-ink focus-visible:outline-focus-ring h-9 w-full rounded-sm border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
         >
           {STAGES[deal.pipeline].map((s) => (
             <option key={s} value={s}>
@@ -966,7 +969,7 @@ function Select({
       id={id}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="border-input bg-surface-raised text-ink focus-visible:outline-focus-ring h-9 w-full rounded-md border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+      className="border-line-strong bg-surface-sunken text-ink focus-visible:outline-focus-ring h-9 w-full rounded-sm border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
     >
       {placeholder !== undefined && <option value="">{placeholder}</option>}
       {extra && <option value={extra.value}>{extra.label}</option>}

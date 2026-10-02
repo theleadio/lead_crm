@@ -1,13 +1,15 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Search } from "lucide-react";
 import { FlashToast } from "@/components/flash-toast";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { navFor } from "@/lib/auth/nav";
 import { getSession } from "@/lib/auth/server";
+import { NavLinks } from "./nav-links";
 import { SignOutButton } from "./sign-out-button";
 
 // Shell per spec Section 9: role-filtered sidebar (lib/auth/nav.ts) + top bar
-// (global people search, signed-in user, sign out).
+// (global people search, signed-in user, sign out). Styled after design.pen
+// "Navigation": a floating ink sidebar card and a pill top bar on the canvas.
 export default async function CrmLayout({
   children,
 }: {
@@ -32,42 +34,55 @@ export default async function CrmLayout({
   }
 
   return (
-    <div className="bg-surface flex min-h-screen">
-      <aside className="bg-charcoal text-on-charcoal w-56 shrink-0 p-4">
-        <div className="bg-lead-yellow text-on-yellow mb-6 rounded-sm px-3 py-1.5 text-lg font-semibold">
-          LEAD CRM
+    <div className="bg-surface flex min-h-screen gap-4 p-4">
+      <aside className="bg-charcoal border-line w-56 shrink-0 rounded-lg border px-3.5 py-5">
+        <div className="mb-4 flex items-center gap-2.5 px-1.5 pb-2">
+          <span
+            aria-hidden="true"
+            className="bg-charcoal-raised flex size-[30px] items-center justify-center gap-0.5 rounded-full"
+          >
+            <span className="bg-lead-yellow h-3.5 w-1 rounded-[1px]" />
+            <span className="flex flex-col gap-0.5">
+              <span className="h-[2.5px] w-[9px] rounded-[1px] bg-[#8FA6F5]" />
+              <span className="h-[2.5px] w-[7px] rounded-[1px] bg-[#8FA6F5]" />
+              <span className="h-[2.5px] w-[9px] rounded-[1px] bg-[#8FA6F5]" />
+            </span>
+          </span>
+          <span className="text-base font-bold tracking-wider text-white">
+            LEAD
+          </span>
         </div>
-        <nav className="space-y-1">
-          {navFor(user).map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="text-on-charcoal focus-visible:outline-lead-yellow block rounded-sm px-3 py-2 text-sm hover:bg-black/20 focus-visible:outline-2 focus-visible:outline-offset-2"
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+        <NavLinks items={navFor(user)} />
       </aside>
-      <div className="flex flex-1 flex-col">
-        <header className="border-line bg-surface-raised flex items-center justify-between border-b px-6 py-3">
-          <form action="/people" method="get">
+      <div className="flex flex-1 flex-col gap-4">
+        <header className="border-line bg-surface-raised flex items-center justify-between gap-4 rounded-full border py-2.5 pr-2.5 pl-3.5">
+          <form action="/people" method="get" className="relative">
+            <Search
+              aria-hidden="true"
+              className="text-ink-subtle pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
+            />
             <input
               type="search"
               name="q"
               required
               pattern=".*\S.*"
               aria-label="Search people"
-              placeholder="Search people by name, email, phone…"
-              className="border-line-strong bg-surface-raised text-ink placeholder:text-ink-muted focus-visible:outline-focus-ring w-80 rounded-sm border px-3 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+              placeholder="Search people, companies…"
+              className="bg-surface-sunken text-ink placeholder:text-ink-subtle focus-visible:outline-focus-ring w-80 rounded-full py-2 pr-3 pl-9 text-[13px] focus-visible:outline-2 focus-visible:outline-offset-2"
             />
           </form>
           <div className="text-ink flex items-center gap-3 text-sm">
             <span>{user.email}</span>
             <SignOutButton />
+            <span
+              aria-hidden="true"
+              className="bg-lead-blue flex size-9 items-center justify-center rounded-full text-[13px] font-bold text-white"
+            >
+              {(user.email ?? "?").slice(0, 2).toUpperCase()}
+            </span>
           </div>
         </header>
-        <main className="text-ink flex-1 p-6">{children}</main>
+        <main className="text-ink flex-1">{children}</main>
         <FlashToast />
       </div>
     </div>

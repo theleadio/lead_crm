@@ -45,15 +45,14 @@ export function CompanySelect({
   // Debounced like the 9.1 search (§9.1: 300ms).
   useEffect(() => {
     if (term.length < 2) return;
-    const controller = new AbortController();
+    let ignore = false;
     const timer = setTimeout(() => {
-      fetch(`/api/companies?q=${encodeURIComponent(term)}&limit=10`, {
-        signal: controller.signal,
-      })
+      fetch(`/api/companies?q=${encodeURIComponent(term)}&limit=10`)
         .then(async (res) => {
           const body = (await res.json()) as ListResponse<CompanyListItem> & {
             error?: { message?: string };
           };
+          if (ignore) return;
           setFound({
             term,
             items: res.ok ? body.data : [],
@@ -62,8 +61,8 @@ export function CompanySelect({
               : (body.error?.message ?? "Couldn't search companies."),
           });
         })
-        .catch((err: Error) => {
-          if (err.name === "AbortError") return;
+        .catch(() => {
+          if (ignore) return;
           setFound({
             term,
             items: [],
@@ -73,7 +72,7 @@ export function CompanySelect({
     }, 300);
     return () => {
       clearTimeout(timer);
-      controller.abort();
+      ignore = true;
     };
   }, [term]);
 

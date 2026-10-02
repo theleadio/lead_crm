@@ -6,10 +6,11 @@ import { agingTone, daysInStage, initials } from "@/lib/deals/format";
 import { STAGE_LABELS, STAGES, type DealCard as Deal } from "@/lib/deals/types";
 import { formatMoneyMyr } from "@/lib/format/money";
 
+// design.pen DealCard: the days-in-stage pill, tinted by aging tone.
 const TONE = {
-  none: "text-ink-muted",
-  amber: "bg-warning-soft text-warning rounded-sm px-1.5 font-medium",
-  red: "bg-danger-soft text-danger rounded-sm px-1.5 font-medium",
+  none: "bg-muted text-ink-muted",
+  amber: "bg-warning-soft text-warning",
+  red: "bg-danger-soft text-danger",
 };
 
 // Same names the stage route's corporate_fields_missing uses (§12.5), so a
@@ -57,7 +58,7 @@ export function DealCard({
         router.push(href);
       }}
       aria-busy={busy}
-      className={`border-line bg-surface-raised space-y-1 rounded-md border p-3 text-sm shadow-xs ${
+      className={`border-line bg-surface-raised space-y-2.5 rounded-md border p-4 text-sm ${
         draggable ? "cursor-grab" : "cursor-pointer"
       } ${busy ? "opacity-60" : ""}`}
     >
@@ -65,11 +66,11 @@ export function DealCard({
       <Link
         href={href}
         draggable={false}
-        className="text-ink focus-visible:outline-focus-ring block font-medium hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
+        className="text-ink focus-visible:outline-focus-ring block font-semibold hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
       >
         {deal.person.fullName}
       </Link>
-      <p className="text-ink-muted truncate">
+      <p className="text-ink-muted truncate text-xs">
         {deal.course?.name ?? "No course"}
       </p>
       {/* §12.5: this corporate deal cannot leave discovery yet. Muted, not
@@ -86,27 +87,33 @@ export function DealCard({
           </span>
         </p>
       )}
-      <div className="flex items-center justify-between gap-2 pt-1">
-        <span>{deal.amountMyr ? formatMoneyMyr(deal.amountMyr) : "—"}</span>
-        <span className={TONE[agingTone(deal.stage, days)]}>
-          {days} {days === 1 ? "day" : "days"}
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[13px] font-bold">
+          {deal.amountMyr ? formatMoneyMyr(deal.amountMyr) : "—"}
         </span>
-        {deal.owner ? (
+        <span className="flex items-center gap-2">
           <span
-            title={deal.owner.fullName}
-            className="bg-blue-soft text-blue-ink flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+            className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${TONE[agingTone(deal.stage, days)]}`}
           >
-            <span aria-hidden="true">{initials(deal.owner.fullName)}</span>
-            <span className="sr-only">Owner: {deal.owner.fullName}</span>
+            {days} {days === 1 ? "day" : "days"}
           </span>
-        ) : (
-          <span
-            title="No owner"
-            className="border-line-strong size-7 shrink-0 rounded-full border border-dashed"
-          >
-            <span className="sr-only">No owner</span>
-          </span>
-        )}
+          {deal.owner ? (
+            <span
+              title={deal.owner.fullName}
+              className="bg-chart-2 flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+            >
+              <span aria-hidden="true">{initials(deal.owner.fullName)}</span>
+              <span className="sr-only">Owner: {deal.owner.fullName}</span>
+            </span>
+          ) : (
+            <span
+              title="No owner"
+              className="border-line-strong size-6 shrink-0 rounded-full border border-dashed"
+            >
+              <span className="sr-only">No owner</span>
+            </span>
+          )}
+        </span>
       </div>
       {canWrite && (
         <select
@@ -114,7 +121,7 @@ export function DealCard({
           value=""
           disabled={busy}
           onChange={(e) => e.target.value && onMove(e.target.value)}
-          className="border-input bg-surface text-ink-muted focus-visible:outline-focus-ring mt-1 h-7 w-full rounded-sm border px-2 text-xs focus-visible:outline-2 focus-visible:outline-offset-2"
+          className="border-line-strong bg-surface-sunken text-ink-muted focus-visible:outline-focus-ring h-7 w-full rounded-sm border px-2 text-xs focus-visible:outline-2 focus-visible:outline-offset-2"
         >
           <option value="">Move to…</option>
           {STAGES[deal.pipeline]

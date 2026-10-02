@@ -5,48 +5,53 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* LEAD design system — from the brand's design system artifact (project/tokens.json) */
-  --surface: #f2f2f2;
+  /* LEAD design system — token values from design.pen (light mode). The app
+     renders dark by default (<html class="dark">); these are the light
+     counterparts of the same tokens. */
+  --surface: #f2f3f8;
   --surface-raised: #ffffff;
-  --surface-sunken: #e6e6e6;
-  --line: #d9d9d9;
-  --line-strong: #8c8c8c;
-  --ink: #333333;
-  --ink-muted: #616161;
-  --charcoal: #3d3d3d;
-  --on-charcoal: #f2f2f2;
-  --lead-yellow: #fbe246;
-  --on-yellow: #333333;
-  --yellow-soft: #fdf5c2;
-  --yellow-ink: #6b5a00;
-  --lead-blue: #a1bacd;
-  --blue-soft: #e4ecf2;
-  --blue-ink: #3b5870;
-  --success: #2e6b3a;
-  --success-soft: #e3f1e5;
-  --warning: #9a4a00;
-  --warning-soft: #fcebd9;
-  --danger: #b3261e;
-  --danger-soft: #fbe5e3;
-  --focus-ring: #3b5870;
+  --surface-sunken: #eceef5;
+  --line: #e7e9f1;
+  --line-strong: #d6dae5;
+  --ink: #1b1d29;
+  --ink-muted: #5e6375;
+  --ink-subtle: #8e94a6;
+  --charcoal: #2b2d35;
+  --charcoal-raised: #383b45;
+  --on-charcoal: #a9aebd;
+  --lead-yellow: #f5be2e;
+  --on-yellow: #1b1d29;
+  --yellow-soft: #fdf3d6;
+  --yellow-ink: #b97f00;
+  --lead-blue: #4f6bed;
+  --lead-blue-hover: #3e57d4;
+  --blue-soft: #e8ecfd;
+  --blue-ink: #4f6bed;
+  --success: #12a150;
+  --success-soft: #e2f5ea;
+  --warning: #b97f00;
+  --warning-soft: #fdf3d6;
+  --danger: #e5484d;
+  --danger-soft: #fde9e9;
+  --focus-ring: #4f6bed;
 
   /* shadcn/ui tokens, mapped to the brand tokens above instead of shadcn's
      generic neutral defaults, so every shadcn component picks up brand
-     colors automatically. */
+     colors automatically. Blue leads every action; yellow only highlights. */
   --background: var(--surface);
   --foreground: var(--ink);
   --card: var(--surface-raised);
   --card-foreground: var(--ink);
   --popover: var(--surface-raised);
   --popover-foreground: var(--ink);
-  --primary: var(--lead-yellow);
-  --primary-foreground: var(--on-yellow);
-  --secondary: var(--lead-blue);
-  --secondary-foreground: var(--on-yellow);
+  --primary: var(--lead-blue);
+  --primary-foreground: #ffffff;
+  --secondary: var(--surface-sunken);
+  --secondary-foreground: var(--ink);
   --muted: var(--surface-sunken);
   --muted-foreground: var(--ink-muted);
   --accent: var(--blue-soft);
-  --accent-foreground: var(--blue-ink);
+  --accent-foreground: var(--lead-blue);
   --destructive: var(--danger);
   --border: var(--line);
   --input: var(--line-strong);
@@ -54,46 +59,49 @@
   --radius: 1rem;
   --sidebar: var(--charcoal);
   --sidebar-foreground: var(--on-charcoal);
-  --sidebar-primary: var(--lead-yellow);
-  --sidebar-primary-foreground: var(--on-yellow);
-  --sidebar-accent: var(--charcoal);
-  --sidebar-accent-foreground: var(--on-charcoal);
+  --sidebar-primary: var(--lead-blue);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--charcoal-raised);
+  --sidebar-accent-foreground: #ffffff;
   --sidebar-border: var(--line);
   --sidebar-ring: var(--focus-ring);
 }
 
-/* Dark mode follows the OS (prefers-color-scheme) — there's no theme
-   toggle in the app yet, so this is the only way dark mode activates. */
+/* Dark is the design's default mode, so the root layout sets .dark. The media
+   query keeps the same values for anyone who strips that class. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --surface: #1a1a1a;
-    --surface-raised: #242424;
-    --surface-sunken: #121212;
-    --line: #383838;
-    --line-strong: #808080;
-    --ink: #f2f2f2;
-    --ink-muted: #b3b3b3;
-    --lead-yellow: #fbe246;
-    --on-yellow: #333333;
-    --yellow-soft: #3a3512;
-    --yellow-ink: #fbe246;
-    --lead-blue: #a1bacd;
-    --blue-soft: #233340;
-    --blue-ink: #b9cddb;
-    --success: #8fd19e;
-    --success-soft: #1c3323;
-    --warning: #f5b262;
-    --warning-soft: #3a2812;
-    --danger: #ff8f86;
-    --danger-soft: #3d1f1c;
-    --focus-ring: #fbe246;
+    --surface: #0e0f13;
+    --surface-raised: #17181e;
+    --surface-sunken: #272a34;
+    --line: #262932;
+    --line-strong: #3a3e4a;
+    --ink: #f4f5f8;
+    --ink-muted: #a3a8b8;
+    --ink-subtle: #6e7486;
+    --charcoal: #1a1b22;
+    --charcoal-raised: #2b2d35;
+    --on-charcoal: #9ea3b3;
+    --yellow-soft: #3a2f10;
+    --yellow-ink: #f5be2e;
+    --lead-blue: #5b76f0;
+    --lead-blue-hover: #7189f5;
+    --blue-soft: #1f2850;
+    --blue-ink: #5b76f0;
+    --success: #34d399;
+    --success-soft: #11301f;
+    --warning: #f5be2e;
+    --warning-soft: #3a2f10;
+    --danger: #f87171;
+    --danger-soft: #3a1616;
+    --focus-ring: #5b76f0;
   }
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-inter);
   --font-mono: var(--font-geist-mono);
 
   --color-surface: var(--surface);
@@ -103,13 +111,16 @@
   --color-line-strong: var(--line-strong);
   --color-ink: var(--ink);
   --color-ink-muted: var(--ink-muted);
+  --color-ink-subtle: var(--ink-subtle);
   --color-charcoal: var(--charcoal);
+  --color-charcoal-raised: var(--charcoal-raised);
   --color-on-charcoal: var(--on-charcoal);
   --color-lead-yellow: var(--lead-yellow);
   --color-on-yellow: var(--on-yellow);
+  --color-lead-blue: var(--lead-blue);
+  --color-lead-blue-hover: var(--lead-blue-hover);
   --color-yellow-soft: var(--yellow-soft);
   --color-yellow-ink: var(--yellow-ink);
-  --color-lead-blue: var(--lead-blue);
   --color-blue-soft: var(--blue-soft);
   --color-blue-ink: var(--blue-ink);
   --color-success: var(--success);
@@ -120,9 +131,10 @@
   --color-danger-soft: var(--danger-soft);
   --color-focus-ring: var(--focus-ring);
 
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 16px;
+  /* design.pen radius scale */
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -158,35 +170,41 @@
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
 
-  /* unused by any screen yet (no charts) — left as shadcn's neutral defaults */
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  /* design.pen data-viz series */
+  --chart-1: var(--lead-blue);
+  --chart-2: #8b7cf6;
+  --chart-3: #f59e5b;
+  --chart-4: var(--success);
+  --chart-5: var(--lead-yellow);
 }
 
-/* Manual dark-mode override, for if/when a theme toggle is added. Same
-   values as the media query above, so it doesn't drift out of sync. */
+/* Manual dark-mode override — the root layout applies .dark, so this is what
+   the app normally renders. Same values as the media query above. */
 .dark {
-  --surface: #1a1a1a;
-  --surface-raised: #242424;
-  --surface-sunken: #121212;
-  --line: #383838;
-  --line-strong: #808080;
-  --ink: #f2f2f2;
-  --ink-muted: #b3b3b3;
-  --yellow-soft: #3a3512;
-  --yellow-ink: #fbe246;
-  --blue-soft: #233340;
-  --blue-ink: #b9cddb;
-  --success: #8fd19e;
-  --success-soft: #1c3323;
-  --warning: #f5b262;
-  --warning-soft: #3a2812;
-  --danger: #ff8f86;
-  --danger-soft: #3d1f1c;
-  --focus-ring: #fbe246;
+  --surface: #0e0f13;
+  --surface-raised: #17181e;
+  --surface-sunken: #272a34;
+  --line: #262932;
+  --line-strong: #3a3e4a;
+  --ink: #f4f5f8;
+  --ink-muted: #a3a8b8;
+  --ink-subtle: #6e7486;
+  --charcoal: #1a1b22;
+  --charcoal-raised: #2b2d35;
+  --on-charcoal: #9ea3b3;
+  --yellow-soft: #3a2f10;
+  --yellow-ink: #f5be2e;
+  --lead-blue: #5b76f0;
+  --lead-blue-hover: #7189f5;
+  --blue-soft: #1f2850;
+  --blue-ink: #5b76f0;
+  --success: #34d399;
+  --success-soft: #11301f;
+  --warning: #f5be2e;
+  --warning-soft: #3a2f10;
+  --danger: #f87171;
+  --danger-soft: #3a1616;
+  --focus-ring: #5b76f0;
 }
 
 @layer base {

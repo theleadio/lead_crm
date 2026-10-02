@@ -21,13 +21,13 @@ export function Toast({
   return (
     <div
       role="status"
-      className="bg-charcoal text-on-charcoal fixed right-6 bottom-6 z-50 flex items-center gap-4 rounded-md px-4 py-3 text-sm shadow-lg"
+      className="bg-charcoal border-line fixed right-6 bottom-6 z-50 flex items-center gap-4 rounded-md border px-4 py-3 text-sm text-white shadow-lg"
     >
       <span>{message}</span>
       <button
         onClick={onDismiss}
         aria-label="Dismiss"
-        className="focus-visible:outline-lead-yellow rounded-sm px-1 focus-visible:outline-2"
+        className="focus-visible:outline-lead-blue rounded-sm px-1 focus-visible:outline-2"
       >
         ✕
       </button>

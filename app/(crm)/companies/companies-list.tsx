@@ -62,7 +62,10 @@ export function CompaniesList({ canWrite }: { canWrite: boolean }) {
   }, [q]);
 
   useEffect(() => {
-    const controller = new AbortController();
+    // React's ignore flag, not AbortController: aborting mid-read errors the
+    // response body stream, and that rejection reaches no catch of ours
+    // ("Uncaught (in promise) AbortError" in dev).
+    let ignore = false;
     const params = new URLSearchParams({
       page: String(page),
       limit: String(LIMIT),
@@ -71,9 +74,10 @@ export function CompaniesList({ canWrite }: { canWrite: boolean }) {
     if (search) params.set("q", search);
     if (hrdc) params.set("filter[hrdcRegistered]", hrdc);
     if (openDeal) params.set("filter[hasOpenDeal]", openDeal);
-    fetch(`/api/companies?${params}`, { signal: controller.signal })
+    fetch(`/api/companies?${params}`)
       .then(async (res) => {
         const body = await res.json();
+        if (ignore) return;
         if (!res.ok)
           setState({
             status: "error",
@@ -81,14 +85,16 @@ export function CompaniesList({ canWrite }: { canWrite: boolean }) {
           });
         else setState({ status: "ready", result: body });
       })
-      .catch((err: Error) => {
-        if (err.name !== "AbortError")
+      .catch(() => {
+        if (!ignore)
           setState({
             status: "error",
             message: "Couldn't load companies — check your connection.",
           });
       });
-    return () => controller.abort();
+    return () => {
+      ignore = true;
+    };
   }, [search, hrdc, openDeal, sort, page, reloadKey]);
 
   const hasFilters = Boolean(search || hrdc || openDeal);

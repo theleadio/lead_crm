@@ -155,21 +155,25 @@ export function PeopleList({
   }, []);
 
   useEffect(() => {
-    const controller = new AbortController();
+    // React's ignore flag, not AbortController: aborting mid-read errors the
+    // response body stream, and that rejection reaches no catch of ours
+    // ("Uncaught (in promise) AbortError" in dev). A late response is simply
+    // dropped instead.
+    let ignore = false;
     const params = filterParams(q, filters);
     if (sort) params.set("sort", sort);
     params.set("page", String(page));
     params.set("limit", String(LIMIT));
 
-    fetch(`/api/people?${params}`, { signal: controller.signal })
+    fetch(`/api/people?${params}`)
       .then(async (res) => {
         const body = await res.json();
         if (!res.ok)
           throw new Error(body.error?.message ?? "Couldn't load people.");
-        setState({ status: "ready", result: body });
+        if (!ignore) setState({ status: "ready", result: body });
       })
       .catch((err: Error) => {
-        if (err.name === "AbortError") return;
+        if (ignore) return;
         setState({
           status: "error",
           message:
@@ -178,7 +182,9 @@ export function PeopleList({
               : err.message,
         });
       });
-    return () => controller.abort();
+    return () => {
+      ignore = true;
+    };
   }, [q, filters, sort, page, reloadKey]);
 
   function changeSort(next: string) {
@@ -306,7 +312,7 @@ export function PeopleList({
             aria-label="Created from"
             value={filters.createdFrom}
             onChange={(e) => updateFilter("createdFrom", e.target.value)}
-            className="border-input bg-surface-raised text-ink h-9 rounded-md border px-2"
+            className="border-line-strong bg-surface-sunken text-ink h-9 rounded-sm border px-2"
           />
           to
           <input
@@ -314,7 +320,7 @@ export function PeopleList({
             aria-label="Created to"
             value={filters.createdTo}
             onChange={(e) => updateFilter("createdTo", e.target.value)}
-            className="border-input bg-surface-raised text-ink h-9 rounded-md border px-2"
+            className="border-line-strong bg-surface-sunken text-ink h-9 rounded-sm border px-2"
           />
         </label>
         {hasFilters && (
@@ -515,7 +521,7 @@ function BulkBar({
         aria-label="Assign owner"
         value={owner}
         onChange={(e) => setOwner(e.target.value)}
-        className="border-input bg-surface-raised h-8 rounded-md border px-2"
+        className="border-line-strong bg-surface-sunken h-8 rounded-md border px-2"
       >
         <option value="">Assign owner…</option>
         <option value="unassigned">No owner</option>
@@ -546,7 +552,7 @@ function BulkBar({
         aria-label="Add tag"
         value={tag}
         onChange={(e) => setTag(e.target.value)}
-        className="border-input bg-surface-raised h-8 rounded-md border px-2"
+        className="border-line-strong bg-surface-sunken h-8 rounded-md border px-2"
       >
         <option value="">Add tag…</option>
         {tags.map((t) => (
@@ -589,7 +595,7 @@ function TagFilter({
 }) {
   return (
     <details className="relative">
-      <summary className="border-input bg-surface-raised text-ink flex h-9 cursor-pointer list-none items-center rounded-md border px-3 text-sm">
+      <summary className="border-line-strong bg-surface-sunken text-ink flex h-9 cursor-pointer list-none items-center rounded-sm border px-3 text-sm">
         {value.length ? `Tags: ${value.length} selected` : "Tags: all"}
       </summary>
       <div className="border-line bg-surface-raised absolute z-10 mt-1 w-56 space-y-1 rounded-md border p-2 shadow-md">

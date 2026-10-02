@@ -146,7 +146,7 @@ export function AddPersonDialog({
                 id={id}
                 value={form.preferredLanguage}
                 onChange={(e) => set("preferredLanguage")(e.target.value)}
-                className="border-input bg-surface-raised text-ink focus-visible:outline-focus-ring h-9 w-full rounded-md border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+                className="border-line-strong bg-surface-sunken text-ink focus-visible:outline-focus-ring h-9 w-full rounded-sm border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
               >
                 <option value="en">English</option>
                 <option value="zh">Chinese</option>

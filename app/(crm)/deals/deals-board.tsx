@@ -59,7 +59,6 @@ type Board =
 async function fetchDeals(
   f: BoardFilters,
   extra: Record<string, string>,
-  signal?: AbortSignal,
 ): Promise<DealListResponse> {
   const p = new URLSearchParams({ "filter[pipeline]": f.pipeline, ...extra });
   if (f.owner) p.set("filter[owner]", f.owner);
@@ -71,9 +70,8 @@ async function fetchDeals(
   if (f.incomplete) p.set("filter[incomplete]", "true");
   let res: Response;
   try {
-    res = await fetch(`/api/deals?${p}`, { signal });
-  } catch (err) {
-    if (signal?.aborted) throw err;
+    res = await fetch(`/api/deals?${p}`);
+  } catch {
     throw new Error("Couldn't load deals — check your connection.");
   }
   const body = await res.json().catch(() => null);
@@ -164,31 +162,34 @@ export function DealsBoard({
   // One request per column (design decision 2). Every response carries the
   // same stageTotals; any failure shows the error, never empty columns.
   useEffect(() => {
-    const controller = new AbortController();
+    // Ignore flag, not AbortController: an abort mid-read errors the response
+    // body stream, and that rejection reaches no catch of ours.
+    let ignore = false;
     const cols = STAGES[filters.pipeline];
     Promise.all(
       cols.map((stage) =>
-        fetchDeals(
-          filters,
-          { "filter[stage]": stage, limit: String(PER_COLUMN) },
-          controller.signal,
-        ),
+        fetchDeals(filters, {
+          "filter[stage]": stage,
+          limit: String(PER_COLUMN),
+        }),
       ),
     )
-      .then((results) =>
+      .then((results) => {
+        if (ignore) return;
         setBoard({
           status: "ready",
           columns: Object.fromEntries(
             cols.map((stage, i) => [stage, results[i].data]),
           ),
           totals: results[0].stageTotals,
-        }),
-      )
+        });
+      })
       .catch((err: Error) => {
-        if (!controller.signal.aborted)
-          setBoard({ status: "error", message: err.message });
+        if (!ignore) setBoard({ status: "error", message: err.message });
       });
-    return () => controller.abort();
+    return () => {
+      ignore = true;
+    };
   }, [filters, reloadKey]);
 
   // Filters live in the URL so reload and sharing work (design decision 8).
@@ -369,7 +370,7 @@ export function DealsBoard({
             }
             className={`focus-visible:outline-focus-ring -mb-px border-b-2 px-4 py-2 text-sm font-medium focus-visible:outline-2 ${
               filters.pipeline === p
-                ? "border-lead-yellow text-ink"
+                ? "border-lead-blue text-ink"
                 : "text-ink-muted hover:text-ink border-transparent"
             }`}
           >
@@ -496,7 +497,7 @@ export function DealsBoard({
                     setDragging(null);
                   }}
                   className={`bg-surface-sunken flex min-h-64 flex-col gap-2 rounded-md p-2 ${
-                    dropTarget === stage ? "outline-lead-yellow outline-2" : ""
+                    dropTarget === stage ? "outline-lead-blue outline-2" : ""
                   }`}
                 >
                   <header className="px-1">

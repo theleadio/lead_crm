@@ -105,21 +105,25 @@ function CompanyForm({
     const name = form.legalName.trim();
     const reg = form.registrationNo.trim();
     if (!name && !reg) return;
-    const controller = new AbortController();
+    // Ignore flag rather than AbortController: an abort mid-read errors the
+    // response body stream, which no catch of ours can reach.
+    let ignore = false;
     const t = setTimeout(() => {
       const params = new URLSearchParams();
       params.set("limit", "10");
       if (name) params.set("filter[similarTo]", name);
       if (reg) params.set("filter[registrationNo]", reg);
       if (companyId) params.set("filter[excludeId]", companyId);
-      fetch(`/api/companies?${params}`, { signal: controller.signal })
+      fetch(`/api/companies?${params}`)
         .then((r) => (r.ok ? r.json() : { data: [] }))
-        .then((b) => setSimilar(b.data))
+        .then((b) => {
+          if (!ignore) setSimilar(b.data);
+        })
         .catch(() => {});
     }, 300);
     return () => {
       clearTimeout(t);
-      controller.abort();
+      ignore = true;
     };
   }, [form.legalName, form.registrationNo, companyId]);
   // Stale results are hidden, not cleared, when both fields are emptied.
@@ -282,7 +286,7 @@ function CompanyForm({
               rows={2}
               value={form.billingAddress}
               onChange={(e) => set("billingAddress", e.target.value)}
-              className="border-input bg-surface-raised text-ink focus-visible:outline-focus-ring w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+              className="border-line-strong bg-surface-sunken text-ink focus-visible:outline-focus-ring w-full rounded-sm border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
             />
           )}
         </Field>
@@ -292,7 +296,7 @@ function CompanyForm({
               id={id}
               value={form.ownerId}
               onChange={(e) => set("ownerId", e.target.value)}
-              className="border-input bg-surface-raised text-ink focus-visible:outline-focus-ring h-9 w-full rounded-md border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+              className="border-line-strong bg-surface-sunken text-ink focus-visible:outline-focus-ring h-9 w-full rounded-sm border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
             >
               <option value="">Unassigned</option>
               {owners.map((o) => (

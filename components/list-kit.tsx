@@ -40,7 +40,7 @@ export function FilterSelect({
       aria-label={label}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="border-input bg-surface-raised text-ink focus-visible:outline-focus-ring h-9 rounded-md border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+      className="border-line-strong bg-surface-sunken text-ink focus-visible:outline-focus-ring h-9 rounded-sm border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
     >
       <option value="">{label}: all</option>
       {options.map(([v, text]) => (
@@ -59,11 +59,14 @@ export function SortableHead({
   column,
   sort,
   onSort,
+  className,
 }: {
   label: string;
   column: string;
   sort: string | undefined;
   onSort: (sort: string) => void;
+  // For a table that sets its own column widths (`table-fixed`).
+  className?: string;
 }) {
   const state =
     sort === column
@@ -72,11 +75,11 @@ export function SortableHead({
         ? "descending"
         : "none";
   return (
-    <TableHead aria-sort={state}>
+    <TableHead aria-sort={state} className={className}>
       <button
         type="button"
         onClick={() => onSort(state === "ascending" ? `-${column}` : column)}
-        className="focus-visible:outline-focus-ring inline-flex cursor-pointer items-center gap-1 font-medium hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
+        className="focus-visible:outline-focus-ring inline-flex cursor-pointer items-center gap-1 font-bold tracking-wide uppercase hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
       >
         {label}
         <span aria-hidden="true" className="w-3 text-xs">
@@ -111,7 +114,7 @@ export function ListError({
 // so the header never jumps.
 export function TableCard({ children }: { children: React.ReactNode }) {
   return (
-    <div className="border-line bg-surface-raised rounded-md border">
+    <div className="border-line bg-surface-raised overflow-hidden rounded-md border">
       {children}
     </div>
   );
