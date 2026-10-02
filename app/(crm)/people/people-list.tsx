@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   EmptyRow,
   FilterRow,
@@ -115,6 +115,9 @@ export function PeopleList({
   );
 
   const [reloadKey, setReloadKey] = useState(0);
+  // True until we fetch once. Without it, going back to the server's query
+  // (clearing the search box) skips the fetch and leaves the old rows up.
+  const showingInitial = useRef(true);
   const [owners, setOwners] = useState<OwnerOption[]>([]);
   const [tags, setTags] = useState<TagOption[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -168,6 +171,7 @@ export function PeopleList({
     // once something moves off it.
     if (
       initial &&
+      showingInitial.current &&
       reloadKey === 0 &&
       q === initialQ &&
       filters === NO_FILTERS &&
@@ -175,6 +179,7 @@ export function PeopleList({
       !sort
     )
       return;
+    showingInitial.current = false;
     let ignore = false;
     const params = filterParams(q, filters);
     if (sort) params.set("sort", sort);

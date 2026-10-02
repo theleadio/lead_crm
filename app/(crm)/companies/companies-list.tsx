@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   EmptyRow,
   FilterRow,
@@ -60,6 +60,9 @@ export function CompaniesList({
   const [addOpen, setAddOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const dismissToast = useCallback(() => setToast(null), []);
+  // True until we fetch once. Without it, going back to the server's query
+  // (clearing the search box) skips the fetch and leaves the old rows up.
+  const showingInitial = useRef(true);
 
   // Wait for a pause in typing before searching.
   useEffect(() => {
@@ -77,6 +80,7 @@ export function CompaniesList({
     // Same query the server already rendered into `initial`.
     if (
       initial &&
+      showingInitial.current &&
       reloadKey === 0 &&
       !search &&
       !hrdc &&
@@ -85,6 +89,7 @@ export function CompaniesList({
       page === 1
     )
       return;
+    showingInitial.current = false;
     let ignore = false;
     const params = new URLSearchParams({
       page: String(page),
