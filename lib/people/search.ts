@@ -5,7 +5,7 @@ import { normalizePhoneE164 } from "../format/phone.ts";
 export type PersonQuery = {
   text: string; // matched against name and email (case-insensitive)
   phoneE164: string | null; // a complete number → exact match
-  digits: string | null; // a partial number (6+ digits) → substring match
+  digits: string | null; // a partial number (3+ digits) → substring match
 };
 
 export function parsePersonQuery(raw: string): PersonQuery | null {
@@ -13,11 +13,9 @@ export function parsePersonQuery(raw: string): PersonQuery | null {
   if (!text) return null;
   const phoneE164 = normalizePhoneE164(text);
   const digits = text.replace(/\D/g, "");
-  return {
-    text,
-    phoneE164,
-    digits: !phoneE164 && digits.length >= 6 ? digits : null,
-  };
+  // Keep digits even when the whole thing normalised: "0123456789" becomes
+  // +60123456789, so the typed digits are not a substring of the stored ones.
+  return { text, phoneE164, digits: digits.length >= 3 ? digits : null };
 }
 
 // Escape LIKE wildcards so a user typing "%" or "_" searches for them.

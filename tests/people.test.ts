@@ -15,6 +15,11 @@ test("parsePersonQuery: partial numbers become a digit search, names don't", () 
     phoneE164: null,
     digits: "456789",
   });
+  // Short prefixes count too — "012" is what you have typed after 3 keys.
+  assert.equal(parsePersonQuery("012")?.digits, "012");
+  // A number that normalises still keeps its digits: 012-000 7919 is stored
+  // as +60120007919, so the typed digits are no substring of the stored ones.
+  assert.equal(parsePersonQuery("012-000 7919")?.digits, "0120007919");
   const name = parsePersonQuery(" Tan Mei ");
   assert.equal(name?.text, "Tan Mei");
   assert.equal(name?.phoneE164, null);

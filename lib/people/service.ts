@@ -77,7 +77,7 @@ function whereSql(sql: postgres.Sql, viewer: Viewer, f: PeopleFilters) {
       p.full_name ILIKE ${like}
       OR p.email_norm LIKE ${like.toLowerCase()}
       ${q.phoneE164 ? sql`OR p.phone_e164 = ${q.phoneE164}` : sql``}
-      ${q.digits ? sql`OR regexp_replace(p.phone_e164, '\\D', '', 'g') LIKE ${`%${q.digits}%`}` : sql``}
+      ${q.digits ? sql`OR regexp_replace(coalesce(p.phone_e164, '') || ' ' || coalesce(p.phone, ''), '\\D', '', 'g') LIKE ${`%${q.digits}%`}` : sql``}
     )`);
   }
   if (f.stage) parts.push(sql`(${stageSql(sql)}) = ${f.stage}`);
