@@ -48,14 +48,15 @@ export function NavLinks({
             key={item.href}
             href={item.href}
             aria-current={active ? "page" : undefined}
-            className={`focus-visible:outline-lead-blue flex items-center gap-2.5 rounded-full px-3.5 py-2.5 text-[13px] focus-visible:outline-2 focus-visible:outline-offset-2 ${
+            title={item.label}
+            className={`focus-visible:outline-lead-blue flex items-center justify-center gap-2.5 rounded-full px-2.5 py-2.5 text-[13px] focus-visible:outline-2 focus-visible:outline-offset-2 md:justify-start md:px-3.5 ${
               active
                 ? "bg-lead-blue font-semibold text-white"
                 : "text-on-charcoal hover:bg-charcoal-raised hover:text-white"
             }`}
           >
-            <Icon aria-hidden="true" className="size-4" />
-            {item.label}
+            <Icon aria-hidden="true" className="size-4 shrink-0" />
+            <span className="sr-only md:not-sr-only">{item.label}</span>
           </Link>
         );
       })}

@@ -35,8 +35,8 @@ export default async function CrmLayout({
 
   return (
     <div className="bg-surface flex min-h-screen gap-4 p-4">
-      <aside className="bg-charcoal border-line sticky top-4 h-[calc(100vh-2rem)] w-56 shrink-0 overflow-y-auto rounded-lg border px-3.5 py-5">
-        <div className="mb-4 flex items-center gap-2.5 px-1.5 pb-2">
+      <aside className="bg-charcoal border-line sticky top-4 h-[calc(100vh-2rem)] w-14 shrink-0 overflow-y-auto rounded-lg border px-2 py-5 md:w-56 md:px-3.5">
+        <div className="mb-4 flex items-center justify-center gap-2.5 pb-2 md:justify-start md:px-1.5">
           <span
             aria-hidden="true"
             className="bg-charcoal-raised flex size-[30px] items-center justify-center gap-0.5 rounded-full"
@@ -48,7 +48,7 @@ export default async function CrmLayout({
               <span className="h-[2.5px] w-[9px] rounded-[1px] bg-[#8FA6F5]" />
             </span>
           </span>
-          <span className="text-base font-bold tracking-wider text-white">
+          <span className="hidden text-base font-bold tracking-wider text-white md:inline">
             LEAD
           </span>
         </div>
@@ -76,7 +76,7 @@ export default async function CrmLayout({
             />
           </form>
           <div className="text-ink flex shrink-0 items-center gap-3 text-sm">
-            <span>{user.email}</span>
+            <span className="hidden truncate sm:inline">{user.email}</span>
             <SignOutButton />
             <span
               aria-hidden="true"
