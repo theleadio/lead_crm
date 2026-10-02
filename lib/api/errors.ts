@@ -15,6 +15,18 @@ export function apiError(
   return Response.json({ error: { code, message, ...details } }, { status });
 }
 
+// Spec §7 (v1.7): a PATCH carries the integer row version from the GET as
+// If-Match. Missing, or anything that is not a positive whole number, is a
+// 428 — never a save that skips the check.
+export function readIfMatch(request: Request): number | null {
+  // Digits only: `Number()` would also take "1e3" and " 0x10", which no
+  // client sends and which only hide a malformed header.
+  const header = request.headers.get("If-Match")?.trim();
+  if (!header || !/^\d+$/.test(header)) return null;
+  const version = Number(header);
+  return version >= 1 ? version : null;
+}
+
 // Field-level messages for forms (spec §9 cross-screen: field-level errors).
 export function validationError(err: ZodError) {
   const fields: Record<string, string> = {};

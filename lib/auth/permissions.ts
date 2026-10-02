@@ -137,6 +137,13 @@ export function canWriteCompany(viewer: Viewer): boolean {
   );
 }
 
+// Spec §6 course/class row: super_admin and operations have F, everyone else
+// reads. Named separately from the class check so a courses route reads as
+// one, and so the two resources can diverge without hunting callers (§9.7).
+export function canWriteCourse(viewer: Viewer): boolean {
+  return viewer.role === "super_admin" || viewer.role === "operations";
+}
+
 // Spec 6 deal row: super_admin, sales and support move and edit deals;
 // management, marketing and operations read; part_time has no access.
 export function canWriteDeal(viewer: Viewer): boolean {

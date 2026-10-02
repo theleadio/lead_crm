@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   canAddPersonStandalone,
   canWriteDeal,
+  ROLES,
   canExportPeople,
   masksContactDetails,
   mergeAccess,
@@ -296,11 +297,14 @@ test("nav: sidebar shows only areas the role can read (§9 Shell)", () => {
     "Companies",
     "Deals",
     "Classes",
+    "Courses",
     "Tasks",
   ]);
   const partTime = nav("part_time");
   for (const hidden of ["Deals", "Enrolments", "Settings"])
     assert.ok(!partTime.includes(hidden), hidden);
-  assert.equal(nav("super_admin").length, 9);
+  // §9.7: every role reads courses, so the link is never hidden.
+  for (const role of ROLES) assert.ok(nav(role).includes("Courses"), role);
+  assert.equal(nav("super_admin").length, 10);
   assert.ok(!nav("management").includes("Settings"));
 });

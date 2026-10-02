@@ -9,6 +9,9 @@ const NAV_ITEMS: { href: string; label: string; resource: Resource | null }[] =
     { href: "/companies", label: "Companies", resource: "person" },
     { href: "/deals", label: "Deals", resource: "deal" },
     { href: "/classes", label: "Classes", resource: "class" },
+    // §9.7 sits beside Classes, not inside Settings: §6 gives operations full
+    // course access while Settings is super_admin only.
+    { href: "/courses", label: "Courses", resource: "class" },
     { href: "/enrolments", label: "Enrolments", resource: "enrolment" },
     { href: "/enquiries", label: "Enquiries", resource: "enquiry" },
     { href: "/tasks", label: "Tasks", resource: "task" },
