@@ -10,6 +10,7 @@
      counterparts of the same tokens. */
   --surface: #f2f3f8;
   --surface-raised: #ffffff;
+  --surface-muted: #f7f8fc;
   --surface-sunken: #eceef5;
   --line: #e7e9f1;
   --line-strong: #d6dae5;
@@ -73,6 +74,7 @@
   :root {
     --surface: #0e0f13;
     --surface-raised: #17181e;
+    --surface-muted: #1e2028;
     --surface-sunken: #272a34;
     --line: #262932;
     --line-strong: #3a3e4a;
@@ -106,6 +108,7 @@
 
   --color-surface: var(--surface);
   --color-surface-raised: var(--surface-raised);
+  --color-surface-muted: var(--surface-muted);
   --color-surface-sunken: var(--surface-sunken);
   --color-line: var(--line);
   --color-line-strong: var(--line-strong);
@@ -183,6 +186,7 @@
 .dark {
   --surface: #0e0f13;
   --surface-raised: #17181e;
+  --surface-muted: #1e2028;
   --surface-sunken: #272a34;
   --line: #262932;
   --line-strong: #3a3e4a;

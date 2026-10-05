@@ -43,6 +43,22 @@ export function formatTime(date: Date | string): string {
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 
+// Spec §9.0 Home, overdue tasks: how late a task is, in the largest unit
+// that still reads honestly ("2 days late", "5 hours late"). Anything under
+// an hour is "due now" rather than "0 hours late".
+export function formatOverdue(
+  dueAt: Date | string,
+  now: Date = new Date(),
+): string {
+  const d = typeof dueAt === "string" ? new Date(dueAt) : dueAt;
+  const diff = now.getTime() - d.getTime();
+  if (Number.isNaN(diff) || diff < HOUR) return "due now";
+  const days = Math.floor(diff / DAY);
+  if (days >= 1) return `${days} ${days === 1 ? "day" : "days"} late`;
+  const hours = Math.floor(diff / HOUR);
+  return `${hours} ${hours === 1 ? "hour" : "hours"} late`;
+}
+
 // Spec §9.1 Last activity: relative under 7 days ("3 days ago"), absolute
 // after ("14 Aug 2026"), "—" when there is none — never "Invalid date".
 export function formatLastActivity(
