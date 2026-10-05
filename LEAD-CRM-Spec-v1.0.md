@@ -1,11 +1,12 @@
-# LEAD CRM — Software Specification v1.7
+# LEAD CRM — Software Specification v1.8
 
-_Last updated 1 Oct 2026 · Owner: Shawn_
+_Last updated 5 Oct 2026 · Owner: Shawn_
 
 ## Changelog
 
 | Version | Date | Changes |
 | --- | --- | --- |
+| v1.8 | 5 Oct 2026 | From Zixuan's 9.8 question: seats and class status now kept by the database (migration 006, §12.1); reservation expiry is a real write every 15 minutes; Stripe-path holds 24 hours; `reserved → confirmed` added (§12.4); full classes shown on the website (§8.1); §8.3 steps 2 and 4, §9.9 validation and §11.1 events corrected; rule placement (§3) and a who-writes-what register (§12.11). |
 | v1.7 | 1 Oct 2026 | From Zixuan's release notes: concurrency now uses an integer `version` instead of `updated_at` (§7, migration 005); in-place lost-reason correction (§12.5); withdrawn HRDC task closed with `done_at` (§12.6); schema-change tables for 004 and 005 (§5). |
 | v1.6 | 28 Sep 2026 | From Zixuan's 9.5 review: course list via existing GET /api/courses (§7, §9.5); leaving Won/Lost rules and stage aging (§12.5); HRDC deadline task rules + migration 004 (§12.6). |
 | v1.5 | 24 Sep 2026 | Companies from Zixuan's 9.4 question: Add/Edit company, Add person, edit and end memberships on 9.4; `replaceCurrent` on POST members; new PATCH members route (§7, §7.1); company decisions recorded (§15.3). |
@@ -139,7 +140,7 @@ DB --> VIEWS
 | C3  | Public form intake + schedule feed  | 8       | 16 Oct    |
 | C4  | Domain events written to the outbox | 11      | 30 Oct    |
 
-**Layering rule.** Screen → API route → service function in `/lib` → database. No DB calls in React components, no business logic in components either — seat maths, dedupe, status transitions all live in `/lib` so API and workers apply the same rules.
+**Layering rule.** Screen → API route → service function in `/lib` → database. No DB calls in React components, no business logic in components either — seat maths, dedupe, status transitions all live in `/lib` so API and workers apply the same rules. **Exception (v1.8):** a rule that must hold whoever writes the row — the app, a webhook, n8n, an import or SQL — lives in the database instead (seats and class status are the first case). §12.11 lists who writes every derived or time-based value.
 
 **The outbox.** Every write that others might react to also inserts a row into `event_outbox` in the same transaction. Zixuan's code writes these rows; Shawn's workers read them. A screen's write that forgets its outbox row means the automation silently never runs — events in Section 11 are acceptance criteria, not an afterthought.
 
@@ -372,6 +373,15 @@ Only one `pending` notice per class at a time — a second edit while one is pen
 | --- | --- | --- |
 | 15 editable tables | add `version bigint NOT NULL DEFAULT 1`; `bump_version()` trigger adds exactly 1 on every UPDATE and ignores any value the app writes | Optimistic concurrency for If-Match (§7). `updated_at` could not do this reliably. Not on `message_log`, `event_outbox`, `integration_event` (system-written) |
 
+**Schema changes 5 Oct, migration 006 (v1.8)**
+
+| Table | Change | Why |
+| --- | --- | --- |
+| class | `status` kept by triggers from seat counts; `ClassPublished` written to the outbox by trigger on any `status`/`is_public` change | Nothing recomputed status; enrolments have several writers (§12.1) |
+| enrolment | `seat_reserved_until` filled for every `reserved` row; trigger refuses any write that oversells a class (`no_seats`) | One seat rule for every writer |
+| functions | `class_seats_taken(class)`, `refresh_class_status(class)`, `expire_reservations()`; EXECUTE revoked from PUBLIC/`anon`/`authenticated` | One definition of a taken seat; expiry as a real write |
+| app_setting | add `stripe_reservation_hours` = 24 | A Stripe Checkout link lives at most 24 hours |
+
 **Onboarding templates have no table, deliberately.** WhatsApp templates must be Meta-approved and live in WATI; email templates live in the ESP. Settings links out to both.
 
 **Deferred to January:** `campaign`, `ad`, `ad_metric_daily`, `content_item`, `attendance`, `class_session`. Do not build screens for these.
@@ -557,8 +567,8 @@ Query: `?language=en|zh&track=<course_track>&city=<city>&limit=<n>` — all opti
 
 Rules:
 
-- Only classes with `is_public=true`, status `open`/`few_seats`, `start_date >= today`.
-- `seatsLabel` ∈ {available, few_seats, full} — never the raw seat count.
+- Only classes with `is_public=true`, status `open`/`few_seats`/`full`, `start_date >= today`. Full classes are listed and shown as "Full" (§10.1) — decided 5 Oct.
+- `seatsLabel` ∈ {available, few_seats, full}; status `open` → `available` — never the raw seat count.
 - `online_url`, trainer names, internal notes never in this response.
 - Sorted by start_date ascending.
 - Cached 5 minutes at edge; class edit purges cache (§12).
@@ -632,9 +642,9 @@ Never trust the client — attribution is informational; server records landingU
 Server behaviour, in order:
 
 1. Everything 8.2 does (key, CAPTCHA, rate limit, dedupe, company link, touchpoint, consent, deal).
-2. Load the class by classCode. 409 `class_unavailable` if not public, not open/few_seats, or already started.
+2. Load the class by classCode. 409 `class_unavailable` if not public, status `draft`/`cancelled`/`completed`, or already started. Seats are **not** judged here — the stored status can lag up to 15 minutes after a reservation expires; step 4 decides.
 3. If `hrdcIntended`: no checkout; return `201 { next: 'hrdc_contact' }`.
-4. Otherwise create a `reserved` enrolment (seat check in the transaction, 409 `no_seats` if full), create the Stripe Checkout session (Shawn's code), store it on the deal, return `201 { next: 'checkout', checkoutUrl }`.
+4. Otherwise create a `reserved` enrolment with `seat_reserved_until` = now + `stripe_reservation_hours` (seat check in the transaction; the database raises `no_seats` → 409 `no_seats` if full), create the Stripe Checkout session (Shawn's code) with `expires_at` set to the same time, store it on the deal, return `201 { next: 'checkout', checkoutUrl }`.
 
 **Price always comes from the class record on the server** — nothing in the request body can set an amount. The Stripe session carries `deal_id`, `enrolment_id`, `class_id` in metadata so the webhook can match it.
 
@@ -670,7 +680,7 @@ Server behaviour, in order:
 
 **9.8 Classes list** — Operations' home screen. Columns: code, course, dates, language, mode, city/venue, capacity, sold/capacity progress bar, status, public. Default filter: upcoming only, toggle for past. Status colours: draft grey, open green, few_seats amber, full blue, cancelled red, completed grey.
 
-**9.9 Class create/edit** — Fields per §5. Conditional: venue required unless online; online_url required unless in_person. Validation: end_date >= start_date; capacity ≥ confirmed enrolments; price optional.
+**9.9 Class create/edit** — Fields per §5. Conditional: venue required unless online; online_url required unless in_person. Validation: end_date >= start_date; capacity ≥ seats taken (`class_seats_taken`, §12.1 — reservations and pending payments hold seats too, v1.8); price optional. Status is shown, never computed on screen.
 
 Change-notice flow: date/time/venue change on class w/ confirmed enrolments → dialog "N students enrolled. They will not be told until you approve a notice." Options: Save and prepare notice (default) / Save quietly. First option creates pending notice for Operations to approve on class detail. Nothing sent directly from this screen.
 
@@ -755,13 +765,13 @@ Written to `event_outbox` inside the same transaction as the business write. Mis
 | DealStageChanged     | Any stage move                       | dealId, fromStage, toStage, byUserId      | SLA tracking, notifications              |
 | EnrolmentCreated     | Enrolment created, any route         | enrolmentId, personId, classId, status    | —                                        |
 | EnrolmentConfirmed   | Status → confirmed                   | enrolmentId, personId, classId, language  | Starts onboarding sequence               |
-| EnrolmentCancelled   | Status → cancelled                   | enrolmentId, reason                       | Releases seat, notifies Ops              |
+| EnrolmentCancelled   | Status → cancelled — by the app, or by `expire_reservations()` with reason `reservation_expired` (written by the database) | enrolmentId, reason | Notifies Ops (not for `reservation_expired`). Seats are counted, so there is nothing to release |
 | EnrolmentTransferred | Moved between classes                | enrolmentId, fromClassId, toClassId       | Sends transfer confirmation              |
 | PaymentRecorded      | Manual payment saved                 | paymentId, enrolmentId, method, amountMyr | Reconciliation, receipt                  |
 | ClassChanged         | Date/time/venue edited w/ enrolments | classId, changedFields, noticeId          | Prepares notice; sends after approval    |
 | ClassNoticeApproved  | Ops approves change notice           | noticeId, classId                         | Sends to all confirmed students          |
 | ClassCancelled       | Class cancelled                      | classId, reason, enrolmentIds             | Notifies students, flags refunds         |
-| ClassPublished       | is_public or status changes          | classId                                   | Purges schedule cache                    |
+| ClassPublished       | is_public or status changes — **written by the database (migration 006), not the app** | classId, fromStatus, toStatus, fromPublic, toPublic | Purges schedule cache |
 | EnquiryConverted     | Enquiry → deal                       | enquiryId, dealId                         | Attribution                              |
 | ConsentChanged       | Consent granted/withdrawn            | personId, purpose, isGranted              | Suppression lists                        |
 
@@ -790,28 +800,33 @@ GET /api/health/integrations returns per integration: name, lastSuccessAt, lastE
 
 Each rule lives in exactly one function in `/lib`, called by API and workers. Duplicating a rule in a React component causes app/automation disagreement.
 
-### 12.1 Seats
+### 12.1 Seats (rewritten 5 Oct, v1.8 — migration 006)
+
+The database keeps seats and class status. The app never computes either.
 
 ```
 seatsTaken = enrolments where status in
-             (reserved-and-not-expired, payment_pending, confirmed,
-              onboarded, attended, completed)
+             (reserved with seat_reserved_until > now(), payment_pending,
+              confirmed, onboarded, attended, completed)
 seatsAvailable = capacity - seatsTaken
 ```
 
-Waitlisted, cancelled, refunded, no_show, transferred-away never occupy a seat. Reservation expires after 48 hours (configurable), frees seat automatically.
-
-Status derives from seats, recomputed on every enrolment change:
+One definition: `class_seats_taken(class)`. Waitlisted, cancelled, refunded, no_show and transferred-away rows never hold a seat.
 
 | Condition                             | class_status |
 | ------------------------------------- | ------------ |
 | seatsAvailable <= 0                   | full         |
 | seatsAvailable <= few_seats_threshold | few_seats    |
-| otherwise, and published              | open         |
+| otherwise                             | open         |
 
-`draft`, `cancelled`, `completed` are set by people, never computed — they override the above.
-
-Concurrency: seat check + enrolment insert in one transaction that locks the class row. Anything else eventually oversells a class.
+- **Who recomputes.** Database triggers, on every enrolment insert, delete, status change or class move (both classes), and on capacity or threshold edits. This covers every writer: the app, the Stripe webhook, imports and SQL.
+- **Which classes.** Only `open`, `few_seats` and `full`. "Published" means any status except `draft`. `draft`, `cancelled` and `completed` are set by people and never changed by the database. To publish, set `open`; the database corrects it to `few_seats` or `full` in the same update. `is_public` is separate: it decides whether the website lists the class, not whether it takes enrolments.
+- **Overselling.** Any write that claims a seat on a full class fails with `no_seats` (SQLSTATE P0001) → API 409 `no_seats`. Moving between seat-holding statuses (confirmed → onboarded) never fails. Cancelled and completed classes are exempt, so history can be imported. The service keeps its locked seat check for a friendly message; the database is the authority.
+- **Reservations.** Every `reserved` row has `seat_reserved_until`. Public register route (Stripe): now + `stripe_reservation_hours` (24, decided 5 Oct), and the same time goes to Stripe as the Checkout `expires_at` — Stripe allows 30 minutes to 24 hours. Reservations staff make: now + `reservation_expiry_hours` (48, O3); the database fills this in if the app leaves it empty.
+- **Expiry is a write.** `expire_reservations()` runs every 15 minutes on Supabase Cron (Shawn) and moves expired reservations to `cancelled` with `cancelled_reason = 'reservation_expired'`, raising `EnrolmentCancelled`. Shawn's Stripe webhook also cancels the reservation on `checkout.session.expired`. Between sweeps the seat count already ignores expired rows; only the badge can lag, by up to 15 minutes. Expiry does not update `last_activity_at` — it is not contact.
+- **Payment after expiry.** A Stripe payment that arrives for an already-cancelled reservation is handled as unmatched (§11.3); Operations decides.
+- **Events.** `ClassPublished` is written by the database whenever `status` or `is_public` changes. The app does not raise it.
+- **Concurrency.** Seat check + enrolment insert stay in one transaction that locks the class row; the triggers take the same lock. Two bookings for the last seat: one succeeds, the other gets `no_seats` (tested 5 Oct).
 
 ### 12.2 Duplicate prevention
 
@@ -838,6 +853,7 @@ Shown as badge, recomputed on read. May cache for query speed, but function is s
 ```
 [*] --> reserved
 reserved --> payment_pending
+reserved --> confirmed
 reserved --> waitlisted
 reserved --> cancelled
 waitlisted --> reserved
@@ -853,6 +869,8 @@ cancelled --> refunded
 ```
 
 Any transition not on this diagram → 422. UI only offers legal next statuses — no free dropdown of all eleven states.
+
+**v1.8:** `reserved → confirmed` is a successful online (Stripe) payment. `payment_pending` now means only "waiting for an offline payment" — HRDC approval or bank-transfer proof — and does not expire by itself. `reserved → cancelled` is also how an expired reservation ends (§12.1).
 
 ### 12.5 Deal stages
 
@@ -926,6 +944,25 @@ Anonymise, don't delete. The name becomes "Erased person". Email, phones, job ti
 
 **Soft delete** — `soft_delete_person(person, actor, reason)`
 For junk and test records only. Refused for anyone with an enrolment or payment; use erasure instead. The audit row stores the reason, not a copy of the record.
+
+### 12.11 Who writes what (added 5 Oct, v1.8)
+
+**Rule placement.** A rule that must hold whoever writes the row — the app, a webhook, n8n, an import or SQL — lives in the database. A rule about one screen's behaviour lives in `/lib`. Every value that changes by itself over time has a named writer and schedule. A new derived or time-based value goes into this table before it is built.
+
+| Value | Source of truth | Written by | When | May lag |
+| --- | --- | --- | --- | --- |
+| `class.status` (open/few_seats/full) | `class_seats_taken()` | Database triggers (006) | Enrolment or capacity change | Up to 15 min after a reservation expires |
+| Seat check | `class_seats_taken()` | Database trigger (006); service checks too, for the message | Every write that claims a seat | Never |
+| Reservation expiry | `seat_reserved_until` | `expire_reservations()` on Supabase Cron (Shawn); Stripe webhook on `checkout.session.expired` | Every 15 min / on the Stripe event | 15 min |
+| `ClassPublished` event | `class.status`, `is_public` | Database trigger (006) | On change | Never |
+| `version` | — | Database trigger (005) | Every update | Never |
+| HRDC deadline task | Deal fields | App, same transaction (§12.6, guard 004) | Stage or deadline change | Never |
+| `last_activity_at` | §12.9 list | `touchPersonActivity()` in `/lib`; workers call the same helper | Each listed event | Never |
+| Lifecycle stage | Payments, enrolments | Computed on read (§12.3) | On read | Never |
+| `won_at`, `lost_at`, `stage_changed_at` | Stage moves | Deal service in `/lib`; the Stripe worker calls the same function | Stage move | Never |
+| `enrolment.onboarding_step` | — | Shawn's workers | Each onboarding send | — |
+| Class → `completed` | — | Operations, by hand | After the class ends | Until someone does it |
+| Waitlist promotion | — | Operations, by hand (O5: waitlist deferred) | When a seat frees | — |
 
 ## 13. Errors, States & Logging
 
@@ -1062,7 +1099,7 @@ Everything else: manual UAT with Wei Ping, Ops and Sales during Sprint 5 (30 Nov
 | O8 website deploy access | **Fri 25 Sep** | Management | Blocker, not a fallback — escalate the same day; Sprint 3 cannot start without it |
 | O1 auth (SSO vs email+MFA) | Fri 2 Oct | Shawn | Email + password with MFA (see below) |
 | O2 store message bodies | Fri 9 Oct | Shawn + privacy review | Metadata only; no bodies stored |
-| O3 reservation expiry | Fri 16 Oct | Operations | 48 hours |
+| O3 reservation expiry | Fri 16 Oct | Operations | 48 hours — for reservations staff make. Stripe-path holds are 24 hours (Stripe's maximum), decided 5 Oct |
 | O9 corporate booker model | Fri 16 Oct | Operations | Build as specified in 12.2 |
 | O4 first-response SLA | Fri 30 Oct | Wei Ping | 1 business hour, configurable |
 | O5 waitlist in MVP | Fri 30 Oct | Client | Defer to January |
