@@ -12,13 +12,15 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/003_company_from_form.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/004_hrdc_task_guard.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/005_row_version.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/006_class_seats.sql
     psql -d <db> -f lib/db/tests/schema_constraints.sql
     psql -d <db> -f lib/db/tests/002_merge_erase_tests.sql
     psql -d <db> -f lib/db/tests/003_company_from_form_tests.sql
     psql -d <db> -f lib/db/tests/004_hrdc_task_guard_tests.sql
     psql -d <db> -f lib/db/tests/005_row_version_tests.sql
+    psql -d <db> -f lib/db/tests/006_class_seats_tests.sql
 
-Current result on PostgreSQL 16 with 001–005 applied: 38 of 38, 42 of 42, 26 of 26, 8 of 8 and 9 of 9 (with and without Supabase's `anon`/`authenticated` roles present).
+Current result on PostgreSQL 16 with 001–006 applied: 38 of 38, 42 of 42, 26 of 26, 8 of 8, 9 of 9 and 26 of 26 (with and without Supabase's `anon`/`authenticated` roles present).
 
 The tests live outside `migrations/` on purpose, so no migration runner ever executes them.
 
@@ -61,6 +63,21 @@ At most one open `hrdc_deadline` task per deal (unique index on `deal_id` where 
 | How to use it | GET returns `version`; send it back as `If-Match`. PATCH runs `WHERE id = $1 AND version = $2`. Zero rows updated = 409 (or 404 if the row is gone). Do not compare `updated_at`: a JS `Date` keeps milliseconds, Postgres keeps microseconds, so the match silently fails; and `updated_at::text` depends on the session timezone. |
 | Merge | `merge_person()` updates the survivor, so its version goes up and any edit form opened before the merge gets a 409. |
 
+## Migration 006 — seats and class status (5 Oct)
+
+Enrolments are written by the app, the Stripe webhook, the SalesProcess import and by hand. Seat rules have to hold for all of them, so they live here.
+
+| Change | What it means for the app |
+| --- | --- |
+| `class_seats_taken(class)` | The one definition of a taken seat (§12.1): reserved **and not expired**, payment_pending, confirmed, onboarded, attended, completed. Don't write a second version in TypeScript. |
+| `class.status` maintained by triggers | Recomputed on every enrolment insert/delete/status/class change and on capacity or threshold edits. Only touches `open`/`few_seats`/`full`; `draft`, `cancelled`, `completed` are never changed. To publish, set `open` — the database corrects it to `few_seats`/`full` in the same update. The app never computes status itself. |
+| Oversell guard | Any write that claims a seat on a full class raises `no_seats: class <code> is full` (SQLSTATE P0001) — map it to 409 `no_seats`. Moves between seat-taking statuses (confirmed → onboarded) never trip it. Cancelled and completed classes are exempt, so history can be imported. Keep the service's own seat check for a friendly early message, but the database is the authority. |
+| `seat_reserved_until` | Filled automatically for any `reserved` row left empty: now + `reservation_expiry_hours` (48). The public register route sets it itself to now + `stripe_reservation_hours` (24) and passes the same time to Stripe as `expires_at`. |
+| `expire_reservations()` | Cancels expired reservations (`cancelled_reason = 'reservation_expired'`) and writes `EnrolmentCancelled`. Scheduled on Supabase: `select cron.schedule('expire-reservations', '*/15 * * * *', $$select expire_reservations()$$);`. Between runs the seat count already ignores expired rows; only the badge can lag, by up to 15 minutes. |
+| `ClassPublished` | Written by the database whenever `status` or `is_public` changes, including seat-driven changes. **The app no longer raises it.** |
+| Locking | The triggers lock the class row. The service's transaction already does, so this costs nothing there. Every status change bumps `class.version`, so an open class edit form can get a 409 while bookings arrive — expected. |
+| Privileges | `class_seats_taken`, `refresh_class_status`, `expire_reservations` revoked from PUBLIC/`anon`/`authenticated` — the public feed must never expose raw seat counts (§8.1). |
+
 ## Where this is stricter or more specific than the spec
 
 Match these in your mock layer so nothing surprises you when the real schema lands.
@@ -90,7 +107,7 @@ Match these in your mock layer so nothing surprises you when the real schema lan
 ## Things the app must still do (the database can't)
 
 - **Phone normalisation** — libphonenumber in `/lib/format`, then write `phone_e164`.
-- **Seat counting and `class.status`** — computed in the service inside a transaction that locks the class row (Spec 12.1).
+- **Seat counting and `class.status`** — done by the database since migration 006. The service still locks the class row and checks seats for a friendly message; it must map `no_seats` (P0001) to 409.
 - **Merging** — call `merge_person()`; don't hand-write the moves. Then apply the `fields` map and write it to the audit log.
 - **`person.last_activity_at`** — via `touchPersonActivity()` (Spec 12.9).
 
