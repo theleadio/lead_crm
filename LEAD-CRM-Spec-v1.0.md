@@ -4,18 +4,18 @@ _Last updated 6 Oct 2026 · Owner: Shawn_
 
 ## Changelog
 
-| Version | Date           | Changes                                                                                                                                                                                                                                                                                                                                                                                           |
-| ------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| v1.9    | 6 Oct 2026     | From Zixuan's review of 006: migration 007 (every reservation has a hold; seat-guard fix) (§5, §12.1); import rule for reservations (§12.1); class has two separate controls — status and website — instead of one publish button (§9.10, §12.1); register rows (§12.11).                                                                                                                         |
-| v1.8    | 5 Oct 2026     | From Zixuan's 9.8 question: seats and class status now kept by the database (migration 006, §12.1); reservation expiry is a real write every 15 minutes; Stripe-path holds 24 hours; `reserved → confirmed` added (§12.4); full classes shown on the website (§8.1); §8.3 steps 2 and 4, §9.9 validation and §11.1 events corrected; rule placement (§3) and a who-writes-what register (§12.11). |
-| v1.7    | 1 Oct 2026     | From Zixuan's release notes: concurrency now uses an integer `version` instead of `updated_at` (§7, migration 005); in-place lost-reason correction (§12.5); withdrawn HRDC task closed with `done_at` (§12.6); schema-change tables for 004 and 005 (§5).                                                                                                                                        |
-| v1.6    | 28 Sep 2026    | From Zixuan's 9.5 review: course list via existing GET /api/courses (§7, §9.5); leaving Won/Lost rules and stage aging (§12.5); HRDC deadline task rules + migration 004 (§12.6).                                                                                                                                                                                                                 |
-| v1.5    | 24 Sep 2026    | Companies from Zixuan's 9.4 question: Add/Edit company, Add person, edit and end memberships on 9.4; `replaceCurrent` on POST members; new PATCH members route (§7, §7.1); company decisions recorded (§15.3).                                                                                                                                                                                    |
-| v1.4    | 24 Sep 2026    | What the lead form's `companyName` does — it was sent but never saved. Migration 003: `person.company_name_given`, `company.name_norm`, `link_company_from_form()` (§5, §8.2, §8.3); company picker on person detail (§9.2); soft-match "company matches" defined (§12.2).                                                                                                                        |
-| v1.3    | 24 Sep 2026    | Migration 002: `needs_review_reason` and `erased_at` on person (§5); merge, erasure and soft delete as tested database functions (§12.10); merge route body and two new routes (§7, §7.1); concurrency switched to If-Match with a microsecond version (§7); open items O11–O15 (§15.3).                                                                                                          |
-| v1.2    | 24 Sep 2026    | From Zixuan's review of §9–11: new routes (§7.1), public register route (§8.3), `hrdcIntended` on leads, soft-match rule rewritten (§12.2), part-time "assigned" + create rule (§6), propose/request as tasks (§6), Home page (§9.0), schema changes (§5), Supabase env vars (§2). Schema v1 DDL issued.                                                                                          |
-| v1.1    | 22–23 Sep 2026 | `class_notice`, `tag`, `person_tag`, `lost_reason` tables; `payment.notes`; `deal.lost_reason_id`; last activity (§12.9); audit log viewer (§9.16); auth decision; decision calendar (§15.3)                                                                                                                                                                                                      |
-| v1.0    | 22 Sep 2026    | First issue                                                                                                                                                                                                                                                                                                                                                                                       |
+| Version | Date | Changes |
+| --- | --- | --- |
+| v1.9 | 6 Oct 2026 | From Zixuan's review of 006: migration 007 (every reservation has a hold; seat-guard fix) (§5, §12.1); import rule for reservations (§12.1); class has two separate controls — status and website — instead of one publish button (§9.10, §12.1); register rows (§12.11). |
+| v1.8 | 5 Oct 2026 | From Zixuan's 9.8 question: seats and class status now kept by the database (migration 006, §12.1); reservation expiry is a real write every 15 minutes; Stripe-path holds 24 hours; `reserved → confirmed` added (§12.4); full classes shown on the website (§8.1); §8.3 steps 2 and 4, §9.9 validation and §11.1 events corrected; rule placement (§3) and a who-writes-what register (§12.11). |
+| v1.7 | 1 Oct 2026 | From Zixuan's release notes: concurrency now uses an integer `version` instead of `updated_at` (§7, migration 005); in-place lost-reason correction (§12.5); withdrawn HRDC task closed with `done_at` (§12.6); schema-change tables for 004 and 005 (§5). |
+| v1.6 | 28 Sep 2026 | From Zixuan's 9.5 review: course list via existing GET /api/courses (§7, §9.5); leaving Won/Lost rules and stage aging (§12.5); HRDC deadline task rules + migration 004 (§12.6). |
+| v1.5 | 24 Sep 2026 | Companies from Zixuan's 9.4 question: Add/Edit company, Add person, edit and end memberships on 9.4; `replaceCurrent` on POST members; new PATCH members route (§7, §7.1); company decisions recorded (§15.3). |
+| v1.4 | 24 Sep 2026 | What the lead form's `companyName` does — it was sent but never saved. Migration 003: `person.company_name_given`, `company.name_norm`, `link_company_from_form()` (§5, §8.2, §8.3); company picker on person detail (§9.2); soft-match "company matches" defined (§12.2). |
+| v1.3 | 24 Sep 2026 | Migration 002: `needs_review_reason` and `erased_at` on person (§5); merge, erasure and soft delete as tested database functions (§12.10); merge route body and two new routes (§7, §7.1); concurrency switched to If-Match with a microsecond version (§7); open items O11–O15 (§15.3). |
+| v1.2 | 24 Sep 2026 | From Zixuan's review of §9–11: new routes (§7.1), public register route (§8.3), `hrdcIntended` on leads, soft-match rule rewritten (§12.2), part-time "assigned" + create rule (§6), propose/request as tasks (§6), Home page (§9.0), schema changes (§5), Supabase env vars (§2). Schema v1 DDL issued. |
+| v1.1 | 22–23 Sep 2026 | `class_notice`, `tag`, `person_tag`, `lost_reason` tables; `payment.notes`; `deal.lost_reason_id`; last activity (§12.9); audit log viewer (§9.16); auth decision; decision calendar (§15.3) |
+| v1.0 | 22 Sep 2026 | First issue |
 
 Build reference for Zixuan (CRM app, website, landing pages) and Shawn (data, integrations). Companion to the LEAD Unified CRM Solution Blueprint.
 
@@ -225,7 +225,7 @@ APP_USER ||--o{ DEAL : owns
 | `enquiry_status`        | open, ai_resolved, human_resolved, converted, closed                                                                        |
 | `enquiry_category`      | course_info, schedule, price, hrdc, corporate, registration_help, payment_issue, post_class, complaint, other               |
 | `consent_purpose`       | marketing_email, marketing_whatsapp, data_processing                                                                        |
-| `task_type`             | call, follow_up, review_duplicate, match_payment, hrdc_deadline, export_request, other                                      |
+| `task_type`             | call, follow_up, review_duplicate, match_payment, hrdc_deadline, export_request, other                                                      |
 
 **Changed 22 Sep:** `lost_reason` is now an editable table (Settings must let Sales add reasons without a migration). `deal.lost_reason_id` FKs to it.
 
@@ -233,27 +233,27 @@ APP_USER ||--o{ DEAL : owns
 
 **`person`** — one row per human, ever.
 
-| Column              | Type              | Rules                                                                                                                                                                               |
-| ------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| full_name           | text              | required                                                                                                                                                                            |
-| preferred_name      | text              | optional                                                                                                                                                                            |
-| email / email_norm  | text              | email_norm unique where not null and not deleted                                                                                                                                    |
-| phone / phone_e164  | text              | phone_e164 unique where not null and not deleted                                                                                                                                    |
-| whatsapp_e164       | text              | defaults to phone_e164                                                                                                                                                              |
-| preferred_language  | language          | default en                                                                                                                                                                          |
-| job_title           | text              | optional                                                                                                                                                                            |
-| owner_user_id       | uuid → app_user   | nullable                                                                                                                                                                            |
-| first_touchpoint_id | uuid → touchpoint | set once, never updated                                                                                                                                                             |
-| wati_contact_id     | text              | nullable                                                                                                                                                                            |
-| stripe_customer_id  | text              | nullable                                                                                                                                                                            |
-| needs_review        | bool              | true when phone couldn't be normalised or soft duplicate found                                                                                                                      |
+| Column              | Type              | Rules                                                          |
+| ------------------- | ----------------- | -------------------------------------------------------------- |
+| full_name           | text              | required                                                       |
+| preferred_name      | text              | optional                                                       |
+| email / email_norm  | text              | email_norm unique where not null and not deleted               |
+| phone / phone_e164  | text              | phone_e164 unique where not null and not deleted               |
+| whatsapp_e164       | text              | defaults to phone_e164                                         |
+| preferred_language  | language          | default en                                                     |
+| job_title           | text              | optional                                                       |
+| owner_user_id       | uuid → app_user   | nullable                                                       |
+| first_touchpoint_id | uuid → touchpoint | set once, never updated                                        |
+| wati_contact_id     | text              | nullable                                                       |
+| stripe_customer_id  | text              | nullable                                                       |
+| needs_review        | bool              | true when phone couldn't be normalised or soft duplicate found |
 | needs_review_reason | text              | why it was flagged: phone_unnormalised, possible_duplicate_company, possible_duplicate_email, possible_duplicate_phone, no_name. Set and cleared together with needs_review (CHECK) |
-| erased_at           | timestamptz       | set by erase_person() (§12.10); erased rows also get deleted_at                                                                                                                     |
-| company_name_given  | text              | what the person typed as company on the latest public form (max 200). Informational — company_membership is the truth. Set only by link_company_from_form() (§8.2)                  |
-| merged_into_id      | uuid → person     | set when merged away; such rows hidden from all lists                                                                                                                               |
-| notes               | text              | free text                                                                                                                                                                           |
-| deleted_at          | timestamptz       |                                                                                                                                                                                     |
-| last_activity_at    | timestamptz       | maintained by service layer, Section 12.9                                                                                                                                           |
+| erased_at           | timestamptz       | set by erase_person() (§12.10); erased rows also get deleted_at |
+| company_name_given  | text              | what the person typed as company on the latest public form (max 200). Informational — company_membership is the truth. Set only by link_company_from_form() (§8.2) |
+| merged_into_id      | uuid → person     | set when merged away; such rows hidden from all lists          |
+| notes               | text              | free text                                                      |
+| deleted_at          | timestamptz       |                                                                |
+| last_activity_at    | timestamptz       | maintained by service layer, Section 12.9                      |
 
 Indexes: email_norm, phone_e164, owner_user_id, full_name (trigram search). No `tags` column — tags live in their own tables.
 
@@ -337,59 +337,59 @@ Only one `pending` notice per class at a time — a second edit while one is pen
 
 **Schema changes 24 Sep (v1.2)** — all before the 16 Oct freeze.
 
-| Table             | Change                                                                                                              | Why                                                                                                    |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| app_user          | add `auth_user_id text unique`                                                                                      | Links to the auth provider's user id; matching on email breaks when an email changes                   |
-| deal              | add `checkout_url`, `checkout_session_id`, `checkout_sent_at`                                                       | §13 says the link lives on the deal record                                                             |
-| payment           | add `match_status` (matched, unmatched), default matched. Constraint: enrolment_id or deal_id set, **or** unmatched | An unmatched Stripe payment is still real money and must be stored (§11.3)                             |
-| task              | add `related_person_id uuid → person`                                                                               | A merge proposal names two people                                                                      |
-| task_type         | add `export_request`                                                                                                | Management's "request" export (§6)                                                                     |
-| new `app_setting` | `key text PK`, `value jsonb`, `updated_by`, `updated_at`                                                            | HRDC lead time, claim window, reservation expiry, SLA — the configurable values in §12.1, §12.6, §15.3 |
+| Table | Change | Why |
+| --- | --- | --- |
+| app_user | add `auth_user_id text unique` | Links to the auth provider's user id; matching on email breaks when an email changes |
+| deal | add `checkout_url`, `checkout_session_id`, `checkout_sent_at` | §13 says the link lives on the deal record |
+| payment | add `match_status` (matched, unmatched), default matched. Constraint: enrolment_id or deal_id set, **or** unmatched | An unmatched Stripe payment is still real money and must be stored (§11.3) |
+| task | add `related_person_id uuid → person` | A merge proposal names two people |
+| task_type | add `export_request` | Management's "request" export (§6) |
+| new `app_setting` | `key text PK`, `value jsonb`, `updated_by`, `updated_at` | HRDC lead time, claim window, reservation expiry, SLA — the configurable values in §12.1, §12.6, §15.3 |
 
 **Schema changes 24 Sep, migration 002 (v1.3)**
 
-| Table               | Change                                                                                                                  | Why                                                                               |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| person              | add `needs_review_reason`, `erased_at`                                                                                  | The 9.4 review queue shows why a record was flagged; erasure needs a marker       |
-| touchpoint, consent | append-only trigger now lets `merge_person()` change `person_id` (and `is_first_touch`) and nothing else                | A merge has to move history onto the kept person — Zixuan's catch                 |
-| functions           | `merge_person`, `erase_person`, `soft_delete_person`; EXECUTE revoked from PUBLIC and Supabase's `anon`/`authenticated` | One tested implementation of each rule; cannot be called with the publishable key |
+| Table | Change | Why |
+| --- | --- | --- |
+| person | add `needs_review_reason`, `erased_at` | The 9.4 review queue shows why a record was flagged; erasure needs a marker |
+| touchpoint, consent | append-only trigger now lets `merge_person()` change `person_id` (and `is_first_touch`) and nothing else | A merge has to move history onto the kept person — Zixuan's catch |
+| functions | `merge_person`, `erase_person`, `soft_delete_person`; EXECUTE revoked from PUBLIC and Supabase's `anon`/`authenticated` | One tested implementation of each rule; cannot be called with the publishable key |
 
 **Schema changes 24 Sep, migration 003 (v1.4)**
 
-| Table     | Change                                                                                                                  | Why                                                                                                  |
-| --------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| person    | add `company_name_given text`                                                                                           | The lead form sends `companyName` but nothing stored it                                              |
-| company   | add `name_norm` (generated) + index                                                                                     | One "same company name" rule for form linking, the soft match and "similar companies" on Add company |
-| functions | `normalise_company_name(text)`, `link_company_from_form(person, text)`; `erase_person` also clears `company_name_given` | Same reasons as 002                                                                                  |
+| Table | Change | Why |
+| --- | --- | --- |
+| person | add `company_name_given text` | The lead form sends `companyName` but nothing stored it |
+| company | add `name_norm` (generated) + index | One "same company name" rule for form linking, the soft match and "similar companies" on Add company |
+| functions | `normalise_company_name(text)`, `link_company_from_form(person, text)`; `erase_person` also clears `company_name_given` | Same reasons as 002 |
 
 **Schema changes 28 Sep, migration 004 (v1.6)**
 
-| Table | Change                                                                                                     | Why                                                                |
-| ----- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| task  | CHECK: an `hrdc_deadline` task must have a `deal_id`; unique index: one open `hrdc_deadline` task per deal | §12.6 — the app creates the task, so the database stops duplicates |
+| Table | Change | Why |
+| --- | --- | --- |
+| task | CHECK: an `hrdc_deadline` task must have a `deal_id`; unique index: one open `hrdc_deadline` task per deal | §12.6 — the app creates the task, so the database stops duplicates |
 
 **Schema changes 1 Oct, migration 005 (v1.7)**
 
-| Table              | Change                                                                                                                                | Why                                                                                                                                                           |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Table | Change | Why |
+| --- | --- | --- |
 | 15 editable tables | add `version bigint NOT NULL DEFAULT 1`; `bump_version()` trigger adds exactly 1 on every UPDATE and ignores any value the app writes | Optimistic concurrency for If-Match (§7). `updated_at` could not do this reliably. Not on `message_log`, `event_outbox`, `integration_event` (system-written) |
 
 **Schema changes 5 Oct, migration 006 (v1.8)**
 
-| Table       | Change                                                                                                                                 | Why                                                                |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| class       | `status` kept by triggers from seat counts; `ClassPublished` written to the outbox by trigger on any `status`/`is_public` change       | Nothing recomputed status; enrolments have several writers (§12.1) |
-| enrolment   | `seat_reserved_until` filled for every `reserved` row; trigger refuses any write that oversells a class (`no_seats`)                   | One seat rule for every writer                                     |
-| functions   | `class_seats_taken(class)`, `refresh_class_status(class)`, `expire_reservations()`; EXECUTE revoked from PUBLIC/`anon`/`authenticated` | One definition of a taken seat; expiry as a real write             |
-| app_setting | add `stripe_reservation_hours` = 24                                                                                                    | A Stripe Checkout link lives at most 24 hours                      |
+| Table | Change | Why |
+| --- | --- | --- |
+| class | `status` kept by triggers from seat counts; `ClassPublished` written to the outbox by trigger on any `status`/`is_public` change | Nothing recomputed status; enrolments have several writers (§12.1) |
+| enrolment | `seat_reserved_until` filled for every `reserved` row; trigger refuses any write that oversells a class (`no_seats`) | One seat rule for every writer |
+| functions | `class_seats_taken(class)`, `refresh_class_status(class)`, `expire_reservations()`; EXECUTE revoked from PUBLIC/`anon`/`authenticated` | One definition of a taken seat; expiry as a real write |
+| app_setting | add `stripe_reservation_hours` = 24 | A Stripe Checkout link lives at most 24 hours |
 
 **Schema changes 6 Oct, migration 007 (v1.9)**
 
-| Table     | Change                                                                                                                                                 | Why                                                                        |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| Table | Change | Why |
+| --- | --- | --- |
 | enrolment | Backfill `seat_reserved_until` = `created_at` + 48h on `reserved` rows that had none, then run the sweep once; add CHECK `enrolment_reserved_has_hold` | Rows from before 006 never expired and blocked re-booking (Zixuan's catch) |
-| enrolment | Seat guard treats a missing hold as "held no seat"                                                                                                     | In 006 such a row could gain a hold without the oversell check             |
-| functions | `backfill_reservation_holds()`; EXECUTE revoked from PUBLIC/`anon`/`authenticated`                                                                     | Used once by the migration                                                 |
+| enrolment | Seat guard treats a missing hold as "held no seat" | In 006 such a row could gain a hold without the oversell check |
+| functions | `backfill_reservation_holds()`; EXECUTE revoked from PUBLIC/`anon`/`authenticated` | Used once by the migration |
 
 **Onboarding templates have no table, deliberately.** WhatsApp templates must be Meta-approved and live in WATI; email templates live in the ESP. Settings links out to both.
 
@@ -463,68 +463,68 @@ REST under `/api`, JSON, session cookie auth. Shared zod schema validation (form
 
 ### Endpoints
 
-| Method + path                                 | Purpose                          | Owner  | Notes                                                                                                                                                                                                                                                          |
-| --------------------------------------------- | -------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET /api/people                               | Search + list                    | Zixuan | q matches name/email/phone, normalised before matching                                                                                                                                                                                                         |
-| POST /api/people                              | Create                           | Zixuan | Runs dedupe (§12); 409 with existing record on hard match                                                                                                                                                                                                      |
-| GET /api/people/:id                           | Detail + timeline                | Zixuan | person + deals + enrolments + enquiries + touchpoints                                                                                                                                                                                                          |
-| PATCH /api/people/:id                         | Update                           | Zixuan | Partial; audit-logged                                                                                                                                                                                                                                          |
-| POST /api/people/:id/merge                    | Merge into another               | Zixuan | super_admin only; body `{targetId, fields?}`. One transaction: `merge_person(:id, targetId, sessionUserId)`, then apply `fields` (9.3 per-field choices) to the target and audit-log them. `merge_blocked` → 409 with the message and class codes (§12.10)     |
-| GET/POST/PATCH /api/companies[/:id]           | Company CRUD                     | Zixuan | Write: super_admin, sales, support (§6). No DELETE in MVP (§15.3)                                                                                                                                                                                              |
+| Method + path                                 | Purpose                          | Owner  | Notes                                                                                    |
+| --------------------------------------------- | -------------------------------- | ------ | ---------------------------------------------------------------------------------------- |
+| GET /api/people                               | Search + list                    | Zixuan | q matches name/email/phone, normalised before matching                                   |
+| POST /api/people                              | Create                           | Zixuan | Runs dedupe (§12); 409 with existing record on hard match                                |
+| GET /api/people/:id                           | Detail + timeline                | Zixuan | person + deals + enrolments + enquiries + touchpoints                                    |
+| PATCH /api/people/:id                         | Update                           | Zixuan | Partial; audit-logged                                                                    |
+| POST /api/people/:id/merge                    | Merge into another               | Zixuan | super_admin only; body `{targetId, fields?}`. One transaction: `merge_person(:id, targetId, sessionUserId)`, then apply `fields` (9.3 per-field choices) to the target and audit-log them. `merge_blocked` → 409 with the message and class codes (§12.10) |
+| GET/POST/PATCH /api/companies[/:id]           | Company CRUD                     | Zixuan | Write: super_admin, sales, support (§6). No DELETE in MVP (§15.3)                         |
 | POST /api/companies/:id/members               | Attach person                    | Zixuan | body `{personId, jobTitle, isHrContact, isBillingContact, replaceCurrent?}`. `replaceCurrent: true` (used by the 9.2 picker) ends the person's other current memberships with `end_date` = today in the same transaction. 409 if already a current member here |
-| GET /api/deals                                | Pipeline board + list            | Zixuan | filter[pipeline], filter[stage], filter[owner]                                                                                                                                                                                                                 |
-| POST /api/deals                               | Create                           | Zixuan |                                                                                                                                                                                                                                                                |
-| PATCH /api/deals/:id                          | Update fields                    | Zixuan |                                                                                                                                                                                                                                                                |
-| POST /api/deals/:id/stage                     | Move stage                       | Zixuan | body `{toStage, lostReasonId?}`; writes history + outbox event; 422 if lost without an active reason                                                                                                                                                           |
-| POST /api/deals/:id/checkout-link             | Generate Stripe link             | Shawn  | Returns `{url}` and stores it on the deal (§7.1); Zixuan calls from deal screen                                                                                                                                                                                |
-| GET/POST/PATCH /api/courses[/:id]             | Course catalogue                 | Zixuan | GET readable by every role that reads deals (§6). Optional `?active=true` (v1.6). Used for the 9.5 course filter and the deal course picker — no separate options route                                                                                        |
-| GET /api/classes                              | List with seat counts            | Zixuan | Returns capacity, confirmedCount, reservedCount, seatsAvailable                                                                                                                                                                                                |
-| POST/PATCH /api/classes[/:id]                 | Create/edit                      | Zixuan | Takes optional `notice: 'prepare' \| 'skip'`; see §7.1 (409 `notice_decision_required`)                                                                                                                                                                        |
-| POST /api/classes/:id/cancel                  | Cancel class                     | Zixuan | Requires reason; sets all enrolments cancelled; raises event                                                                                                                                                                                                   |
-| GET /api/classes/:id/roster                   | Enrolment list                   | Zixuan | Used by class detail + CSV export                                                                                                                                                                                                                              |
-| GET /api/enrolments[/:id]                     | List + detail                    | Zixuan |                                                                                                                                                                                                                                                                |
-| POST /api/enrolments                          | Create manually                  | Zixuan | Seat check inside transaction; 409 no_seats                                                                                                                                                                                                                    |
-| POST /api/enrolments/:id/status               | Change status                    | Zixuan | Validated against state machine; 422 on illegal jump                                                                                                                                                                                                           |
-| POST /api/enrolments/:id/transfer             | Move to another class            | Zixuan | body `{toClassId}`; seat check on target                                                                                                                                                                                                                       |
-| POST /api/payments/manual                     | Record bank/HRDC/invoice payment | Zixuan | Requires method, amount, reference, proof upload; confirms enrolment                                                                                                                                                                                           |
-| POST /api/uploads/sign                        | Signed upload URL                | Zixuan | Payment proof, HRDC documents                                                                                                                                                                                                                                  |
-| GET/PATCH /api/enquiries[/:id]                | Support queue                    | Zixuan |                                                                                                                                                                                                                                                                |
-| POST /api/enquiries/:id/convert               | Create deal from enquiry         | Zixuan | Links both, assigns owner, raises event                                                                                                                                                                                                                        |
-| GET/POST/PATCH /api/tasks[/:id]               | Tasks                            | Zixuan | filter[mine]=true for default view                                                                                                                                                                                                                             |
-| GET /api/consent/:personId, POST /api/consent | Consent records                  | Zixuan |                                                                                                                                                                                                                                                                |
-| GET/POST/PATCH /api/users[/:id]               | User admin                       | Zixuan | super_admin only                                                                                                                                                                                                                                               |
-| GET /api/health/integrations                  | Integration status panel         | Shawn  | Zixuan renders it                                                                                                                                                                                                                                              |
-| POST /api/webhooks/stripe, /wati              | Inbound webhooks                 | Shawn  | No session; signature-verified                                                                                                                                                                                                                                 |
+| GET /api/deals                                | Pipeline board + list            | Zixuan | filter[pipeline], filter[stage], filter[owner]                                           |
+| POST /api/deals                               | Create                           | Zixuan |                                                                                          |
+| PATCH /api/deals/:id                          | Update fields                    | Zixuan |                                                                                          |
+| POST /api/deals/:id/stage                     | Move stage                       | Zixuan | body `{toStage, lostReasonId?}`; writes history + outbox event; 422 if lost without an active reason |
+| POST /api/deals/:id/checkout-link             | Generate Stripe link             | Shawn  | Returns `{url}` and stores it on the deal (§7.1); Zixuan calls from deal screen                                           |
+| GET/POST/PATCH /api/courses[/:id]             | Course catalogue                 | Zixuan | GET readable by every role that reads deals (§6). Optional `?active=true` (v1.6). Used for the 9.5 course filter and the deal course picker — no separate options route |
+| GET /api/classes                              | List with seat counts            | Zixuan | Returns capacity, confirmedCount, reservedCount, seatsAvailable                          |
+| POST/PATCH /api/classes[/:id]                 | Create/edit                      | Zixuan | Takes optional `notice: 'prepare' \| 'skip'`; see §7.1 (409 `notice_decision_required`)   |
+| POST /api/classes/:id/cancel                  | Cancel class                     | Zixuan | Requires reason; sets all enrolments cancelled; raises event                             |
+| GET /api/classes/:id/roster                   | Enrolment list                   | Zixuan | Used by class detail + CSV export                                                        |
+| GET /api/enrolments[/:id]                     | List + detail                    | Zixuan |                                                                                          |
+| POST /api/enrolments                          | Create manually                  | Zixuan | Seat check inside transaction; 409 no_seats                                              |
+| POST /api/enrolments/:id/status               | Change status                    | Zixuan | Validated against state machine; 422 on illegal jump                                     |
+| POST /api/enrolments/:id/transfer             | Move to another class            | Zixuan | body `{toClassId}`; seat check on target                                                 |
+| POST /api/payments/manual                     | Record bank/HRDC/invoice payment | Zixuan | Requires method, amount, reference, proof upload; confirms enrolment                     |
+| POST /api/uploads/sign                        | Signed upload URL                | Zixuan | Payment proof, HRDC documents                                                            |
+| GET/PATCH /api/enquiries[/:id]                | Support queue                    | Zixuan |                                                                                          |
+| POST /api/enquiries/:id/convert               | Create deal from enquiry         | Zixuan | Links both, assigns owner, raises event                                                  |
+| GET/POST/PATCH /api/tasks[/:id]               | Tasks                            | Zixuan | filter[mine]=true for default view                                                       |
+| GET /api/consent/:personId, POST /api/consent | Consent records                  | Zixuan |                                                                                          |
+| GET/POST/PATCH /api/users[/:id]               | User admin                       | Zixuan | super_admin only                                                                         |
+| GET /api/health/integrations                  | Integration status panel         | Shawn  | Zixuan renders it                                                                        |
+| POST /api/webhooks/stripe, /wati              | Inbound webhooks                 | Shawn  | No session; signature-verified                                                           |
 
 ### 7.1 Routes added 24 Sep (v1.2)
 
 From Zixuan's review of §9–11 against the table above.
 
-| Method + path                                  | Purpose                                                    | Owner  | Notes                                                                                                                                                                                                                 |
-| ---------------------------------------------- | ---------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST /api/people/bulk                          | Bulk assign owner / add tag                                | Zixuan | body `{personIds[], action: 'assign_owner'\|'add_tag', ownerId?, tagId?}`; max 500; one audit row per person                                                                                                          |
-| GET /api/people/export                         | People CSV                                                 | Zixuan | super_admin only; streams; audit-logged with filter + row count                                                                                                                                                       |
-| GET /api/people/:id/timeline                   | Paginated timeline for 9.2                                 | Zixuan | touchpoints, stage changes, tasks, messages, payments, enrolment changes; newest first, 50/page. Keeps GET /api/people/:id fast                                                                                       |
-| GET /api/people/:id/data-export                | PDPA portability export                                    | Zixuan | `?format=json\|csv`; super_admin (on the person's request); audit-logged                                                                                                                                              |
-| GET /api/users/options                         | `{id, fullName}` of active users for owner filters/pickers | Zixuan | Every signed-in role; nothing else returned                                                                                                                                                                           |
-| GET /api/tags                                  | Tag list for filters + bulk tag                            | Zixuan | Every role that can read people                                                                                                                                                                                       |
-| PATCH /api/tags/:id                            | Rename / deactivate                                        | Zixuan | super_admin; 422 on system tags                                                                                                                                                                                       |
-| POST /api/tags/:id/merge                       | Merge into another tag                                     | Zixuan | body `{intoTagId}`; moves person_tag rows, deactivates source                                                                                                                                                         |
-| GET /api/lost-reasons                          | Active reasons, in order                                   | Zixuan | Every role that can read deals (Lost dialog)                                                                                                                                                                          |
-| POST/PATCH /api/lost-reasons[/:id]             | Create / rename / deactivate                               | Zixuan | super_admin                                                                                                                                                                                                           |
-| POST /api/lost-reasons/reorder                 | Reorder                                                    | Zixuan | body `{ids[]}` in new order                                                                                                                                                                                           |
-| PATCH /api/companies/:id/members/:membershipId | Edit or end a membership (v1.5)                            | Zixuan | body `{jobTitle?, isHrContact?, isBillingContact?, endDate?}`; same roles as company write. `endDate` ends it (not before `start_date`); rows are never deleted. Ending is one-way — to rejoin, POST a new membership |
-| DELETE /api/people/:id                         | Soft delete a junk/test record (v1.3)                      | Zixuan | super_admin; body `{reason}` required; calls `soft_delete_person()`; 409 "use erase instead" if the person has any enrolment or payment                                                                               |
-| POST /api/people/:id/erase                     | PDPA erasure — anonymise (v1.3)                            | Zixuan | super_admin, on the person's request; body `{reason}` required; calls `erase_person()`; irreversible, confirm by typing the name; §12.10                                                                              |
-| GET /api/companies/:id                         | Company detail                                             | Zixuan | company + members + deals + enrolment summary                                                                                                                                                                         |
-| GET /api/deals/:id                             | Deal detail                                                | Zixuan | deal + stageHistory[] + tasks + linked enquiry                                                                                                                                                                        |
-| GET /api/audit-log                             | Audit viewer (9.16)                                        | Zixuan | super_admin, management; filters per 9.16; 50/page                                                                                                                                                                    |
-| GET /api/classes/:id/roster.csv                | Roster export                                              | Zixuan | operations, super_admin; audit-logged                                                                                                                                                                                 |
-| GET /api/classes/:id/notices                   | Notices for a class                                        | Zixuan | Pending first                                                                                                                                                                                                         |
-| PATCH /api/class-notices/:id                   | Edit message EN/ZH                                         | Zixuan | Only while pending                                                                                                                                                                                                    |
-| POST /api/class-notices/:id/approve            | Approve and send                                           | Zixuan | operations, super_admin; raises ClassNoticeApproved; Shawn's worker sends                                                                                                                                             |
-| POST /api/class-notices/:id/discard            | Discard                                                    | Zixuan | Only while pending                                                                                                                                                                                                    |
-| POST /api/payments/:id/match                   | Resolve unmatched Stripe payment (§11.3)                   | Zixuan | body `{personId, classId}`; one transaction: creates enrolment, links payment, sets match_status = matched, closes the match_payment task                                                                             |
+| Method + path | Purpose | Owner | Notes |
+| --- | --- | --- | --- |
+| POST /api/people/bulk | Bulk assign owner / add tag | Zixuan | body `{personIds[], action: 'assign_owner'\|'add_tag', ownerId?, tagId?}`; max 500; one audit row per person |
+| GET /api/people/export | People CSV | Zixuan | super_admin only; streams; audit-logged with filter + row count |
+| GET /api/people/:id/timeline | Paginated timeline for 9.2 | Zixuan | touchpoints, stage changes, tasks, messages, payments, enrolment changes; newest first, 50/page. Keeps GET /api/people/:id fast |
+| GET /api/people/:id/data-export | PDPA portability export | Zixuan | `?format=json\|csv`; super_admin (on the person's request); audit-logged |
+| GET /api/users/options | `{id, fullName}` of active users for owner filters/pickers | Zixuan | Every signed-in role; nothing else returned |
+| GET /api/tags | Tag list for filters + bulk tag | Zixuan | Every role that can read people |
+| PATCH /api/tags/:id | Rename / deactivate | Zixuan | super_admin; 422 on system tags |
+| POST /api/tags/:id/merge | Merge into another tag | Zixuan | body `{intoTagId}`; moves person_tag rows, deactivates source |
+| GET /api/lost-reasons | Active reasons, in order | Zixuan | Every role that can read deals (Lost dialog) |
+| POST/PATCH /api/lost-reasons[/:id] | Create / rename / deactivate | Zixuan | super_admin |
+| POST /api/lost-reasons/reorder | Reorder | Zixuan | body `{ids[]}` in new order |
+| PATCH /api/companies/:id/members/:membershipId | Edit or end a membership (v1.5) | Zixuan | body `{jobTitle?, isHrContact?, isBillingContact?, endDate?}`; same roles as company write. `endDate` ends it (not before `start_date`); rows are never deleted. Ending is one-way — to rejoin, POST a new membership |
+| DELETE /api/people/:id | Soft delete a junk/test record (v1.3) | Zixuan | super_admin; body `{reason}` required; calls `soft_delete_person()`; 409 "use erase instead" if the person has any enrolment or payment |
+| POST /api/people/:id/erase | PDPA erasure — anonymise (v1.3) | Zixuan | super_admin, on the person's request; body `{reason}` required; calls `erase_person()`; irreversible, confirm by typing the name; §12.10 |
+| GET /api/companies/:id | Company detail | Zixuan | company + members + deals + enrolment summary |
+| GET /api/deals/:id | Deal detail | Zixuan | deal + stageHistory[] + tasks + linked enquiry |
+| GET /api/audit-log | Audit viewer (9.16) | Zixuan | super_admin, management; filters per 9.16; 50/page |
+| GET /api/classes/:id/roster.csv | Roster export | Zixuan | operations, super_admin; audit-logged |
+| GET /api/classes/:id/notices | Notices for a class | Zixuan | Pending first |
+| PATCH /api/class-notices/:id | Edit message EN/ZH | Zixuan | Only while pending |
+| POST /api/class-notices/:id/approve | Approve and send | Zixuan | operations, super_admin; raises ClassNoticeApproved; Shawn's worker sends |
+| POST /api/class-notices/:id/discard | Discard | Zixuan | Only while pending |
+| POST /api/payments/:id/match | Resolve unmatched Stripe payment (§11.3) | Zixuan | body `{personId, classId}`; one transaction: creates enrolment, links payment, sets match_status = matched, closes the match_payment task |
 
 **Changes to existing routes**
 
@@ -631,7 +631,7 @@ Server behaviour, in order:
 1. Verify API key and CAPTCHA. Rate limit: 10/IP/min, 3/phone/hour.
 2. Normalise phone and email (§4).
 3. Find existing person by email_norm or phone_e164; create if none.
-   3a. **Company** (v1.4). If `companyName` is present, call `link_company_from_form(personId, companyName)`. It stores the text in `person.company_name_given` and links the person to a company only if they have no current company and exactly one existing company has the same normalised name. **A public form never creates a company** — typed names are too inconsistent ("Acme", "ACME Sdn. Bhd.", "Acme (M) Sdn Bhd"), and there is no company merge in MVP. Sales links or creates the company from 9.2.
+3a. **Company** (v1.4). If `companyName` is present, call `link_company_from_form(personId, companyName)`. It stores the text in `person.company_name_given` and links the person to a company only if they have no current company and exactly one existing company has the same normalised name. **A public form never creates a company** — typed names are too inconsistent ("Acme", "ACME Sdn. Bhd.", "Acme (M) Sdn Bhd"), and there is no company merge in MVP. Sales links or creates the company from 9.2.
 4. Insert touchpoint with all attribution fields; set is_first_touch if none exists.
 5. Record consent from consentMarketing.
 6. Create a deal in `new` unless an open deal for the same course exists.
@@ -673,8 +673,7 @@ Server behaviour, in order:
 
 **9.4 Companies list & detail** — List: name, industry, size, HRDC registered, people count, open deals. Detail: fields, employee list w/ job title + HR/billing flags, deals, enrolments, total revenue.
 
-_Write controls (v1.5)_ — for super_admin, sales and support (§6); hidden for other roles.
-
+*Write controls (v1.5)* — for super_admin, sales and support (§6); hidden for other roles.
 - **Add company** (list): legal name (required), registration no., industry, size, HRDC registered, billing address, billing email, owner. Before saving, show "Similar companies" — same `name_norm` (from `normalise_company_name()`), or same registration no. ignoring case, spaces and hyphens. A warning with links, not a block.
 - **Edit** (detail): the same fields.
 - **Add person** (employee list): search existing people → POST /api/companies/:id/members. Creating a new person happens on 9.1, not here.
@@ -769,21 +768,21 @@ Two sides never call each other's code — they meet at the database and the out
 
 Written to `event_outbox` inside the same transaction as the business write. Missing one = silent automation failure.
 
-| Event                | Raised when                                                                                                                                                                                                                                | Payload                                                    | Shawn does                                                                                                                                                                         |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| LeadCaptured         | Person created from public form                                                                                                                                                                                                            | personId, dealId, formName, touchpointId                   | Assign owner, first-contact task, notify                                                                                                                                           |
-| DealStageChanged     | Any stage move                                                                                                                                                                                                                             | dealId, fromStage, toStage, byUserId                       | SLA tracking, notifications                                                                                                                                                        |
-| EnrolmentCreated     | Enrolment created, any route                                                                                                                                                                                                               | enrolmentId, personId, classId, status                     | —                                                                                                                                                                                  |
-| EnrolmentConfirmed   | Status → confirmed                                                                                                                                                                                                                         | enrolmentId, personId, classId, language                   | Starts onboarding sequence                                                                                                                                                         |
-| EnrolmentCancelled   | Status → cancelled — by the app, by a class cancellation with reason `class_cancelled` (one per freed seat, beside the single `ClassCancelled`), or by `expire_reservations()` with reason `reservation_expired` (written by the database) | enrolmentId, reason                                        | Notifies Ops (not for `reservation_expired`; not for `class_cancelled` either — `ClassCancelled` already covers those students). Seats are counted, so there is nothing to release |
-| EnrolmentTransferred | Moved between classes                                                                                                                                                                                                                      | enrolmentId, fromClassId, toClassId                        | Sends transfer confirmation                                                                                                                                                        |
-| PaymentRecorded      | Manual payment saved                                                                                                                                                                                                                       | paymentId, enrolmentId, method, amountMyr                  | Reconciliation, receipt                                                                                                                                                            |
-| ClassChanged         | Date/time/venue edited on a class with confirmed-or-later enrolments — on **Save and prepare notice** and on **Save quietly** alike (§9.9)                                                                                                 | classId, changedFields, noticeId (null when saved quietly) | Prepares notice; sends after approval. `noticeId: null` means nobody is to be told                                                                                                 |
-| ClassNoticeApproved  | Ops approves change notice                                                                                                                                                                                                                 | noticeId, classId                                          | Sends to all confirmed students                                                                                                                                                    |
-| ClassCancelled       | Class cancelled                                                                                                                                                                                                                            | classId, reason, enrolmentIds                              | Notifies students, flags refunds                                                                                                                                                   |
-| ClassPublished       | is_public or status changes — **written by the database (migration 006), not the app**                                                                                                                                                     | classId, fromStatus, toStatus, fromPublic, toPublic        | Purges schedule cache                                                                                                                                                              |
-| EnquiryConverted     | Enquiry → deal                                                                                                                                                                                                                             | enquiryId, dealId                                          | Attribution                                                                                                                                                                        |
-| ConsentChanged       | Consent granted/withdrawn                                                                                                                                                                                                                  | personId, purpose, isGranted                               | Suppression lists                                                                                                                                                                  |
+| Event                | Raised when                          | Payload                                   | Shawn does                               |
+| -------------------- | ------------------------------------ | ----------------------------------------- | ---------------------------------------- |
+| LeadCaptured         | Person created from public form      | personId, dealId, formName, touchpointId  | Assign owner, first-contact task, notify |
+| DealStageChanged     | Any stage move                       | dealId, fromStage, toStage, byUserId      | SLA tracking, notifications              |
+| EnrolmentCreated     | Enrolment created, any route         | enrolmentId, personId, classId, status    | —                                        |
+| EnrolmentConfirmed   | Status → confirmed                   | enrolmentId, personId, classId, language  | Starts onboarding sequence               |
+| EnrolmentCancelled   | Status → cancelled — by the app, or by `expire_reservations()` with reason `reservation_expired` (written by the database) | enrolmentId, reason | Notifies Ops (not for `reservation_expired`). Seats are counted, so there is nothing to release |
+| EnrolmentTransferred | Moved between classes                | enrolmentId, fromClassId, toClassId       | Sends transfer confirmation              |
+| PaymentRecorded      | Manual payment saved                 | paymentId, enrolmentId, method, amountMyr | Reconciliation, receipt                  |
+| ClassChanged         | Date/time/venue edited w/ enrolments | classId, changedFields, noticeId          | Prepares notice; sends after approval    |
+| ClassNoticeApproved  | Ops approves change notice           | noticeId, classId                         | Sends to all confirmed students          |
+| ClassCancelled       | Class cancelled                      | classId, reason, enrolmentIds             | Notifies students, flags refunds         |
+| ClassPublished       | is_public or status changes — **written by the database (migration 006), not the app** | classId, fromStatus, toStatus, fromPublic, toPublic | Purges schedule cache |
+| EnquiryConverted     | Enquiry → deal                       | enquiryId, dealId                         | Attribution                              |
+| ConsentChanged       | Consent granted/withdrawn            | personId, purpose, isGranted              | Suppression lists                        |
 
 Event names are exact — a typo is a silent failure. They live in one shared TypeScript union both sides import.
 
@@ -918,7 +917,7 @@ MVP scope: fields and reminders only — no document generation, no portal autom
 
 ### 12.8 Class changes
 
-Editing start_date, start_time, end_date, end_time, venue_name, venue_address, or online_url on a class with confirmed enrolments creates a pending notice and raises ClassChanged. Save quietly raises ClassChanged with `noticeId: null` and makes no notice — the change is still recorded, it is simply not announced. Nothing reaches a student until Operations approves. Editing capacity, price, or internal notes needs no notice.
+Editing start_date, start_time, end_date, end_time, venue_name, venue_address, or online_url on a class with confirmed enrolments creates a pending notice and raises ClassChanged. Nothing reaches a student until Operations approves. Editing capacity, price, or internal notes needs no notice.
 
 ### 12.9 Last activity
 
@@ -946,7 +945,6 @@ Implementation: one helper `touchPersonActivity(personId, tx)`, called inside sa
 All three are database functions in migration 002 (`lib/db/migrations/002_merge_erase.sql`, tests in `lib/db/tests/`). The API calls them; it does not re-implement them. `actor` is always the signed-in user from the session, never a value from the request body. The functions cannot be called with the publishable key.
 
 **Merge** — `merge_person(source, target, actor)`
-
 - Blocked if either person is merged, deleted or erased, or both have an active enrolment in the same class. The error lists the class codes; cancel or transfer one enrolment, then merge.
 - Moves touchpoints, consent, deals, enrolments (as person and as booker), enquiries, messages, tasks, tags and company memberships. Shared tags are kept once; the target's current membership at a company wins.
 - The earlier of the two first touchpoints becomes the only first touch.
@@ -965,22 +963,22 @@ For junk and test records only. Refused for anyone with an enrolment or payment;
 
 **Rule placement.** A rule that must hold whoever writes the row — the app, a webhook, n8n, an import or SQL — lives in the database. A rule about one screen's behaviour lives in `/lib`. Every value that changes by itself over time has a named writer and schedule. A new derived or time-based value goes into this table before it is built.
 
-| Value                                   | Source of truth             | Written by                                                                                     | When                               | May lag                                  |
-| --------------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------- | ---------------------------------------- |
-| `class.status` (open/few_seats/full)    | `class_seats_taken()`       | Database triggers (006)                                                                        | Enrolment or capacity change       | Up to 15 min after a reservation expires |
-| Seat check                              | `class_seats_taken()`       | Database trigger (006); service checks too, for the message                                    | Every write that claims a seat     | Never                                    |
-| Reservation expiry                      | `seat_reserved_until`       | `expire_reservations()` on Supabase Cron (Shawn); Stripe webhook on `checkout.session.expired` | Every 15 min / on the Stripe event | 15 min                                   |
-| `ClassPublished` event                  | `class.status`, `is_public` | Database trigger (006)                                                                         | On change                          | Never                                    |
-| `version`                               | —                           | Database trigger (005)                                                                         | Every update                       | Never                                    |
-| HRDC deadline task                      | Deal fields                 | App, same transaction (§12.6, guard 004)                                                       | Stage or deadline change           | Never                                    |
-| `last_activity_at`                      | §12.9 list                  | `touchPersonActivity()` in `/lib`; workers call the same helper                                | Each listed event                  | Never                                    |
-| Lifecycle stage                         | Payments, enrolments        | Computed on read (§12.3)                                                                       | On read                            | Never                                    |
-| `won_at`, `lost_at`, `stage_changed_at` | Stage moves                 | Deal service in `/lib`; the Stripe worker calls the same function                              | Stage move                         | Never                                    |
-| `enrolment.onboarding_step`             | —                           | Shawn's workers                                                                                | Each onboarding send               | —                                        |
-| Class → `completed`                     | —                           | Operations, by hand                                                                            | After the class ends               | Until someone does it                    |
-| Waitlist promotion                      | —                           | Operations, by hand (O5: waitlist deferred)                                                    | When a seat frees                  | —                                        |
-| `seat_reserved_until`                   | Setting for the route       | App sets it (register route); database fills it if empty (006); CHECK (007)                    | Every `reserved` write             | Never                                    |
-| `is_public`                             | —                           | Operations: Show/Hide on website; Back to draft clears it (§12.1)                              | By hand                            | —                                        |
+| Value | Source of truth | Written by | When | May lag |
+| --- | --- | --- | --- | --- |
+| `class.status` (open/few_seats/full) | `class_seats_taken()` | Database triggers (006) | Enrolment or capacity change | Up to 15 min after a reservation expires |
+| Seat check | `class_seats_taken()` | Database trigger (006); service checks too, for the message | Every write that claims a seat | Never |
+| Reservation expiry | `seat_reserved_until` | `expire_reservations()` on Supabase Cron (Shawn); Stripe webhook on `checkout.session.expired` | Every 15 min / on the Stripe event | 15 min |
+| `ClassPublished` event | `class.status`, `is_public` | Database trigger (006) | On change | Never |
+| `version` | — | Database trigger (005) | Every update | Never |
+| HRDC deadline task | Deal fields | App, same transaction (§12.6, guard 004) | Stage or deadline change | Never |
+| `last_activity_at` | §12.9 list | `touchPersonActivity()` in `/lib`; workers call the same helper | Each listed event | Never |
+| Lifecycle stage | Payments, enrolments | Computed on read (§12.3) | On read | Never |
+| `won_at`, `lost_at`, `stage_changed_at` | Stage moves | Deal service in `/lib`; the Stripe worker calls the same function | Stage move | Never |
+| `enrolment.onboarding_step` | — | Shawn's workers | Each onboarding send | — |
+| Class → `completed` | — | Operations, by hand | After the class ends | Until someone does it |
+| Waitlist promotion | — | Operations, by hand (O5: waitlist deferred) | When a seat frees | — |
+| `seat_reserved_until` | Setting for the route | App sets it (register route); database fills it if empty (006); CHECK (007) | Every `reserved` write | Never |
+| `is_public` | — | Operations: Show/Hide on website; Back to draft clears it (§12.1) | By hand | — |
 
 ## 13. Errors, States & Logging
 
@@ -1092,48 +1090,47 @@ Everything else: manual UAT with Wei Ping, Ops and Sales during Sprint 5 (30 Nov
 
 ### 15.3 Open items
 
-| #   | Question                                                                                                                               | Blocks                      | Needed by    | Owner                  |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ------------ | ---------------------- |
-| O1  | Google Workspace or Microsoft 365? Decides SSO                                                                                         | §6 auth                     | Sprint 1     | Shawn                  |
-| O2  | Store WhatsApp message bodies, or metadata only? (PDPA)                                                                                | message_log.body            | Sprint 2     | Shawn + privacy review |
-| O3  | Reservation expiry — 48 hours or something else?                                                                                       | Seat logic                  | Sprint 2     | Operations             |
-| O4  | First-response SLA in business hours                                                                                                   | Enquiry screen, alerts      | Sprint 3     | Wei Ping               |
-| O5  | Waitlist in MVP or January?                                                                                                            | Class detail scope          | Sprint 3     | Client (pending)       |
-| O6  | Refund and transfer policy in writing                                                                                                  | Enrolment actions           | Sprint 4     | Finance                |
-| O7  | HRDC grant lead time and claim window values                                                                                           | HRDC reminders              | Sprint 4     | Finance                |
-| O8  | Who owns website deploy, does Zixuan have access?                                                                                      | §10, all of it              | **Sprint 1** | Management             |
-| O9  | Corporate booking: one HR contact registering 10 staff — confirm Booker model matches Ops                                              | Enrolment screens           | Sprint 3     | Operations             |
-| O10 | Certificate numbering format                                                                                                           | Enrolment                   | January      | Operations             |
-| O11 | Does anonymisation (§12.10) satisfy a PDPA erasure request?                                                                            | Erase route                 | Sprint 2     | Shawn + privacy review |
-| O12 | How long must payment and invoice records be kept?                                                                                     | Retention, erasure scope    | Sprint 4     | Finance / accountant   |
-| O13 | `audit_log` rows written before an erasure still hold that person's old values (append-only). Accept, or allow a controlled redaction? | Erasure completeness        | Sprint 2     | Shawn + privacy review |
-| O14 | `touchpoint.landing_url` / `referrer` can carry personal data in the query string (e.g. `?email=`). Strip at capture?                  | Touchpoint capture, erasure | Sprint 2     | Shawn                  |
-| O15 | Which fields can the 9.3 merge screen choose between (the `fields` map)?                                                               | Merge route validation      | Sprint 1     | Zixuan + Shawn         |
+| #   | Question                                                                                  | Blocks                 | Needed by    | Owner                  |
+| --- | ----------------------------------------------------------------------------------------- | ---------------------- | ------------ | ---------------------- |
+| O1  | Google Workspace or Microsoft 365? Decides SSO                                            | §6 auth                | Sprint 1     | Shawn                  |
+| O2  | Store WhatsApp message bodies, or metadata only? (PDPA)                                   | message_log.body       | Sprint 2     | Shawn + privacy review |
+| O3  | Reservation expiry — 48 hours or something else?                                          | Seat logic             | Sprint 2     | Operations             |
+| O4  | First-response SLA in business hours                                                      | Enquiry screen, alerts | Sprint 3     | Wei Ping               |
+| O5  | Waitlist in MVP or January?                                                               | Class detail scope     | Sprint 3     | Client (pending)       |
+| O6  | Refund and transfer policy in writing                                                     | Enrolment actions      | Sprint 4     | Finance                |
+| O7  | HRDC grant lead time and claim window values                                              | HRDC reminders         | Sprint 4     | Finance                |
+| O8  | Who owns website deploy, does Zixuan have access?                                         | §10, all of it         | **Sprint 1** | Management             |
+| O9  | Corporate booking: one HR contact registering 10 staff — confirm Booker model matches Ops | Enrolment screens      | Sprint 3     | Operations             |
+| O10 | Certificate numbering format                                                              | Enrolment              | January      | Operations             |
+| O11 | Does anonymisation (§12.10) satisfy a PDPA erasure request? | Erase route | Sprint 2 | Shawn + privacy review |
+| O12 | How long must payment and invoice records be kept? | Retention, erasure scope | Sprint 4 | Finance / accountant |
+| O13 | `audit_log` rows written before an erasure still hold that person's old values (append-only). Accept, or allow a controlled redaction? | Erasure completeness | Sprint 2 | Shawn + privacy review |
+| O14 | `touchpoint.landing_url` / `referrer` can carry personal data in the query string (e.g. `?email=`). Strip at capture? | Touchpoint capture, erasure | Sprint 2 | Shawn |
+| O15 | Which fields can the 9.3 merge screen choose between (the `fields` map)? | Merge route validation | Sprint 1 | Zixuan + Shawn |
 
 **Decision calendar (added 23 Sep).** Every open item now has a date. If an answer misses its date, the fallback in the last column is what gets built — nobody waits.
 
-| #                                  | Decide by      | Who decides            | Fallback if the date passes                                                                                    |
-| ---------------------------------- | -------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------- |
-| O8 website deploy access           | **Fri 25 Sep** | Management             | Blocker, not a fallback — escalate the same day; Sprint 3 cannot start without it                              |
-| O1 auth (SSO vs email+MFA)         | Fri 2 Oct      | Shawn                  | Email + password with MFA (see below)                                                                          |
-| O2 store message bodies            | Fri 9 Oct      | Shawn + privacy review | Metadata only; no bodies stored                                                                                |
-| O3 reservation expiry              | Fri 16 Oct     | Operations             | 48 hours — for reservations staff make. Stripe-path holds are 24 hours (Stripe's maximum), decided 5 Oct       |
-| O9 corporate booker model          | Fri 16 Oct     | Operations             | Build as specified in 12.2                                                                                     |
-| O4 first-response SLA              | Fri 30 Oct     | Wei Ping               | 1 business hour, configurable                                                                                  |
-| O5 waitlist in MVP                 | Fri 30 Oct     | Client                 | Defer to January                                                                                               |
-| O6 refund/transfer policy          | Fri 13 Nov     | Finance                | Transfer allowed to any future class; refunds handled manually in Stripe                                       |
-| O7 HRDC lead time and claim window | Fri 13 Nov     | Finance                | Ship as editable settings with no default; Ops fills them in                                                   |
-| O10 certificate numbering          | January        | Operations             | Out of MVP                                                                                                     |
-| O15 merge `fields` map             | Fri 2 Oct      | Zixuan + Shawn         | The contact fields shown on 9.3: full name, preferred name, email, phone, WhatsApp, job title, language, owner |
-| O11 anonymisation = erasure        | Fri 9 Oct      | Shawn + privacy review | Ship anonymisation as built                                                                                    |
-| O13 audit_log history              | Fri 9 Oct      | Shawn + privacy review | Leave audit rows as they are; revisit in January                                                               |
-| O14 personal data in URLs          | Fri 16 Oct     | Shawn                  | Keep only utm_*, gclid, fbclid and the path; drop other query parameters at capture                            |
-| O12 payment record retention       | Fri 13 Nov     | Finance / accountant   | Keep payment rows indefinitely; erasure never touches them                                                     |
+| # | Decide by | Who decides | Fallback if the date passes |
+|---|---|---|---|
+| O8 website deploy access | **Fri 25 Sep** | Management | Blocker, not a fallback — escalate the same day; Sprint 3 cannot start without it |
+| O1 auth (SSO vs email+MFA) | Fri 2 Oct | Shawn | Email + password with MFA (see below) |
+| O2 store message bodies | Fri 9 Oct | Shawn + privacy review | Metadata only; no bodies stored |
+| O3 reservation expiry | Fri 16 Oct | Operations | 48 hours — for reservations staff make. Stripe-path holds are 24 hours (Stripe's maximum), decided 5 Oct |
+| O9 corporate booker model | Fri 16 Oct | Operations | Build as specified in 12.2 |
+| O4 first-response SLA | Fri 30 Oct | Wei Ping | 1 business hour, configurable |
+| O5 waitlist in MVP | Fri 30 Oct | Client | Defer to January |
+| O6 refund/transfer policy | Fri 13 Nov | Finance | Transfer allowed to any future class; refunds handled manually in Stripe |
+| O7 HRDC lead time and claim window | Fri 13 Nov | Finance | Ship as editable settings with no default; Ops fills them in |
+| O10 certificate numbering | January | Operations | Out of MVP |
+| O15 merge `fields` map | Fri 2 Oct | Zixuan + Shawn | The contact fields shown on 9.3: full name, preferred name, email, phone, WhatsApp, job title, language, owner |
+| O11 anonymisation = erasure | Fri 9 Oct | Shawn + privacy review | Ship anonymisation as built |
+| O13 audit_log history | Fri 9 Oct | Shawn + privacy review | Leave audit rows as they are; revisit in January |
+| O14 personal data in URLs | Fri 16 Oct | Shawn | Keep only utm_*, gclid, fbclid and the path; drop other query parameters at capture |
+| O12 payment record retention | Fri 13 Nov | Finance / accountant | Keep payment rows indefinitely; erasure never touches them |
 
 The two that matter this week are **O8** and **O1**. O8 is the only item that can stop a whole sprint — Zixuan can't build Section 10 against a website she can't deploy to.
 
 **Companies — decided 24 Sep (v1.5).** From Zixuan's 9.4 question. Recorded so nobody re-asks.
-
 - Create and edit company, and attaching people, are MVP. They were already in §7 (contract C2) and §9.2; 9.4 now shows the controls.
 - Ending a membership: MVP, via PATCH …/members/:membershipId with `endDate`. Changing a person's company on 9.2 uses `replaceCurrent` — old membership ended, new one created, one transaction.
 - Duplicate companies: no hard-match rule in MVP. "Similar companies" warning on Add company only.

@@ -435,7 +435,9 @@ export async function updateClass(
     // §11.1 ClassChanged: raised by the edit, not by the notice. Save quietly
     // tells nobody, but the change still happened to students who are coming,
     // and an event Shawn's worker ignores costs less than one nobody raised.
-    // `noticeId` is null when Ops chose to stay quiet.
+    // `noticeId` is null when Ops chose to stay quiet. The spec row does not
+    // spell the quiet path out — ask Shawn to confirm before he writes the
+    // consumer; the spec is his to edit, not ours.
     const noticeId =
       choice === "prepare" && hasNoticeWorthyChange(changes)
         ? await upsertPendingNotice(
@@ -597,6 +599,9 @@ export async function cancelClass(
     // a cancelled class, so freeing these seats cannot fail.
     // §11.1 EnrolmentCancelled, one per seat freed, written in the same
     // statement as the cancellation so neither can exist without the other.
+    // Reason `class_cancelled` marks them: ClassCancelled below already tells
+    // these students, so the worker must not notify twice. To confirm with
+    // Shawn, who owns the spec.
     const cancelled = await sql`
       WITH freed AS (
         UPDATE enrolment e
