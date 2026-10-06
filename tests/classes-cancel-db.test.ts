@@ -124,6 +124,16 @@ it("cancels the class, its seat-holders, its notice, and raises one event", asyn
     [confirmed, pending, reserved].sort(),
   );
 
+  // §11.1: and one EnrolmentCancelled per seat freed, so the enrolment-level
+  // consumers see the cancellation too.
+  for (const id of [confirmed, pending, reserved]) {
+    const [event] = await events(id, "EnrolmentCancelled");
+    assert.deepEqual(event.payload, {
+      enrolmentId: id,
+      reason: "class_cancelled",
+    });
+  }
+
   const audit = (await audits(cls.id)).at(-1);
   assert.equal(
     (audit?.after as { reason: string }).reason,
@@ -171,6 +181,10 @@ it("leaves the enrolments that were never holding a seat alone", async () => {
     enrolmentIds: string[];
   };
   assert.deepEqual(payload.enrolmentIds, [confirmed]);
+  // The rows that were already history get no event of their own.
+  assert.equal((await events(confirmed, "EnrolmentCancelled")).length, 1);
+  for (const id of [already, refunded, noShow, waitlisted, expired])
+    assert.equal((await events(id, "EnrolmentCancelled")).length, 0);
 });
 
 it("a stale version changes nothing at all", async () => {

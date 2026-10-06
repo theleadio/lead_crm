@@ -268,7 +268,7 @@ it("a second edit widens the same pending notice", async () => {
   });
 });
 
-it("skip saves the edit and writes no notice", async () => {
+it("skip saves the edit, writes no notice, still raises ClassChanged", async () => {
   const viewer = await newUser();
   const { id, version } = await created(viewer);
   await enrol(id, "confirmed");
@@ -282,6 +282,31 @@ it("skip saves the edit and writes no notice", async () => {
   );
   assert.equal(r.kind, "ok");
   assert.equal((await notices(id)).length, 0);
+  // §11.1: the change happened to students who are coming, whether or not
+  // anyone was told. No notice, so no noticeId.
+  const raised = await events(id, "ClassChanged");
+  assert.equal(raised.length, 1);
+  assert.equal(raised[0].payload.noticeId, null);
+  assert.deepEqual(raised[0].payload.changedFields.startDate, {
+    from: "2026-11-02",
+    to: "2026-11-09",
+  });
+});
+
+it("an edit on a class nobody is coming to raises nothing", async () => {
+  const viewer = await newUser();
+  const { id, version } = await created(viewer);
+  // A reservation is not a commitment, so §11.1's "w/ enrolments" is not met.
+  await enrol(id, "reserved");
+
+  const r = await updateClass(
+    id,
+    { startDate: "2026-11-09", endDate: "2026-11-10" },
+    version,
+    undefined,
+    viewer,
+  );
+  assert.equal(r.kind, "ok");
   assert.equal((await events(id, "ClassChanged")).length, 0);
 });
 

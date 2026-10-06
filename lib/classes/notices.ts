@@ -176,13 +176,9 @@ export async function upsertPendingNotice(
                 ${recipientCount}, ${viewer.id})
         RETURNING id`;
 
-  // §11.1: raised in the same transaction as the edit. Shawn's worker sends
-  // only after Operations approves on 9.10.
-  await sql`
-    INSERT INTO event_outbox (type, aggregate_type, aggregate_id, payload, created_by)
-    VALUES ('ClassChanged', 'class', ${classId},
-            ${sql.json({ classId, changedFields: changes, noticeId: notice.id })},
-            ${viewer.id})`;
+  // ClassChanged is raised by the edit itself (§11.1, in updateClass), with
+  // the id this returns: Save quietly makes no notice and still has to raise
+  // it, so the event cannot live here.
   return notice.id as string;
 }
 

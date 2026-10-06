@@ -432,14 +432,26 @@ export async function updateClass(
     // version moved under us.
     if (!updated) return { kind: "stale" };
 
-    if (choice === "prepare" && hasNoticeWorthyChange(changes))
-      await upsertPendingNotice(
-        id,
-        merged.code as string,
-        changes,
-        recipients,
-        viewer,
-      );
+    // §11.1 ClassChanged: raised by the edit, not by the notice. Save quietly
+    // tells nobody, but the change still happened to students who are coming,
+    // and an event Shawn's worker ignores costs less than one nobody raised.
+    // `noticeId` is null when Ops chose to stay quiet.
+    const noticeId =
+      choice === "prepare" && hasNoticeWorthyChange(changes)
+        ? await upsertPendingNotice(
+            id,
+            merged.code as string,
+            changes,
+            recipients,
+            viewer,
+          )
+        : null;
+    if (recipients > 0)
+      await sql`
+        INSERT INTO event_outbox (type, aggregate_type, aggregate_id, payload, created_by)
+        VALUES ('ClassChanged', 'class', ${id},
+                ${sql.json({ classId: id, changedFields: changes, noticeId })},
+                ${viewer.id})`;
 
     await writeAudit({
       userId: viewer.id,
@@ -583,11 +595,24 @@ export async function cancelClass(
     // holding a seat move: a cancelled, refunded, transferred, no-show or
     // completed enrolment is already history (§12.1). The 006 trigger exempts
     // a cancelled class, so freeing these seats cannot fail.
+    // §11.1 EnrolmentCancelled, one per seat freed, written in the same
+    // statement as the cancellation so neither can exist without the other.
     const cancelled = await sql`
-      UPDATE enrolment e
-      SET status = 'cancelled', cancelled_reason = 'class_cancelled'
-      WHERE e.class_id = ${id} AND ${seatTakenSql(sql)}
-      RETURNING e.id`;
+      WITH freed AS (
+        UPDATE enrolment e
+        SET status = 'cancelled', cancelled_reason = 'class_cancelled'
+        WHERE e.class_id = ${id} AND ${seatTakenSql(sql)}
+        RETURNING e.id
+      ), raised AS (
+        INSERT INTO event_outbox (type, aggregate_type, aggregate_id, payload,
+                                  created_by)
+        SELECT 'EnrolmentCancelled', 'enrolment', freed.id,
+               jsonb_build_object('enrolmentId', freed.id,
+                                  'reason', 'class_cancelled'),
+               ${viewer.id}
+        FROM freed
+      )
+      SELECT id FROM freed`;
     const enrolmentIds = cancelled.map((r) => r.id as string);
 
     // A notice about a date nobody will now attend is not worth sending.
@@ -595,9 +620,9 @@ export async function cancelClass(
       UPDATE class_notice SET status = 'discarded'
       WHERE class_id = ${id} AND status = 'pending'`;
 
-    // §11.1: one event for the class, carrying the enrolments it cancelled.
-    // Shawn's worker notifies the students and flags the refunds, so no
-    // per-enrolment EnrolmentCancelled is raised (proposal open question 1).
+    // §11.1: and one event for the class itself, carrying every enrolment it
+    // cancelled, so the worker can notify the students and flag the refunds
+    // in one pass instead of one message per row.
     await sql`
       INSERT INTO event_outbox (type, aggregate_type, aggregate_id, payload, created_by)
       VALUES ('ClassCancelled', 'class', ${id},
