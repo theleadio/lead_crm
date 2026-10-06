@@ -4,12 +4,14 @@ import {
   canAddPersonStandalone,
   canWriteDeal,
   ROLES,
+  canExportClassLists,
   canExportPeople,
   masksContactDetails,
   mergeAccess,
   permissionFor,
   PermissionError,
   requirePermission,
+  type Role,
 } from "../lib/auth/permissions.ts";
 import { navFor } from "../lib/auth/nav.ts";
 import { maskEmail, maskPhone } from "../lib/format/mask.ts";
@@ -307,4 +309,15 @@ test("nav: sidebar shows only areas the role can read (§9 Shell)", () => {
   for (const role of ROLES) assert.ok(nav(role).includes("Courses"), role);
   assert.equal(nav("super_admin").length, 10);
   assert.ok(!nav("management").includes("Settings"));
+});
+
+// §6 export CSV row: super_admin full, operations "class lists", nobody else.
+test("only super_admin and operations export a class roster", () => {
+  const allowed: Role[] = ["super_admin", "operations"];
+  for (const role of ROLES)
+    assert.equal(
+      canExportClassLists({ id: "u", role }),
+      allowed.includes(role),
+      role,
+    );
 });

@@ -27,6 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDate, formatLastActivity } from "@/lib/format/date";
+import { displayName } from "@/lib/people/types";
 import type {
   LifecycleStage,
   ListResponse,
@@ -653,7 +654,7 @@ function PersonRow({
   onToggle: () => void;
 }) {
   // Spec §11.2: WhatsApp-only contacts may have no name — show the phone.
-  const displayName = person.fullName || person.phone || "Unnamed";
+  const name = displayName(person.fullName, person.phone);
   const shownTags = person.tags.slice(0, 3);
   const hiddenTags = person.tags.slice(3);
   const router = useRouter();
@@ -674,7 +675,7 @@ function PersonRow({
         <TableCell>
           <input
             type="checkbox"
-            aria-label={`Select ${displayName}`}
+            aria-label={`Select ${name}`}
             checked={selected}
             onChange={onToggle}
           />
@@ -693,7 +694,7 @@ function PersonRow({
             </span>
           )}
           <Link href={href} className="hover:underline">
-            {displayName}
+            {name}
           </Link>
         </span>
       </TableCell>

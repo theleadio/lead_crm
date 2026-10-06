@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatDate, formatLastActivity, formatTime } from "@/lib/format/date";
 import { formatMoneyMyr } from "@/lib/format/money";
+import { displayName } from "@/lib/people/types";
 import type {
   ConsentState,
   ListResponse,
@@ -127,7 +128,7 @@ export function PersonDetailView({
 
   const { detail } = state;
   const p = detail.person;
-  const displayName = p.fullName || p.phone || "Unnamed";
+  const name = displayName(p.fullName, p.phone);
   const counts: Counts = {
     deals: detail.deals?.length ?? 0,
     enrolments: detail.enrolments?.length ?? 0,
@@ -142,7 +143,7 @@ export function PersonDetailView({
       <DetailHeader
         title={
           <>
-            {displayName}
+            {name}
             {p.preferredName && (
               <span className="text-ink-muted font-normal">
                 {" "}
@@ -194,8 +195,8 @@ export function PersonDetailView({
                     Export data (CSV)
                   </a>
                 </Button>
-                <DeletePerson id={p.id} name={displayName} counts={counts} />
-                <ErasePerson id={p.id} name={displayName} counts={counts} />
+                <DeletePerson id={p.id} name={name} counts={counts} />
+                <ErasePerson id={p.id} name={name} counts={counts} />
               </>
             )}
           </>

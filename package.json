@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --env-file-if-exists=.env.local --test \"tests/**/*.test.ts\"",
+    "test": "node --env-file-if-exists=.env.local --test-concurrency=2 --test \"tests/**/*.test.ts\"",
     "prepare": "husky",
     "db:seed": "node --env-file=.env.local scripts/seed-dev.ts"
   },

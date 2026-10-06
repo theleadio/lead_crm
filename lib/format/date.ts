@@ -46,6 +46,12 @@ const DAY = 24 * HOUR;
 // Spec §9.0 Home, overdue tasks: how late a task is, in the largest unit
 // that still reads honestly ("2 days late", "5 hours late"). Anything under
 // an hour is "due now" rather than "0 hours late".
+// A timestamp that has to be exact to the minute — a reservation deadline
+// (§12.1) rather than a day on a calendar.
+export function formatDateTime(date: Date | string): string {
+  return `${formatDate(date)}, ${formatTime(date)}`;
+}
+
 export function formatOverdue(
   dueAt: Date | string,
   now: Date = new Date(),
@@ -76,4 +82,18 @@ export function formatLastActivity(
   if (diff < HOUR) return "just now";
   if (diff < DAY) return rtf.format(-Math.floor(diff / HOUR), "hour");
   return rtf.format(-Math.floor(diff / DAY), "day");
+}
+
+// Spec §9.8 / §9.0 class dates: one date for a single-day class, otherwise
+// the range with the month and year said once ("06 – 07 Oct 2026"). Takes
+// plain ISO dates (YYYY-MM-DD) — they carry no time, so they are read as UTC
+// midnight and rendered as that calendar day (§4).
+export function formatDateRange(startDate: string, endDate: string): string {
+  const end = formatDate(`${endDate}T00:00:00Z`);
+  if (startDate === endDate) return end;
+  const start = formatDate(`${startDate}T00:00:00Z`);
+  // Same month and year: say the day twice, the rest once.
+  return start.slice(3) === end.slice(3)
+    ? `${start.slice(0, 2)} – ${end}`
+    : `${start} – ${end}`;
 }

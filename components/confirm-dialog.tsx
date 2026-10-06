@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -35,9 +35,25 @@ export function ConfirmDialog({
   canConfirm?: boolean;
   onConfirm: () => Promise<string | void>;
 }) {
+  // The trigger is the caller's own button, not a DialogTrigger, so Radix has
+  // nothing to hand focus back to and Escape dropped it on <body>. Remember
+  // what was focused when the dialog opened and put it back (§9 cross-screen:
+  // Escape closes and returns focus).
+  const opener = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (open) opener.current = document.activeElement as HTMLElement | null;
+  }, [open]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent
+        className="sm:max-w-md"
+        onCloseAutoFocus={(event) => {
+          if (!opener.current?.isConnected) return;
+          event.preventDefault();
+          opener.current.focus();
+        }}
+      >
         <Body
           title={title}
           body={body}

@@ -12,12 +12,12 @@ export const SEAT_STATUSES = [
   "completed",
 ];
 
-// Predicate over an `enrolment` aliased as `e`. Used by every seat count so
-// the class list, the class screens and the enrolment transaction cannot
-// drift apart (§12).
+// Predicate over an `enrolment` aliased as `e`. Word for word the database's
+// `class_seats_taken()` (migration 006), which is the authority since v1.8 —
+// a reservation with no `seat_reserved_until` holds no seat there, and the
+// 006 trigger fills that column on every reservation, whoever writes it.
+// Two definitions that disagree would show seats the booking refuses (§12.11).
 export function seatTakenSql(sql: postgres.Sql) {
   return sql`e.status IN ${sql(SEAT_STATUSES)}
-    AND (e.status <> 'reserved'
-         OR e.seat_reserved_until IS NULL
-         OR e.seat_reserved_until > now())`;
+    AND (e.status <> 'reserved' OR e.seat_reserved_until > now())`;
 }

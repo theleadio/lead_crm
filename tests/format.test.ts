@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { normalizePhoneE164 } from "../lib/format/phone.ts";
 import { isValidEmail, normalizeEmail } from "../lib/format/email.ts";
 import { formatMoneyMyr } from "../lib/format/money.ts";
-import { formatDate, formatTime } from "../lib/format/date.ts";
+import { formatDate, formatDateRange, formatTime } from "../lib/format/date.ts";
 
 // Spec §4 phone table — every shape must normalise to the same E.164 number.
 test("normalizePhoneE164 handles every shape in the spec table", () => {
@@ -42,4 +42,14 @@ test("formatDate and formatTime match spec §4 examples", () => {
   const d = new Date("2026-09-22T01:00:00Z"); // 9:00am MYT
   assert.equal(formatDate(d), "22 Sep 2026");
   assert.equal(formatTime(d), "9:00am");
+});
+
+// Spec §9.8 / §9.0 class dates.
+test("formatDateRange says a one-day class once, a range compactly", () => {
+  assert.equal(formatDateRange("2026-10-06", "2026-10-06"), "06 Oct 2026");
+  assert.equal(formatDateRange("2026-10-06", "2026-10-07"), "06 – 07 Oct 2026");
+  assert.equal(
+    formatDateRange("2026-10-30", "2026-11-02"),
+    "30 Oct 2026 – 02 Nov 2026",
+  );
 });

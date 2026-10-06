@@ -2,6 +2,16 @@
 // Mirrors spec §5 `person`; field names will be checked against Shawn's
 // generated client once the schema lands.
 
+// Spec §11.2: a WhatsApp-only contact may reach us with no usable name, so
+// every screen shows the phone in its place. One function, because the rule
+// was written out at five call sites and they have to agree (§3).
+export function displayName(
+  fullName: string | null | undefined,
+  phone: string | null | undefined,
+): string {
+  return fullName?.trim() || phone?.trim() || "Unnamed";
+}
+
 export type Language = "en" | "zh";
 export type LifecycleStage = "lead" | "student" | "customer";
 

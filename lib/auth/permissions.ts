@@ -119,6 +119,14 @@ export function canExportPeople(role: Role): boolean {
   return role === "super_admin";
 }
 
+// Export CSV row again, the other half: operations exports "class lists", so
+// a class roster (§9.10) is theirs to take out while a person export is not.
+// Kept separate from canWriteClass — the matrix gives these on different
+// lines, and a reader should see the matrix, not a coincidence.
+export function canExportClassLists(viewer: Viewer): boolean {
+  return viewer.role === "super_admin" || viewer.role === "operations";
+}
+
 // Merge person row: super_admin merges; sales/support/operations may propose.
 export function mergeAccess(role: Role): "full" | "propose" | "none" {
   if (role === "super_admin") return "full";
@@ -141,6 +149,13 @@ export function canWriteCompany(viewer: Viewer): boolean {
 // reads. Named separately from the class check so a courses route reads as
 // one, and so the two resources can diverge without hunting callers (§9.7).
 export function canWriteCourse(viewer: Viewer): boolean {
+  return viewer.role === "super_admin" || viewer.role === "operations";
+}
+
+// Spec §6 course/class row again, for classes (§9.9). Same two roles as
+// courses today; kept separate so the two can diverge without hunting
+// callers.
+export function canWriteClass(viewer: Viewer): boolean {
   return viewer.role === "super_admin" || viewer.role === "operations";
 }
 

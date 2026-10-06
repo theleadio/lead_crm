@@ -43,9 +43,15 @@ export function FilterSelect({
       className="border-line-strong bg-surface-sunken text-ink focus-visible:outline-focus-ring h-9 rounded-sm border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
     >
       <option value="">{label}: all</option>
+      {/* The field name on every option, not just "all": a closed select
+          shows the chosen option alone, and "Completed" on its own never
+          says which column it narrows. An option that already names the
+          field ("Has open deal") is left as it is. */}
       {options.map(([v, text]) => (
         <option key={v} value={v}>
-          {text}
+          {text.toLowerCase().includes(label.toLowerCase())
+            ? text
+            : `${label}: ${text}`}
         </option>
       ))}
     </select>

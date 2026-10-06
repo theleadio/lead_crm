@@ -10,6 +10,9 @@ export function apiError(
   details?: {
     fields?: Record<string, string>;
     existing?: { id: string; fullName: string };
+    // §7.1: how many students a class change would reach, carried by the
+    // 409 the 9.9 notice dialog answers.
+    recipientCount?: number;
   },
 ) {
   return Response.json({ error: { code, message, ...details } }, { status });
