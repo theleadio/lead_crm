@@ -6,16 +6,25 @@ import {
 } from "@/lib/auth/permissions";
 import { listPeople } from "@/lib/people/service";
 import { peopleListQuerySchema } from "@/lib/validation/people-query";
-import { PeopleList } from "./people-list";
+import { NO_FILTERS, PeopleList } from "./people-list";
 
 // Hiding buttons here is UX only — every API route re-checks (spec §6).
 export default async function PeoplePage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string | string[] }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { q } = await searchParams;
-  const initialQ = (Array.isArray(q) ? q[0] : q)?.trim() ?? "";
+  const sp = await searchParams;
+  const one = (v: string | string[] | undefined) =>
+    (Array.isArray(v) ? v[0] : v)?.trim() ?? "";
+  const initialQ = one(sp.q);
+  // §9.0 Home links here with filter[needsReview]=true; the list opens on that
+  // filter instead of showing everyone. Same param name the API reads (§7).
+  const needsReview = one(sp["filter[needsReview]"]);
+  const initialFilters =
+    needsReview === "true" || needsReview === "false"
+      ? { ...NO_FILTERS, needsReview }
+      : NO_FILTERS;
   const user = await getCurrentUser();
   const canWrite = user
     ? permissionFor(user, "person", "write").allowed
@@ -29,15 +38,19 @@ export default async function PeoplePage({
   const initial =
     user && permissionFor(user, "person", "read").allowed
       ? await listPeople(
-          peopleListQuerySchema.parse({ q: initialQ || undefined }),
+          peopleListQuerySchema.parse({
+            q: initialQ || undefined,
+            needsReview: initialFilters.needsReview || undefined,
+          }),
           user,
         )
       : null;
 
   return (
     <PeopleList
-      key={initialQ}
+      key={`${initialQ}|${initialFilters.needsReview}`}
       initialQ={initialQ}
+      initialFilters={initialFilters}
       initial={initial}
       canWrite={canWrite}
       canExport={canExport}

@@ -1,5 +1,7 @@
 import {
+  canWriteClass,
   PermissionError,
+  permissionFor,
   requirePermission,
   type Viewer,
 } from "../auth/permissions.ts";
@@ -168,22 +170,36 @@ export async function upcomingClasses(viewer: Viewer): Promise<HomeClass[]> {
   }));
 }
 
-// Spec §9.0 needs attention. Only the `needs_review` queue for now: the
-// unmatched-payment and pending-notice counts wait on Shawn's Stripe
-// webhook (§11.3) and the 9.9/9.10 notice flow.
+// Spec §9.0 needs attention: one count per item, each gated on its own
+// permission, because no single role can act on all of them. The unmatched
+// payment count still waits on Shawn's Stripe webhook (§11.3).
 export async function needsAttention(
   viewer: Viewer,
 ): Promise<HomeNeedsAttention> {
-  // Shown only to roles that can act on a flagged person (§6 person write).
+  // Flagged people are for the roles that may edit a person (§6 person write).
   // A part-timer's "A" covers their own records, so a queue of everyone
   // else's possible duplicates is not theirs to work through.
-  const { assignedOnly } = requirePermission(viewer, "person", "write");
-  if (assignedOnly) throw new PermissionError("person");
+  const people = permissionFor(viewer, "person", "write");
+  const mayReviewPeople = people.allowed && !people.assignedOnly;
+  // Notices are approved by super_admin and operations only (§7.1, §9.10).
+  const mayApproveNotices = canWriteClass(viewer);
+  // Nothing this role can act on is a forbidden panel, not an empty one (§6).
+  if (!mayReviewPeople && !mayApproveNotices)
+    throw new PermissionError("person");
+
   const sql = db();
+  const [needsReview, pendingNotices] = await Promise.all([
+    mayReviewPeople
+      ? sql`SELECT count(*)::int AS n FROM person
+            WHERE needs_review AND deleted_at IS NULL AND merged_into_id IS NULL`
+      : null,
+    mayApproveNotices
+      ? sql`SELECT count(*)::int AS n FROM class_notice WHERE status = 'pending'`
+      : null,
+  ]);
 
-  const [row] = await sql`
-    SELECT count(*)::int AS needs_review FROM person
-    WHERE needs_review AND deleted_at IS NULL AND merged_into_id IS NULL`;
-
-  return { needsReview: row.needs_review };
+  return {
+    needsReview: needsReview ? (needsReview[0].n as number) : null,
+    pendingNotices: pendingNotices ? (pendingNotices[0].n as number) : null,
+  };
 }

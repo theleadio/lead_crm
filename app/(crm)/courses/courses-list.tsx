@@ -74,6 +74,15 @@ export function CoursesList({
     setReloadKey((k) => k + 1);
   }, []);
 
+  // Spec §11.2: lists refetch on window focus — Stripe, WATI and the workers
+  // write underneath the screen. No blanking: the rows stay up until the new
+  // ones arrive.
+  useEffect(() => {
+    const onFocus = () => setReloadKey((k) => k + 1);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
+
   useEffect(() => {
     // React's ignore flag, not AbortController: aborting mid-read errors the
     // response body stream, and that rejection reaches no catch of ours

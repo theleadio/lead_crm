@@ -236,13 +236,33 @@ it("seats sold follows §12.1", async () => {
 
 it("flagged people count; deleted and merged ones do not", async () => {
   const user = await newUser("sales");
-  const before = (await needsAttention(user)).needsReview;
+  const before = (await needsAttention(user)).needsReview ?? 0;
   const survivor = await newPerson();
   await newPerson({ needsReview: true });
   await newPerson({ needsReview: true, deleted: true });
   await newPerson({ needsReview: true, mergedInto: survivor });
 
   assert.equal((await needsAttention(user)).needsReview, before + 1);
+});
+
+// §9.0: a row per item, each gated on its own permission. Operations approves
+// notices (§9.10) and only reads people, so it sees one count and not the other.
+it("each needs-attention item is counted only for the roles that can act", async () => {
+  const ops = await newUser("operations");
+  const sales = await newUser("sales");
+  const classId = await newClass(await newCourse(), 7);
+  const before = (await needsAttention(ops)).pendingNotices ?? 0;
+  await db()`
+    INSERT INTO class_notice (class_id, changed_fields, recipient_count)
+    VALUES (${classId}, ${db().json({ startDate: { from: "2026-10-06", to: "2026-10-13" } })}, 3)`;
+
+  const forOps = await needsAttention(ops);
+  assert.equal(forOps.pendingNotices, before + 1);
+  assert.equal(forOps.needsReview, null);
+
+  const forSales = await needsAttention(sales);
+  assert.equal(forSales.pendingNotices, null);
+  assert.equal(typeof forSales.needsReview, "number");
 });
 
 // --- permissions -----------------------------------------------------------

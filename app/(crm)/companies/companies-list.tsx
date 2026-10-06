@@ -136,6 +136,15 @@ export function CompaniesList({
   };
   const rows = state.status === "ready" ? state.result.data : [];
 
+  // Spec §11.2: lists refetch on window focus — Stripe, WATI and the workers
+  // write underneath the screen. No blanking: the rows stay up until the new
+  // ones arrive.
+  useEffect(() => {
+    const onFocus = () => setReloadKey((k) => k + 1);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
+
   return (
     <div className="space-y-4">
       <ListHeader title="Companies">

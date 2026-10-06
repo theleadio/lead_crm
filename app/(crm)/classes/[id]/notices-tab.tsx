@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Panel, Row } from "@/components/detail-kit";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -77,6 +78,7 @@ function Notice({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
   const pending = notice.status === "pending";
   const editable = canWrite && pending;
   const badge = statusBadge(notice);
@@ -103,6 +105,42 @@ function Notice({
   }
 
   const base = `/api/class-notices/${encodeURIComponent(notice.id)}`;
+  // Wording edited but not saved yet. Approving used to send the stored draft
+  // and drop these edits without a word, so the approval saves them first.
+  const unsaved =
+    messageEn !== (notice.messageEn ?? "") ||
+    messageZh !== (notice.messageZh ?? "");
+  const sendable = Boolean(messageEn.trim() && messageZh.trim());
+
+  // Both writes, in order, for the confirm dialog: it shows whatever message
+  // comes back and leaves the typed wording alone on a failure.
+  async function saveThenApprove(): Promise<string | void> {
+    const post = async (path: string, init: RequestInit) => {
+      const res = await fetch(path, init);
+      if (res.ok) return null;
+      const body = await res.json().catch(() => null);
+      return (
+        (body?.error?.message as string) ?? "Couldn't approve this notice."
+      );
+    };
+
+    if (unsaved) {
+      const failed = await post(base, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messageEn, messageZh }),
+      });
+      if (failed) return failed;
+    }
+    const failed = await post(`${base}/approve`, { method: "POST" });
+    if (failed) return failed;
+
+    setConfirming(false);
+    setSaved(
+      `Approved. It is queued to go to ${notice.recipientCount} ${notice.recipientCount === 1 ? "student" : "students"}.`,
+    );
+    router.refresh();
+  }
 
   return (
     <Panel
@@ -190,14 +228,8 @@ function Notice({
             Save wording
           </Button>
           <Button
-            disabled={busy}
-            onClick={() =>
-              send(
-                `${base}/approve`,
-                { method: "POST" },
-                `Approved. It is queued to go to ${notice.recipientCount} ${notice.recipientCount === 1 ? "student" : "students"}.`,
-              )
-            }
+            disabled={busy || !sendable}
+            onClick={() => setConfirming(true)}
           >
             Approve &amp; send
           </Button>
@@ -216,6 +248,27 @@ function Notice({
           </Button>
         </div>
       )}
+
+      {/* §9 cross-screen: the one action here that reaches students confirms
+          first and names how many. Nothing can unsend it. */}
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title="Approve and send this notice?"
+        body={
+          <>
+            <p>
+              It goes to {notice.recipientCount}{" "}
+              {notice.recipientCount === 1 ? "student" : "students"} on this
+              class, in English and Chinese, as worded above. It cannot be
+              unsent.
+            </p>
+            {unsaved && <p>Your edits to the wording are saved first.</p>}
+          </>
+        }
+        confirmLabel="Approve and send"
+        onConfirm={saveThenApprove}
+      />
     </Panel>
   );
 }

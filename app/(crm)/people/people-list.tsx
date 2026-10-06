@@ -49,7 +49,7 @@ const STAGE_VARIANT: Record<
   customer: "default",
 };
 
-type Filters = {
+export type Filters = {
   stage: string;
   language: string;
   needsReview: string;
@@ -59,7 +59,7 @@ type Filters = {
   createdFrom: string;
   createdTo: string;
 };
-const NO_FILTERS: Filters = {
+export const NO_FILTERS: Filters = {
   stage: "",
   language: "",
   needsReview: "",
@@ -95,12 +95,16 @@ function filterParams(q: string, f: Filters): URLSearchParams {
 
 export function PeopleList({
   initialQ,
+  initialFilters = NO_FILTERS,
   initial,
   canWrite,
   canExport,
   canAdd,
 }: {
   initialQ: string;
+  // Filters the server already applied to `initial` — a deep link such as
+  // Home's "People to review" (§9.0) opens the list on them.
+  initialFilters?: Filters;
   initial: ListResponse<PersonListItem> | null;
   canWrite: boolean;
   canExport: boolean;
@@ -108,7 +112,7 @@ export function PeopleList({
 }) {
   const [search, setSearch] = useState(initialQ);
   const [q, setQ] = useState(initialQ);
-  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  const [filters, setFilters] = useState<Filters>(initialFilters);
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState<PeopleSort | undefined>(undefined);
   const [state, setState] = useState<LoadState>(
@@ -175,7 +179,7 @@ export function PeopleList({
       showingInitial.current &&
       reloadKey === 0 &&
       q === initialQ &&
-      filters === NO_FILTERS &&
+      filters === initialFilters &&
       page === 1 &&
       !sort
     )
@@ -207,7 +211,7 @@ export function PeopleList({
     return () => {
       ignore = true;
     };
-  }, [initial, initialQ, q, filters, sort, page, reloadKey]);
+  }, [initial, initialQ, initialFilters, q, filters, sort, page, reloadKey]);
 
   function changeSort(next: string) {
     setSort(next as PeopleSort);
