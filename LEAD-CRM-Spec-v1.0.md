@@ -1,4 +1,4 @@
-# LEAD CRM — Software Specification v1.9
+# LEAD CRM — Software Specification v1.10
 
 _Last updated 6 Oct 2026 · Owner: Shawn_
 
@@ -6,6 +6,7 @@ _Last updated 6 Oct 2026 · Owner: Shawn_
 
 | Version | Date | Changes |
 | --- | --- | --- |
+| v1.10 | 6 Oct 2026 | From Zixuan's class screens (commit 7ee0c7a): EnrolmentCancelled per freed seat on a class cancel, reason `class_cancelled`; ClassChanged also on "Save quietly" with `noticeId: null` (§11.1, §12.8). Cancelling a class: refused once it has started, moves only students not yet taught, expires their Stripe links (§9.10, §12.8); `onboarded → cancelled` added (§12.4); register rows (§12.11). |
 | v1.9 | 6 Oct 2026 | From Zixuan's review of 006: migration 007 (every reservation has a hold; seat-guard fix) (§5, §12.1); import rule for reservations (§12.1); class has two separate controls — status and website — instead of one publish button (§9.10, §12.1); register rows (§12.11). |
 | v1.8 | 5 Oct 2026 | From Zixuan's 9.8 question: seats and class status now kept by the database (migration 006, §12.1); reservation expiry is a real write every 15 minutes; Stripe-path holds 24 hours; `reserved → confirmed` added (§12.4); full classes shown on the website (§8.1); §8.3 steps 2 and 4, §9.9 validation and §11.1 events corrected; rule placement (§3) and a who-writes-what register (§12.11). |
 | v1.7 | 1 Oct 2026 | From Zixuan's release notes: concurrency now uses an integer `version` instead of `updated_at` (§7, migration 005); in-place lost-reason correction (§12.5); withdrawn HRDC task closed with `done_at` (§12.6); schema-change tables for 004 and 005 (§5). |
@@ -693,7 +694,7 @@ Server behaviour, in order:
 
 Change-notice flow: date/time/venue change on class w/ confirmed enrolments → dialog "N students enrolled. They will not be told until you approve a notice." Options: Save and prepare notice (default) / Save quietly. First option creates pending notice for Operations to approve on class detail. Nothing sent directly from this screen.
 
-**9.10 Class detail** — Header: seat summary, status, and two controls (v1.9, §12.1): **Open for booking / Back to draft** and **Show on website / Hide from website**. Tabs: Roster (enrolments w/ actions: add, change status, transfer, export CSV), Waitlist (if built), Notices (pending/sent, Approve & send — Operations only), Details (class fields; Cancel class = destructive, confirm dialog with count, refunds handled in Stripe).
+**9.10 Class detail** — Header: seat summary, status, and two controls (v1.9, §12.1): **Open for booking / Back to draft** and **Show on website / Hide from website**. Tabs: Roster (enrolments w/ actions: add, change status, transfer, export CSV), Waitlist (if built), Notices (pending/sent, Approve & send — Operations only), Details (class fields; Cancel class = destructive, confirm dialog with count, refunds handled in Stripe; not offered once the class has started — §12.8, v1.10).
 
 **9.11 Enrolment detail** — Person, class, status (allowed next statuses only), payer type, booker, price paid, payments, onboarding progress, certificate number. Actions: change status, transfer (class picker w/ seats available), record manual payment.
 
@@ -774,12 +775,12 @@ Written to `event_outbox` inside the same transaction as the business write. Mis
 | DealStageChanged     | Any stage move                       | dealId, fromStage, toStage, byUserId      | SLA tracking, notifications              |
 | EnrolmentCreated     | Enrolment created, any route         | enrolmentId, personId, classId, status    | —                                        |
 | EnrolmentConfirmed   | Status → confirmed                   | enrolmentId, personId, classId, language  | Starts onboarding sequence               |
-| EnrolmentCancelled   | Status → cancelled — by the app, or by `expire_reservations()` with reason `reservation_expired` (written by the database) | enrolmentId, reason | Notifies Ops (not for `reservation_expired`). Seats are counted, so there is nothing to release |
+| EnrolmentCancelled   | Status → cancelled — by the app (one per enrolment, including each one a class cancel frees, reason `class_cancelled`, v1.10), or by `expire_reservations()` with reason `reservation_expired` (written by the database) | enrolmentId, reason | Notifies Ops, except for `class_cancelled` (ClassCancelled covers it) and `reservation_expired`. Never messages the student. Seats are counted, so there is nothing to release |
 | EnrolmentTransferred | Moved between classes                | enrolmentId, fromClassId, toClassId       | Sends transfer confirmation              |
 | PaymentRecorded      | Manual payment saved                 | paymentId, enrolmentId, method, amountMyr | Reconciliation, receipt                  |
-| ClassChanged         | Date/time/venue edited w/ enrolments | classId, changedFields, noticeId          | Prepares notice; sends after approval    |
+| ClassChanged         | Date/time/venue edited on a class with confirmed/onboarded/attended enrolments — both "Save and prepare notice" and "Save quietly" (v1.10) | classId, changedFields, noticeId — `null` when Ops saved quietly | Clears the schedule cache. `noticeId` null = recorded, tell nobody. Students are told only through ClassNoticeApproved |
 | ClassNoticeApproved  | Ops approves change notice           | noticeId, classId                         | Sends to all confirmed students          |
-| ClassCancelled       | Class cancelled                      | classId, reason, enrolmentIds             | Notifies students, flags refunds         |
+| ClassCancelled       | Class cancelled                      | classId, reason, enrolmentIds             | Notifies the students in `enrolmentIds` once, flags refunds, expires any open Stripe Checkout link of a cancelled reservation (v1.10) |
 | ClassPublished       | is_public or status changes — **written by the database (migration 006), not the app** | classId, fromStatus, toStatus, fromPublic, toPublic | Purges schedule cache |
 | EnquiryConverted     | Enquiry → deal                       | enquiryId, dealId                         | Attribution                              |
 | ConsentChanged       | Consent granted/withdrawn            | personId, purpose, isGranted              | Suppression lists                        |
@@ -877,6 +878,7 @@ confirmed --> onboarded
 confirmed --> transferred
 confirmed --> cancelled
 onboarded --> attended
+onboarded --> cancelled
 onboarded --> no_show
 attended --> completed
 cancelled --> refunded
@@ -885,6 +887,8 @@ cancelled --> refunded
 Any transition not on this diagram → 422. UI only offers legal next statuses — no free dropdown of all eleven states.
 
 **v1.8:** `reserved → confirmed` is a successful online (Stripe) payment. `payment_pending` now means only "waiting for an offline payment" — HRDC approval or bank-transfer proof — and does not expire by itself. `reserved → cancelled` is also how an expired reservation ends (§12.1).
+
+**v1.10:** `onboarded → cancelled` added — a class can be cancelled after its onboarding messages went out, and a student can withdraw after onboarding. `attended`, `completed` and `no_show` are history and never move to `cancelled`.
 
 ### 12.5 Deal stages
 
@@ -917,7 +921,12 @@ MVP scope: fields and reminders only — no document generation, no portal autom
 
 ### 12.8 Class changes
 
-Editing start_date, start_time, end_date, end_time, venue_name, venue_address, or online_url on a class with confirmed enrolments creates a pending notice and raises ClassChanged. Nothing reaches a student until Operations approves. Editing capacity, price, or internal notes needs no notice.
+Editing start_date, start_time, end_date, end_time, venue_name, venue_address, or online_url on a class with confirmed, onboarded or attended enrolments raises ClassChanged. "Save and prepare notice" also creates a pending notice (its id is in the event); "Save quietly" creates none and the event carries `noticeId: null` (v1.10). Nothing reaches a student until Operations approves a notice. Editing capacity, price, or internal notes needs no notice. Reminders and onboarding messages read the class date, time and venue when they are sent, never a copy saved earlier, so a quiet change is still right in the next reminder.
+
+**Cancelling a class (v1.10).**
+- Refused with 422 `class_started` once `start_date <= today` or any enrolment is `attended` or `completed`. A class that needs a new date gets a date change, not a cancel.
+- In one transaction: class → `cancelled`; every `reserved` (hold not yet expired), `payment_pending`, `confirmed` and `onboarded` enrolment → `cancelled` with `cancelled_reason = 'class_cancelled'`, one EnrolmentCancelled each; pending notices discarded; one ClassCancelled listing those enrolments. `attended`, `completed`, `no_show`, `transferred`, `refunded` and already-cancelled rows are not touched. Expired reservations are left for the sweep.
+- Shawn's worker, on ClassCancelled: tells each student once, flags refunds, and expires the open Stripe Checkout link of each cancelled reservation so nobody can pay for a cancelled class. A payment that still arrives is handled as unmatched (§11.3).
 
 ### 12.9 Last activity
 
@@ -979,6 +988,8 @@ For junk and test records only. Refused for anyone with an enrolment or payment;
 | Waitlist promotion | — | Operations, by hand (O5: waitlist deferred) | When a seat frees | — |
 | `seat_reserved_until` | Setting for the route | App sets it (register route); database fills it if empty (006); CHECK (007) | Every `reserved` write | Never |
 | `is_public` | — | Operations: Show/Hide on website; Back to draft clears it (§12.1) | By hand | — |
+| Stripe Checkout link of a reservation | Stripe | Expires by itself at the hold time; Shawn's worker expires it early on ClassCancelled (§12.8) | Class cancel | Never |
+| Date/venue shown in reminders | `class` row | Shawn's workers, read at send time (§12.8) | Each send | Never |
 
 ## 13. Errors, States & Logging
 
