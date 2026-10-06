@@ -20,7 +20,7 @@ import {
   noticeWorthyChanges,
   upsertPendingNotice,
 } from "./notices.ts";
-import { seatTakenSql } from "./seats.ts";
+import { CANCELLABLE_STATUSES, PAST_STATUSES, seatTakenSql } from "./seats.ts";
 import type { ClassListItem } from "./types.ts";
 
 // Service layer for GET /api/classes (spec §7, §9.8). Read-only: nothing on
@@ -200,6 +200,9 @@ export type ClassWriteResult =
   // §9.10: the class is already called off. Cancelling again would send a
   // second round of notices for the same thing.
   | { kind: "already_cancelled" }
+  // §9.10 (Shawn, 6 Oct): the class has started, or someone is already marked
+  // attended or completed. `past` is how many of those students there are.
+  | { kind: "class_started"; past: number }
   // A cancel that went through, with how many enrolments it took with it
   // (§9.10: the toast and the audit row name the count).
   | { kind: "cancelled"; id: string; version: number; enrolmentCount: number };
@@ -586,6 +589,19 @@ export async function cancelClass(
     if (Number(before.version) !== ifMatch) return { kind: "stale" };
     if (before.status === "cancelled") return { kind: "already_cancelled" };
 
+    // A class that has run is history, not something to call off (Shawn,
+    // 6 Oct). Today in Kuala Lumpur counts as started (§4), and a student
+    // marked attended or completed says so whatever the date reads.
+    const [ran] = await sql`
+      SELECT (c.start_date <= (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date)
+               AS started,
+             (SELECT count(*)::int FROM enrolment e
+               WHERE e.class_id = c.id AND e.status IN ${sql(PAST_STATUSES)})
+               AS past
+      FROM class c WHERE c.id = ${id}`;
+    if (ran.started || ran.past > 0)
+      return { kind: "class_started", past: ran.past as number };
+
     const [updated] = await sql`
       UPDATE class SET status = 'cancelled'
       WHERE id = ${id} AND version = ${ifMatch}
@@ -600,13 +616,16 @@ export async function cancelClass(
     // §11.1 EnrolmentCancelled, one per seat freed, written in the same
     // statement as the cancellation so neither can exist without the other.
     // Reason `class_cancelled` marks them: ClassCancelled below already tells
-    // these students, so the worker must not notify twice. To confirm with
-    // Shawn, who owns the spec.
+    // these students, so the worker notifies neither them nor Ops for this
+    // reason (agreed with Shawn, 6 Oct). Only the seats with the class still
+    // ahead of them move — CANCELLABLE_STATUSES, so attended and completed
+    // rows keep their own status (§12.4 gains onboarded → cancelled).
     const cancelled = await sql`
       WITH freed AS (
         UPDATE enrolment e
         SET status = 'cancelled', cancelled_reason = 'class_cancelled'
-        WHERE e.class_id = ${id} AND ${seatTakenSql(sql)}
+        WHERE e.class_id = ${id}
+          AND ${seatTakenSql(sql, CANCELLABLE_STATUSES)}
         RETURNING e.id
       ), raised AS (
         INSERT INTO event_outbox (type, aggregate_type, aggregate_id, payload,

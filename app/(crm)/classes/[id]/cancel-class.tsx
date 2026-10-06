@@ -17,12 +17,19 @@ export function CancelClass({
   version,
   seatHolders,
   alreadyCancelled,
+  started,
 }: {
   id: string;
   code: string;
   version: number;
   seatHolders: number;
   alreadyCancelled: boolean;
+  // §9.10 (Shawn, 6 Oct): a class that has started is not cancelled. The route
+  // refuses it with 422 `class_started` whatever this says, and it also refuses
+  // a future class whose students are already marked attended — which this
+  // screen cannot see. So this hides a button that would always fail, and the
+  // message covers the rest.
+  started: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -54,6 +61,14 @@ export function CancelClass({
     return (
       <p className="text-ink-muted text-sm">
         This class is already cancelled. Its students have been told once.
+      </p>
+    );
+
+  if (started)
+    return (
+      <p className="text-ink-muted text-sm">
+        This class has already started, so it can&apos;t be called off. Cancel
+        the enrolments that no longer need it instead.
       </p>
     );
 

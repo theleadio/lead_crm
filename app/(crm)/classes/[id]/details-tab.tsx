@@ -9,6 +9,9 @@ import { CancelClass } from "./cancel-class";
 // Cancel class, both for super_admin and operations only (§6).
 
 const NOT_SET = "Not set";
+// Today in Kuala Lumpur (§4), the day the cancel rule counts from.
+const todayKl = () =>
+  new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kuala_Lumpur" });
 const LANGUAGES: Record<string, string> = { en: "English", zh: "中文" };
 
 function value(v: string | number | null | undefined): string {
@@ -124,6 +127,7 @@ export function DetailsTab({
             version={cls.version}
             seatHolders={seatHolders}
             alreadyCancelled={cls.status === "cancelled"}
+            started={cls.startDate <= todayKl()}
           />
         </Panel>
       )}

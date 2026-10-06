@@ -78,6 +78,16 @@ export async function classWriteResponse(
         "class_has_seats",
         `This class has ${result.taken} ${result.taken === 1 ? "seat" : "seats"} taken, so it can't go back to draft. Cancel the class, or move those students to another class first.`,
       );
+    // §9.10 (Shawn, 6 Oct): a class that has run keeps its roster. The
+    // students who no longer need it are cancelled one by one on 9.11.
+    case "class_started":
+      return apiError(
+        422,
+        "class_started",
+        result.past > 0
+          ? `${result.past} ${result.past === 1 ? "student is" : "students are"} already marked attended or completed, so this class can't be cancelled. Cancel the enrolments that no longer need it instead.`
+          : "This class has already started, so it can't be cancelled. Cancel the enrolments that no longer need it instead.",
+      );
     case "class_not_open":
       return apiError(
         422,

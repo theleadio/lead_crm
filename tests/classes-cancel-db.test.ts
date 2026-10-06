@@ -28,6 +28,7 @@ async function newUser(role: Role = "operations"): Promise<Viewer> {
 
 async function newClass(
   status = "open",
+  startsInDays = 14,
 ): Promise<{ id: string; version: number }> {
   const [course] = await db()`
     INSERT INTO course (code, name_en, track, duration_days)
@@ -38,8 +39,8 @@ async function newClass(
                        venue_name, venue_address, city, capacity, status,
                        is_public)
     VALUES (${course.id}, ${`C-${crypto.randomUUID()}`},
-            (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date + 14,
-            (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date + 14,
+            (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date + ${startsInDays}::int,
+            (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date + ${startsInDays}::int,
             'en', 'in_person', 'LEAD Training Centre', '1 Jalan Test',
             'Kuala Lumpur', 20, ${status}, true)
     RETURNING id, version`;
@@ -185,6 +186,59 @@ it("leaves the enrolments that were never holding a seat alone", async () => {
   assert.equal((await events(confirmed, "EnrolmentCancelled")).length, 1);
   for (const id of [already, refunded, noShow, waitlisted, expired])
     assert.equal((await events(id, "EnrolmentCancelled")).length, 0);
+});
+
+// Shawn, 6 Oct: cancelling a class that already ran used to rewrite its
+// attended and completed students to cancelled. Both halves of the rule:
+// the date, and anyone marked as having sat it.
+it("a class with a completed student is not cancelled", async () => {
+  const viewer = await newUser();
+  const cls = await newClass();
+  const completed = await enrol(cls.id, "completed");
+  const confirmed = await enrol(cls.id, "confirmed");
+
+  const result = await cancelClass(cls.id, reason, cls.version, viewer);
+  assert.equal(result.kind, "class_started");
+  assert.equal((result as { past: number }).past, 1);
+
+  // Nothing moved: not the class, not the student who sat it, not the one who
+  // is still waiting.
+  assert.equal((await classRow(cls.id)).status, "open");
+  assert.equal((await enrolment(completed)).status, "completed");
+  assert.equal((await enrolment(confirmed)).status, "confirmed");
+  assert.equal((await events(cls.id, "ClassCancelled")).length, 0);
+  assert.equal((await events(confirmed, "EnrolmentCancelled")).length, 0);
+  assert.equal((await audits(cls.id)).length, 0);
+});
+
+it("a class that has started is not cancelled either", async () => {
+  const viewer = await newUser();
+  // Today in Kuala Lumpur counts as started (§4).
+  const cls = await newClass("open", 0);
+  const confirmed = await enrol(cls.id, "confirmed");
+
+  const result = await cancelClass(cls.id, reason, cls.version, viewer);
+  assert.equal(result.kind, "class_started");
+  assert.equal((result as { past: number }).past, 0);
+  assert.equal((await classRow(cls.id)).status, "open");
+  assert.equal((await enrolment(confirmed)).status, "confirmed");
+  assert.equal((await events(cls.id, "ClassCancelled")).length, 0);
+});
+
+it("an onboarded student is cancelled with the class", async () => {
+  const viewer = await newUser();
+  const cls = await newClass();
+  const onboarded = await enrol(cls.id, "onboarded");
+
+  const result = await cancelClass(cls.id, reason, cls.version, viewer);
+  assert.equal(result.kind, "cancelled");
+  assert.equal((result as { enrolmentCount: number }).enrolmentCount, 1);
+  assert.equal((await enrolment(onboarded)).status, "cancelled");
+  assert.equal(
+    (await enrolment(onboarded)).cancelled_reason,
+    "class_cancelled",
+  );
+  assert.equal((await events(onboarded, "EnrolmentCancelled")).length, 1);
 });
 
 it("a stale version changes nothing at all", async () => {
