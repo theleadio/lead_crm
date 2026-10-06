@@ -13,14 +13,16 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/004_hrdc_task_guard.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/005_row_version.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/006_class_seats.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/007_reservation_holds.sql
     psql -d <db> -f lib/db/tests/schema_constraints.sql
     psql -d <db> -f lib/db/tests/002_merge_erase_tests.sql
     psql -d <db> -f lib/db/tests/003_company_from_form_tests.sql
     psql -d <db> -f lib/db/tests/004_hrdc_task_guard_tests.sql
     psql -d <db> -f lib/db/tests/005_row_version_tests.sql
     psql -d <db> -f lib/db/tests/006_class_seats_tests.sql
+    psql -d <db> -f lib/db/tests/007_reservation_holds_tests.sql
 
-Current result on PostgreSQL 16 with 001–006 applied: 38 of 38, 42 of 42, 26 of 26, 8 of 8, 9 of 9 and 26 of 26 (with and without Supabase's `anon`/`authenticated` roles present).
+Current result on PostgreSQL 16 with 001–007 applied: 38 of 38, 42 of 42, 26 of 26, 8 of 8, 9 of 9, 26 of 26 and 14 of 14 (with and without Supabase's `anon`/`authenticated` roles present).
 
 The tests live outside `migrations/` on purpose, so no migration runner ever executes them.
 
@@ -77,6 +79,18 @@ Enrolments are written by the app, the Stripe webhook, the SalesProcess import a
 | `ClassPublished` | Written by the database whenever `status` or `is_public` changes, including seat-driven changes. **The app no longer raises it.** |
 | Locking | The triggers lock the class row. The service's transaction already does, so this costs nothing there. Every status change bumps `class.version`, so an open class edit form can get a 409 while bookings arrive — expected. |
 | Privileges | `class_seats_taken`, `refresh_class_status`, `expire_reservations` revoked from PUBLIC/`anon`/`authenticated` — the public feed must never expose raw seat counts (§8.1). |
+
+## Migration 007 — every reservation has a hold (6 Oct)
+
+From Zixuan's review of 006. Both bugs were reproduced locally before the fix.
+
+| Change | What it means for the app |
+| --- | --- |
+| Backfill at install | `reserved` rows written before 006 had no `seat_reserved_until`: they held no seat, the sweep skipped them, and the double-booking index stopped that person re-booking. 007 gives each one `created_at` + 48h, then runs the sweep once. Old ones end up `cancelled` / `reservation_expired`; recent ones keep the rest of their 48h. If a backfill would oversell a class, the migration stops with `no_seats` and the class code — nothing is cancelled silently. |
+| CHECK `enrolment_reserved_has_hold` | A `reserved` row must have a hold. The 006 trigger still fills it for any writer that leaves it empty, so writers don't change. |
+| Seat guard fix | In 006, a no-hold reservation that later got a hold skipped the oversell check (`NULL <= now()` is NULL). Now a missing hold counts as "held no seat", so the check runs. |
+| `backfill_reservation_holds()` | Used once by the migration. Revoked from PUBLIC/`anon`/`authenticated`. |
+| Imports | Don't import `reserved` rows from SalesProcess — map them to `cancelled`. Otherwise the trigger gives them a fresh 48h hold and they take seats. |
 
 ## Where this is stricter or more specific than the spec
 
