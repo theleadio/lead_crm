@@ -17,7 +17,11 @@ if (!url) {
   console.error("DATABASE_URL is not set (run with --env-file=.env.local).");
   process.exit(1);
 }
-const sql = postgres(url, { ssl: "require", max: 1, onnotice: () => {} });
+const sql = postgres(url, {
+  ssl: url.includes("sslmode=disable") ? false : "require",
+  max: 1,
+  onnotice: () => {},
+});
 
 const NAMES = [
   "Tan Mei Ling",
