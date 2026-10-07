@@ -5,6 +5,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { permissionFor, ROLES, type Role } from "../lib/auth/permissions.ts";
+import {
+  enrolmentListQuerySchema,
+  readEnrolmentParams,
+} from "../lib/validation/enrolment-query.ts";
 import type { EnrolmentWriteResult } from "../lib/enrolments/service.ts";
 import { enrolmentWriteResponse } from "../lib/enrolments/write-response.ts";
 
@@ -138,4 +142,19 @@ test("a transfer answers with the new enrolment and class", async () => {
   assert.equal(status, 200);
   assert.equal(body.newEnrolmentId, "e2");
   assert.equal(body.toClassCode, "AIA-2602");
+});
+
+// GET /api/enrolments (§9.11 list): the route is the §6 gate above plus this
+// query schema, so a bad query never reaches the database.
+const listQuery = (input: Record<string, string>) =>
+  enrolmentListQuerySchema.safeParse(
+    readEnrolmentParams(new URLSearchParams(input)),
+  );
+
+test("the list route rejects a query it cannot serve", () => {
+  assert.equal(listQuery({ "filter[status]": "paid" }).success, false);
+  assert.equal(listQuery({ limit: "500" }).success, false);
+  assert.equal(listQuery({ sort: "price_paid_myr" }).success, false);
+  assert.equal(listQuery({ when: "someday" }).success, false);
+  assert.equal(listQuery({}).success, true);
 });
