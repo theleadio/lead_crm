@@ -261,7 +261,16 @@ export function PersonDetailView({
             <Panel title="Enrolments" empty={!detail.enrolments.length}>
               {detail.enrolments.map((e) => (
                 <Row key={e.id}>
-                  <span>{e.classCode}</span>
+                  {/* §9.11: the enrolment's own screen, where its status,
+                      payments and transfer live. */}
+                  <span>
+                    <Link
+                      href={`/enrolments/${e.id}`}
+                      className="text-blue-ink underline"
+                    >
+                      {e.classCode}
+                    </Link>
+                  </span>
                   <span className="capitalize">{label(e.status)}</span>
                   <span>
                     {e.pricePaidMyr

@@ -159,6 +159,14 @@ export function canWriteClass(viewer: Viewer): boolean {
   return viewer.role === "super_admin" || viewer.role === "operations";
 }
 
+// Spec §6 enrolment row: super_admin and operations have F, management,
+// sales and support read, marketing and part_time have nothing. Named
+// separately from the class check because §6 gives them on different lines —
+// a support user who may read an enrolment may not change one (§9.11).
+export function canWriteEnrolment(viewer: Viewer): boolean {
+  return permissionFor(viewer, "enrolment", "write").allowed;
+}
+
 // Spec 6 deal row: super_admin, sales and support move and edit deals;
 // management, marketing and operations read; part_time has no access.
 export function canWriteDeal(viewer: Viewer): boolean {

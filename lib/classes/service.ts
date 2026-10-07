@@ -20,25 +20,21 @@ import {
   noticeWorthyChanges,
   upsertPendingNotice,
 } from "./notices.ts";
-import { CANCELLABLE_STATUSES, PAST_STATUSES, seatTakenSql } from "./seats.ts";
+import {
+  CANCELLABLE_STATUSES,
+  PAST_STATUSES,
+  classWhenSql,
+  seatCountSql,
+  seatTakenSql,
+} from "./seats.ts";
 import type { ClassListItem } from "./types.ts";
 
 // Service layer for GET /api/classes (spec §7, §9.8). Read-only: nothing on
 // the 9.8 list writes, so there is no If-Match and no audit row here.
 // Classes fall under the §6 course/class row — every role reads.
 
-// Spec §4: a Kuala Lumpur day, not the server's. Compared against end_date,
-// not start_date, so a class that has started but not finished is still
-// upcoming for Operations (design decision 3).
-function whenSql(sql: postgres.Sql, when: ClassListQuery["when"]) {
-  const today = sql`(now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date`;
-  return when === "past"
-    ? sql`c.end_date < ${today}`
-    : sql`c.end_date >= ${today}`;
-}
-
 function filterSql(sql: postgres.Sql, q: ClassListQuery) {
-  return sql`${whenSql(sql, q.when)}
+  return sql`${classWhenSql(sql, q.when)}
     ${q.courseId ? sql`AND c.course_id = ${q.courseId}` : sql``}
     ${q.status ? sql`AND c.status = ${q.status}` : sql``}
     ${q.language ? sql`AND c.language = ${q.language}` : sql``}`;
@@ -58,15 +54,6 @@ function orderSql(sql: postgres.Sql, q: ClassListQuery) {
     default:
       return sql`c.start_date ${dir}, c.code, c.id`;
   }
-}
-
-// Seats per §12.1, split into the two numbers §7 names. The expiry rule
-// stays inside seatTakenSql, so an expired reservation is left out of both
-// counts without this query knowing how that is decided.
-function seatCountSql(sql: postgres.Sql, reserved: boolean) {
-  return sql`(SELECT count(*)::int FROM enrolment e
-    WHERE e.class_id = c.id AND ${seatTakenSql(sql)}
-      ${reserved ? sql`AND e.status = 'reserved'` : sql`AND e.status <> 'reserved'`})`;
 }
 
 export async function listClasses(

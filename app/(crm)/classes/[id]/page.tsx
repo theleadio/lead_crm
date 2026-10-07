@@ -7,6 +7,7 @@ import { getCurrentUser } from "@/lib/auth/current-user";
 import {
   canExportClassLists,
   canWriteClass,
+  canWriteEnrolment,
   permissionFor,
   type Viewer,
 } from "@/lib/auth/permissions";
@@ -75,6 +76,9 @@ export default async function ClassDetailPage(
           classId={id}
           rows={await listRoster(id, user)}
           canExport={canExportClassLists(user)}
+          // §6 enrolment row: super_admin and operations add; §9.11 owns the
+          // status and transfer moves, so those are not on this tab.
+          canWriteEnrolment={canWriteEnrolment(user)}
         />
       )}
       {tab === "notices" && (

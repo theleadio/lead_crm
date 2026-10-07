@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { classCancelSchema } from "../lib/validation/class-cancel.ts";
+import {
+  enrolmentCreateSchema,
+  enrolmentStatusSchema,
+  enrolmentTransferSchema,
+} from "../lib/validation/enrolment.ts";
 import { classNoticeEditSchema } from "../lib/validation/class-notice.ts";
 import { personSchema } from "../lib/validation/person.ts";
 
@@ -61,5 +66,91 @@ test("classCancelSchema trims the reason it keeps", () => {
   assert.equal(
     classCancelSchema.parse({ reason: "  Trainer unavailable  " }).reason,
     "Trainer unavailable",
+  );
+});
+
+// Spec §9.11, §8.3, §12.4: what a create, a status change and a transfer may
+// carry. A price never arrives from the client.
+const CREATE = {
+  personId: "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+  classId: "3f2504e0-4f89-11d3-9a0c-0305e82c3302",
+  status: "reserved" as const,
+  payerType: "self" as const,
+};
+
+test("enrolmentCreateSchema refuses a status staff cannot create", () => {
+  for (const status of ["confirmed", "completed", "waitlisted", "attended"])
+    assert.equal(
+      enrolmentCreateSchema.safeParse({ ...CREATE, status }).success,
+      false,
+      status,
+    );
+});
+
+test("enrolmentCreateSchema takes the two staff statuses", () => {
+  for (const status of ["reserved", "payment_pending"] as const)
+    assert.equal(
+      enrolmentCreateSchema.safeParse({ ...CREATE, status }).success,
+      true,
+      status,
+    );
+});
+
+test("enrolmentCreateSchema drops an amount the client sent (§8.3)", () => {
+  const parsed = enrolmentCreateSchema.parse({
+    ...CREATE,
+    pricePaidMyr: "1.00",
+    amountMyr: "1.00",
+  });
+  assert.deepEqual(Object.keys(parsed).sort(), [
+    "classId",
+    "payerType",
+    "personId",
+    "status",
+  ]);
+});
+
+test("enrolmentCreateSchema needs well-formed ids", () => {
+  assert.equal(
+    enrolmentCreateSchema.safeParse({ ...CREATE, personId: "nope" }).success,
+    false,
+  );
+});
+
+test("enrolmentStatusSchema requires a reason to cancel", () => {
+  assert.equal(
+    enrolmentStatusSchema.safeParse({ toStatus: "cancelled" }).success,
+    false,
+  );
+  assert.equal(
+    enrolmentStatusSchema.safeParse({ toStatus: "cancelled", reason: "   " })
+      .success,
+    false,
+  );
+  assert.equal(
+    enrolmentStatusSchema.safeParse({
+      toStatus: "cancelled",
+      reason: "Student withdrew",
+    }).success,
+    true,
+  );
+});
+
+test("enrolmentStatusSchema needs no reason for other moves", () => {
+  assert.equal(
+    enrolmentStatusSchema.safeParse({ toStatus: "confirmed" }).success,
+    true,
+  );
+  assert.equal(
+    enrolmentStatusSchema.safeParse({ toStatus: "nonsense" }).success,
+    false,
+  );
+});
+
+test("enrolmentTransferSchema needs a target class id", () => {
+  assert.equal(enrolmentTransferSchema.safeParse({}).success, false);
+  assert.equal(
+    enrolmentTransferSchema.safeParse({ toClassId: CREATE.classId }).success,
+    true,
   );
 });

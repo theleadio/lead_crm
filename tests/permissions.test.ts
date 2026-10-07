@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   canAddPersonStandalone,
   canWriteDeal,
+  canWriteEnrolment,
   ROLES,
   canExportClassLists,
   canExportPeople,
@@ -318,6 +319,34 @@ test("only super_admin and operations export a class roster", () => {
     assert.equal(
       canExportClassLists({ id: "u", role }),
       allowed.includes(role),
+      role,
+    );
+});
+
+// §6 enrolment row: F R - R R F -. The two with F change an enrolment (§9.11);
+// management, sales and support read it; marketing and part_time see none.
+test("only super_admin and operations change an enrolment", () => {
+  const allowed: Role[] = ["super_admin", "operations"];
+  for (const role of ROLES)
+    assert.equal(
+      canWriteEnrolment({ id: "u", role }),
+      allowed.includes(role),
+      role,
+    );
+});
+
+test("five roles read an enrolment, two have none", () => {
+  const readers: Role[] = [
+    "super_admin",
+    "management",
+    "sales",
+    "support",
+    "operations",
+  ];
+  for (const role of ROLES)
+    assert.equal(
+      permissionFor({ id: "u", role }, "enrolment", "read").allowed,
+      readers.includes(role),
       role,
     );
 });
