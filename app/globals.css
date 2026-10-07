@@ -72,6 +72,10 @@
    query keeps the same values for anyone who strips that class. */
 @media (prefers-color-scheme: dark) {
   :root {
+    /* Native widgets the page cannot paint — a <select>'s option list, a date
+       picker, scrollbars — follow this, not the variables below. Without it
+       Chrome opens a white menu under dark text. */
+    color-scheme: dark;
     --surface: #0e0f13;
     --surface-raised: #17181e;
     --surface-muted: #1e2028;
@@ -184,6 +188,7 @@
 /* Manual dark-mode override — the root layout applies .dark, so this is what
    the app normally renders. Same values as the media query above. */
 .dark {
+  color-scheme: dark;
   --surface: #0e0f13;
   --surface-raised: #17181e;
   --surface-muted: #1e2028;
