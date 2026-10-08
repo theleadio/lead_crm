@@ -26,7 +26,10 @@ const NEXT: Record<EnrolmentStatus, EnrolmentStatus[]> = {
   payment_pending: ["confirmed", "cancelled"],
   waitlisted: ["reserved"],
   confirmed: ["onboarded", "transferred", "cancelled"],
-  onboarded: ["attended", "no_show"],
+  // v1.10: a student can withdraw after their onboarding messages went out,
+  // and a class cancel reaches them too. `attended`, `completed` and `no_show`
+  // are history and never move to cancelled.
+  onboarded: ["attended", "cancelled", "no_show"],
   attended: ["completed"],
   completed: [],
   no_show: [],

@@ -18,7 +18,7 @@ const DIAGRAM: Record<EnrolmentStatus, EnrolmentStatus[]> = {
   payment_pending: ["confirmed", "cancelled"],
   waitlisted: ["reserved"],
   confirmed: ["onboarded", "transferred", "cancelled"],
-  onboarded: ["attended", "no_show"],
+  onboarded: ["attended", "cancelled", "no_show"],
   attended: ["completed"],
   completed: [],
   no_show: [],
@@ -58,6 +58,14 @@ test("the four end statuses offer nothing", () => {
     "refunded",
   ] as const)
     assert.deepEqual(nextStatuses(status), []);
+});
+
+// §12.4 v1.10: cancelling reaches a student who has been onboarded, but never
+// one the class has already taught.
+test("onboarded cancels, attended and completed do not", () => {
+  assert.equal(canChangeTo("onboarded", "cancelled"), true);
+  for (const status of ["attended", "completed", "no_show"] as const)
+    assert.equal(canChangeTo(status, "cancelled"), false, status);
 });
 
 test("a cancelled enrolment can only be refunded", () => {
