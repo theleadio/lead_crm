@@ -1,5 +1,6 @@
 import { canWriteDeal, type Viewer } from "../auth/permissions.ts";
 import { writeAudit } from "../audit.ts";
+import { raiseEvent } from "../events/raise.ts";
 import { isUuid } from "../people/service.ts";
 import { db, withTransaction } from "../sql.ts";
 import type { DealStageBody } from "../validation/deal.ts";
@@ -93,11 +94,12 @@ export async function moveDealStage(
         INSERT INTO deal_stage_history (deal_id, from_stage, to_stage, changed_by, created_by)
         VALUES (${dealId}, ${deal.stage}, ${toStage}, ${viewer.id}, ${viewer.id})`;
       // Spec §11.1: raised in the same transaction as the move.
-      await sql`
-        INSERT INTO event_outbox (type, aggregate_type, aggregate_id, payload, created_by)
-        VALUES ('DealStageChanged', 'deal', ${dealId},
-                ${sql.json({ dealId, fromStage: deal.stage, toStage, byUserId: viewer.id })},
-                ${viewer.id})`;
+      await raiseEvent(
+        "DealStageChanged",
+        dealId,
+        { dealId, fromStage: deal.stage, toStage, byUserId: viewer.id },
+        viewer.id,
+      );
       await writeAudit({
         userId: viewer.id,
         action: "update",
