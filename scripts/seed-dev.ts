@@ -51,7 +51,7 @@ async function reset() {
   // restoreReferenceData() puts the migration's rows back.
   await sql`
     TRUNCATE audit_log, message_log, consent, task, payment, enquiry,
-             deal_stage_history, enrolment, deal, class_notice, class, course,
+             deal_stage_history, enrolment_status_history, enrolment, deal, class_notice, class, course,
              person_tag, tag, touchpoint, company_membership, company,
              event_outbox, integration_event, person, app_user CASCADE`;
 }

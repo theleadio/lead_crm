@@ -476,10 +476,17 @@ async function pay(dealId: string, status: string, viaEnrolment = false) {
       RETURNING id`;
     enrolmentId = e.id;
   }
+  // Migration 009: paid statuses need paid_at, the refunded amount must fit
+  // the status, and refunded_at is set exactly when something was refunded.
+  const paid = ["succeeded", "partially_refunded", "refunded"].includes(status);
+  const refunded =
+    status === "refunded" ? 100 : status === "partially_refunded" ? 40 : 0;
   await sql`
-    INSERT INTO payment (enrolment_id, deal_id, method, status, amount_myr, refunded_amount_myr)
+    INSERT INTO payment (enrolment_id, deal_id, method, status, amount_myr,
+                         refunded_amount_myr, paid_at, refunded_at)
     VALUES (${enrolmentId}, ${viaEnrolment ? null : dealId}, 'stripe_card', ${status},
-            100, ${status === "refunded" ? 100 : 0})`;
+            100, ${refunded}, ${paid ? new Date() : null},
+            ${refunded > 0 ? new Date() : null})`;
 }
 
 it("move: leaving won with a live payment is 409 deal_has_payment", async () => {

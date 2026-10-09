@@ -596,7 +596,7 @@ export async function cancelClass(
       return { kind: "class_started", past: ran.past as number };
 
     const [updated] = await sql`
-      UPDATE class SET status = 'cancelled'
+      UPDATE class SET status = 'cancelled', cancelled_reason = ${reason}
       WHERE id = ${id} AND version = ${ifMatch}
       RETURNING id, version`;
     if (!updated) return { kind: "stale" };
