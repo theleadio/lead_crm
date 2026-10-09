@@ -27,10 +27,17 @@ export function db(): Sql {
   return (txStore.getStore() as unknown as Sql) ?? root();
 }
 
-// Spec §7 Transactions: check + write in one transaction. Nested calls
-// reuse the outer transaction.
+// Spec §7 Transactions: check + write in one transaction. A nested call joins
+// the open transaction through a SAVEPOINT rather than running inside it bare:
+// Postgres aborts a whole transaction on any failed statement, so a service
+// that catches a database error — migration 008's unique index on a proof
+// file, say (§9.12) — would otherwise leave the outer transaction unusable and
+// the caught refusal would surface as a different error further on. Rolling
+// back to the savepoint keeps the outer work alive, which is what lets a
+// service answer "already recorded" and carry on.
 export async function withTransaction<T>(fn: () => Promise<T>): Promise<T> {
-  if (txStore.getStore()) return fn();
+  const open = txStore.getStore();
+  if (open) return (await open.savepoint((sp) => txStore.run(sp, fn))) as T;
   return (await root().begin((tx) => txStore.run(tx, fn))) as T;
 }
 

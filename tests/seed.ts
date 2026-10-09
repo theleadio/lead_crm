@@ -110,14 +110,25 @@ export async function enrol(
 // proof key (§5 CHECK, §9.12).
 export async function pay(
   enrolmentId: string,
-  opts: { amount?: string; method?: string; status?: string } = {},
+  opts: {
+    amount?: string;
+    method?: string;
+    status?: string;
+    reference?: string;
+    proofKey?: string;
+  } = {},
 ): Promise<string> {
+  // Migration 008: one proof file, one payment. So the default key is fresh
+  // per call, and a test that records two payments is not refused by an index
+  // it is not testing. The reference stays shareable on purpose — one invoice
+  // covers several students (§9.12 One invoice, several students).
+  const proofKey = opts.proofKey ?? `proofs/${crypto.randomUUID()}.pdf`;
   const [p] = await db()`
     INSERT INTO payment (enrolment_id, method, status, amount_myr, paid_at,
                          match_status, reference_no, proof_file_key)
     VALUES (${enrolmentId}, ${opts.method ?? "bank_transfer"},
             ${opts.status ?? "succeeded"}, ${opts.amount ?? "1800.00"}, now(),
-            'matched', 'REF-1', 'proofs/test.pdf')
+            'matched', ${opts.reference ?? "REF-1"}, ${proofKey})
     RETURNING id`;
   return p.id as string;
 }

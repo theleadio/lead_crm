@@ -13,7 +13,9 @@ import {
 } from "@/lib/enrolments/types";
 import { statusMoves } from "@/lib/enrolments/status-rules";
 import { formatDate, formatDateRange, formatDateTime } from "@/lib/format/date";
+import { canRecordPayment } from "@/lib/payments/service";
 import { CancelEnrolment } from "./cancel-enrolment";
+import { RecordPayment } from "./record-payment";
 import { StatusControl } from "./status-control";
 import { TransferDialog } from "./transfer-dialog";
 
@@ -188,19 +190,59 @@ export default async function EnrolmentDetailPage(
 
         {/* §6 payment row: absent, not empty, for a role without access. */}
         {enrolment.payments && (
-          <Panel title="Payments" empty={!enrolment.payments.length}>
+          // No `empty` here: §13 wants an empty state that offers the next
+          // action, and Panel's own one would hide the Record payment control
+          // exactly when there is nothing recorded yet.
+          <Panel title="Payments">
+            {enrolment.payments.length === 0 && (
+              <p className="text-ink-muted text-sm">
+                No payments recorded yet.
+              </p>
+            )}
             {enrolment.payments.map((payment) => (
               <Row key={payment.id}>
                 <span className="text-ink-muted">
                   {enumLabel(payment.method)}
+                  {/* §9.12: one reference covers every payment of one
+                      corporate invoice, so it sits with the method. */}
+                  <span className="block text-xs">
+                    {value(payment.referenceNo)}
+                  </span>
                 </span>
                 <span>{payment.amountMyr}</span>
                 <span>{enumLabel(payment.status)}</span>
                 <span>
                   {payment.paidAt ? formatDate(payment.paidAt) : NOT_SET}
                 </span>
+                <span>
+                  {payment.hasProof ? (
+                    // §14: the link mints a short-lived signed URL per click
+                    // and the read is audited (§6) — no URL sits in this page.
+                    <a
+                      href={`/api/payments/${payment.id}/proof`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-ink underline"
+                    >
+                      Proof
+                    </a>
+                  ) : (
+                    NOT_SET
+                  )}
+                </span>
               </Row>
             ))}
+            {/* §6 payment row: operations and super_admin record a payment;
+                management and sales may read money but never add it. */}
+            {canRecordPayment(user) && (
+              <div className="pt-3">
+                <RecordPayment
+                  enrolmentId={enrolment.id}
+                  version={enrolment.version}
+                  pricePaidMyr={enrolment.pricePaidMyr}
+                />
+              </div>
+            )}
           </Panel>
         )}
 

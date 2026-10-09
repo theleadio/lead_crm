@@ -136,7 +136,8 @@ async function readPayments(
     if (!owned) return [];
   }
   const rows = await sql`
-    SELECT id, method, amount_myr, status, paid_at
+    SELECT id, method, amount_myr, status, paid_at, reference_no,
+           proof_file_key IS NOT NULL AS has_proof
     FROM payment WHERE enrolment_id = ${enrolmentId}
     ORDER BY created_at DESC`;
   const payments = rows.map((x) => ({
@@ -146,6 +147,10 @@ async function readPayments(
     amountMyr: String(x.amount_myr),
     status: x.status as string,
     paidAt: iso(x.paid_at),
+    referenceNo: x.reference_no as string | null,
+    // §14: the key itself never leaves the server — the proof route mints a
+    // short-lived signed URL per click and audits it.
+    hasProof: x.has_proof as boolean,
   }));
   // §6: every view of a payment record is audit-logged, as §9.2 does.
   for (const payment of payments)

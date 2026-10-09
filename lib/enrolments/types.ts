@@ -10,6 +10,12 @@ export type EnrolmentPaymentRow = {
   amountMyr: string;
   status: string;
   paidAt: string | null;
+  // §9.12: the bank or invoice reference the payment was recorded with. Shared
+  // by every payment of one corporate invoice, so it is not an id.
+  referenceNo: string | null;
+  // Whether a proof file is stored, rather than its key: the file is reached
+  // only through `GET /api/payments/:id/proof`, which audits the read (§6, §14).
+  hasProof: boolean;
 };
 
 export type EnrolmentDetail = {
