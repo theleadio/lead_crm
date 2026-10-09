@@ -1,11 +1,13 @@
-# LEAD CRM — Software Specification v1.10
+# LEAD CRM — Software Specification v1.12
 
-_Last updated 6 Oct 2026 · Owner: Shawn_
+_Last updated 9 Oct 2026 · Owner: Shawn_
 
 ## Changelog
 
 | Version | Date | Changes |
 | --- | --- | --- |
+| v1.12 | 9 Oct 2026 | Decisions O2, O11 and O13 recorded (§15.3, decision calendar): message bodies are not stored; anonymisation ships as built with a written erasure checklist for outside systems (§12.10); old `audit_log` values stay for go-live and `audit_log` is readable by super_admin only (§6). Privacy review still to confirm all three. |
+| v1.11 | 9 Oct 2026 | From Zixuan's 9.12 questions (manual payment): proof files and the private bucket, one proof per payment (migration 008, §5), part payments, late payments on confirmed enrolments, one invoice for several students, no correction route in the app (§9.12, §12.7); new open item O16 for Finance (part payments, HRDC timing). Nothing else changes. |
 | v1.10 | 6 Oct 2026 | From Zixuan's class screens (commit 7ee0c7a): EnrolmentCancelled per freed seat on a class cancel, reason `class_cancelled`; ClassChanged also on "Save quietly" with `noticeId: null` (§11.1, §12.8). Cancelling a class: refused once it has started, moves only students not yet taught, expires their Stripe links (§9.10, §12.8); `onboarded → cancelled` added (§12.4); register rows (§12.11). |
 | v1.9 | 6 Oct 2026 | From Zixuan's review of 006: migration 007 (every reservation has a hold; seat-guard fix) (§5, §12.1); import rule for reservations (§12.1); class has two separate controls — status and website — instead of one publish button (§9.10, §12.1); register rows (§12.11). |
 | v1.8 | 5 Oct 2026 | From Zixuan's 9.8 question: seats and class status now kept by the database (migration 006, §12.1); reservation expiry is a real write every 15 minutes; Stripe-path holds 24 hours; `reserved → confirmed` added (§12.4); full classes shown on the website (§8.1); §8.3 steps 2 and 4, §9.9 validation and §11.1 events corrected; rule placement (§3) and a who-writes-what register (§12.11). |
@@ -306,7 +308,7 @@ Indexes: (start_date, is_public, status), course_id.
 
 **`app_user`** — email (unique), full_name, role_code, is_active, employment_type (full_time, part_time), last_login_at.
 
-**`message_log`** — person_id, enquiry_id, channel (whatsapp, email), direction (in, out), external_message_id (unique where not null), template_name, status, sent_at, body (nullable — PDPA decision open, Section 15).
+**`message_log`** — person_id, enquiry_id, channel (whatsapp, email), direction (in, out), external_message_id (unique where not null), template_name, status, sent_at, body (nullable and left empty — decided 9 Oct, v1.12: metadata only, O2. WATI keeps the conversation text; the enquiry keeps a short `summary`).
 
 **`event_outbox`** — type, aggregate_type, aggregate_id, payload jsonb, created_at, processed_at, attempts, last_error. Index on processed_at where null.
 
@@ -392,6 +394,12 @@ Only one `pending` notice per class at a time — a second edit while one is pen
 | enrolment | Seat guard treats a missing hold as "held no seat" | In 006 such a row could gain a hold without the oversell check |
 | functions | `backfill_reservation_holds()`; EXECUTE revoked from PUBLIC/`anon`/`authenticated` | Used once by the migration |
 
+**Schema changes 9 Oct, migration 008 (v1.11)**
+
+| Table | Change | Why |
+| --- | --- | --- |
+| payment | Unique index `payment_proof_key_uq` on `proof_file_key` where not null | One proof file belongs to one payment; a double-click or retry on 9.12 cannot save it twice. If the index fails to build, two existing payments share a file and a person decides which is real |
+
 **Onboarding templates have no table, deliberately.** WhatsApp templates must be Meta-approved and live in WATI; email templates live in the ESP. Settings links out to both.
 
 **Deferred to January:** `campaign`, `ad`, `ad_metric_daily`, `content_item`, `attendance`, `class_session`. Do not build screens for these.
@@ -421,7 +429,7 @@ F = full, E = create/edit, R = read, A = assigned records only, — = no access.
 | export CSV        | F           | request    | aggregate only | —       | —       | class lists | —         |
 | merge person      | F           | —          | —              | propose | propose | propose     | —         |
 | app_user/settings | F           | —          | —              | —       | —       | —           | —         |
-| audit_log         | R           | R          | —              | —       | —       | —           | —         |
+| audit_log         | R           | —          | —              | —       | —       | —           | —         |
 
 ¹ Marketing sees person records with phone/email masked (`012-•••• 6789`, `s••••@gmail.com`), no export.
 ² Sales sees payments only on deals they own.
@@ -698,7 +706,17 @@ Change-notice flow: date/time/venue change on class w/ confirmed enrolments → 
 
 **9.11 Enrolment detail** — Person, class, status (allowed next statuses only), payer type, booker, price paid, payments, onboarding progress, certificate number. Actions: change status, transfer (class picker w/ seats available), record manual payment.
 
-**9.12 Record manual payment** — Modal. Fields: method (bank transfer/HRDC/invoice), amount, reference number, payment date, proof upload (image/PDF, max 10MB), notes. All required except notes. On save: creates payment, moves enrolment to confirmed, raises PaymentRecorded. Success state names what changed.
+**9.12 Record manual payment** — Modal. Fields: method (bank transfer/HRDC/invoice), amount, reference number, payment date, proof upload (image/PDF, max 10MB), notes. All required except notes. On save: creates payment, moves enrolment to confirmed (see rules below), raises PaymentRecorded. Success state names what changed.
+
+Rules added 9 Oct (v1.11), from Zixuan's questions:
+- **Proof storage.** A private bucket (`PAYMENT_PROOF_BUCKET`, set per environment), no public access. `proof_file_key` is an opaque key; the storage provider sits behind one file, so moving from Supabase Storage to another provider changes that file and the environment variables, not the schema. Shawn creates the bucket.
+- **One proof, one payment.** The same `proof_file_key` cannot be saved on two payments (unique index, migration 008). A repeat submit fails with the index name; show "already recorded", not an error page.
+- **Amount.** Any amount above zero is accepted. The modal notes a difference from `price_paid_myr`.
+- **Part payments (pending Finance, O16).** Build as: the enrolment moves to `confirmed` only when succeeded payments on it total at least `price_paid_myr`; below that it stays `payment_pending` and the modal shows the balance. The total-versus-price check must apply to every writer, Stripe webhook included, so it goes in the database, not in `/lib` (§3). It is not built until Finance answers.
+- **Status.** The save moves an enrolment to `confirmed` only from `reserved` or `payment_pending` (§12.4). On an enrolment already `confirmed` or `onboarded`, for example a late bank transfer, the payment is recorded and the status is left alone. `cancelled`, `refunded` and `transferred` enrolments are refused.
+- **HRDC (pending Finance, O16).** Record an HRDC payment only when the money has arrived, with `paid_at` as the date received. An HRDC approval with no money yet is a different action and is not in the MVP; the enrolment stays `payment_pending` (§12.6).
+- **One invoice, several students.** The modal records one payment against one enrolment (plus its `deal_id`). A corporate invoice for ten students is ten payments sharing the same `reference_no` and `deal_id`. A single payment split across enrolments is a known MVP gap.
+- **Orphaned files.** A proof uploaded when the save then fails stays in the bucket. A bucket lifecycle rule or a manual sweep clears them; no worker is built for this.
 
 **9.13 Enquiries queue** — Columns: person, channel, category, status, assigned, first message, first response, age. Default: open, oldest first. Past-SLA rows highlighted. Actions: assign to me, set category, convert to deal, close with outcome. Opening a row shows person context beside it.
 
@@ -918,6 +936,7 @@ MVP scope: fields and reminders only — no document generation, no portal autom
 - price_paid_myr on enrolment is a snapshot at purchase, never follows later price changes.
 - Refunds reduce refunded_amount_myr; original payment row never edited/deleted.
 - Revenue = succeeded payments minus refunds — not deal values, not enrolment counts.
+- A wrong amount has no correction route in the app (v1.11): the app never edits a payment, and Operations cannot refund. Until a later super_admin route exists, a `super_admin` corrects it in SQL and writes an audit note saying why. Proof files stay in the bucket with the payment row (O12); erasure never touches them.
 
 ### 12.8 Class changes
 
@@ -964,6 +983,18 @@ All three are database functions in migration 002 (`lib/db/migrations/002_merge_
 
 **Erasure (PDPA)** — `erase_person(person, actor, reason)`
 Anonymise, don't delete. The name becomes "Erased person". Email, phones, job title, notes, WATI/Stripe ids, message bodies, enquiry summaries, task notes and tags are cleared. Records previously merged into the person are anonymised too. Enrolments, payments, touchpoints and consent stay, so revenue, attribution and the opt-out record still add up. The email and phone are then free for a new signup. See O11–O14.
+
+**Erasure checklist (v1.12, O11).** `erase_person()` only covers our database. The person's data also exists elsewhere, so an erasure request is not finished until a super_admin has worked through this list and written the result in the erasure reason or a linked note:
+
+| Where | What to do |
+| --- | --- |
+| Stripe | Ask Stripe to delete or redact the customer record where allowed; card and payment records Stripe must keep stay there |
+| WATI | Delete the contact and conversation in WATI |
+| Email provider | Remove the address from lists and suppress it; delete stored messages where practical |
+| Payment proof bucket | Proof files stay with the payment row (O12) and can show a name and account number. The privacy review decides whether to keep or redact them; until then they stay |
+| `audit_log` | Earlier rows still hold the person's old values (O13). Not redacted at go-live |
+
+Do not tell the person their data is "fully erased" until the privacy review has confirmed the wording for what is kept and why.
 
 **Soft delete** — `soft_delete_person(person, actor, reason)`
 For junk and test records only. Refused for anyone with an enrolment or payment; use erasure instead. The audit row stores the reason, not a copy of the record.
@@ -1118,6 +1149,7 @@ Everything else: manual UAT with Wei Ping, Ops and Sales during Sprint 5 (30 Nov
 | O13 | `audit_log` rows written before an erasure still hold that person's old values (append-only). Accept, or allow a controlled redaction? | Erasure completeness | Sprint 2 | Shawn + privacy review |
 | O14 | `touchpoint.landing_url` / `referrer` can carry personal data in the query string (e.g. `?email=`). Strip at capture? | Touchpoint capture, erasure | Sprint 2 | Shawn |
 | O15 | Which fields can the 9.3 merge screen choose between (the `fields` map)? | Merge route validation | Sprint 1 | Zixuan + Shawn |
+| O16 | Part payments and HRDC timing: is an enrolment confirmed only when payments reach the price? Is an HRDC payment recorded only when the money arrives? | 9.12, payment rule in the database | Sprint 2 | Finance |
 
 **Decision calendar (added 23 Sep).** Every open item now has a date. If an answer misses its date, the fallback in the last column is what gets built — nobody waits.
 
@@ -1125,7 +1157,7 @@ Everything else: manual UAT with Wei Ping, Ops and Sales during Sprint 5 (30 Nov
 |---|---|---|---|
 | O8 website deploy access | **Fri 25 Sep** | Management | Blocker, not a fallback — escalate the same day; Sprint 3 cannot start without it |
 | O1 auth (SSO vs email+MFA) | Fri 2 Oct | Shawn | Email + password with MFA (see below) |
-| O2 store message bodies | Fri 9 Oct | Shawn + privacy review | Metadata only; no bodies stored |
+| O2 store message bodies | Fri 9 Oct | Shawn + privacy review | **Decided 9 Oct (v1.12): metadata only; no bodies stored.** Revisit with AI classification (Phase 5) |
 | O3 reservation expiry | Fri 16 Oct | Operations | 48 hours — for reservations staff make. Stripe-path holds are 24 hours (Stripe's maximum), decided 5 Oct |
 | O9 corporate booker model | Fri 16 Oct | Operations | Build as specified in 12.2 |
 | O4 first-response SLA | Fri 30 Oct | Wei Ping | 1 business hour, configurable |
@@ -1134,10 +1166,11 @@ Everything else: manual UAT with Wei Ping, Ops and Sales during Sprint 5 (30 Nov
 | O7 HRDC lead time and claim window | Fri 13 Nov | Finance | Ship as editable settings with no default; Ops fills them in |
 | O10 certificate numbering | January | Operations | Out of MVP |
 | O15 merge `fields` map | Fri 2 Oct | Zixuan + Shawn | The contact fields shown on 9.3: full name, preferred name, email, phone, WhatsApp, job title, language, owner |
-| O11 anonymisation = erasure | Fri 9 Oct | Shawn + privacy review | Ship anonymisation as built |
-| O13 audit_log history | Fri 9 Oct | Shawn + privacy review | Leave audit rows as they are; revisit in January |
+| O11 anonymisation = erasure | Fri 9 Oct | Shawn + privacy review | **Decided 9 Oct (v1.12): ship as built, plus the erasure checklist in 12.10.** Privacy review to confirm the wording and what is kept |
+| O13 audit_log history | Fri 9 Oct | Shawn + privacy review | **Decided 9 Oct (v1.12): leave audit rows as they are for go-live; `audit_log` readable by super_admin only; controlled redaction considered in January** |
 | O14 personal data in URLs | Fri 16 Oct | Shawn | Keep only utm_*, gclid, fbclid and the path; drop other query parameters at capture |
 | O12 payment record retention | Fri 13 Nov | Finance / accountant | Keep payment rows indefinitely; erasure never touches them |
+| O16 part payments and HRDC timing | Fri 16 Oct | Finance | Build as written in 9.12: confirm only when payments reach the price; HRDC recorded when the money arrives |
 
 The two that matter this week are **O8** and **O1**. O8 is the only item that can stop a whole sprint — Zixuan can't build Section 10 against a website she can't deploy to.
 

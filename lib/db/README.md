@@ -14,6 +14,7 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/005_row_version.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/006_class_seats.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/007_reservation_holds.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/008_payment_proof_unique.sql
     psql -d <db> -f lib/db/tests/schema_constraints.sql
     psql -d <db> -f lib/db/tests/002_merge_erase_tests.sql
     psql -d <db> -f lib/db/tests/003_company_from_form_tests.sql
@@ -21,8 +22,9 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -f lib/db/tests/005_row_version_tests.sql
     psql -d <db> -f lib/db/tests/006_class_seats_tests.sql
     psql -d <db> -f lib/db/tests/007_reservation_holds_tests.sql
+    psql -d <db> -f lib/db/tests/008_payment_proof_unique_tests.sql
 
-Current result on PostgreSQL 16 with 001–007 applied: 38 of 38, 42 of 42, 26 of 26, 8 of 8, 9 of 9, 26 of 26 and 14 of 14 (with and without Supabase's `anon`/`authenticated` roles present).
+Current result on PostgreSQL 16 with 001–008 applied: 38 of 38, 42 of 42, 26 of 26, 8 of 8, 9 of 9, 26 of 26, 14 of 14 and 6 of 6. 001–007 were also run with and without Supabase's `anon`/`authenticated` roles present; 008 was run without them (it creates no functions, so privileges don't apply).
 
 The tests live outside `migrations/` on purpose, so no migration runner ever executes them.
 
@@ -91,6 +93,15 @@ From Zixuan's review of 006. Both bugs were reproduced locally before the fix.
 | Seat guard fix | In 006, a no-hold reservation that later got a hold skipped the oversell check (`NULL <= now()` is NULL). Now a missing hold counts as "held no seat", so the check runs. |
 | `backfill_reservation_holds()` | Used once by the migration. Revoked from PUBLIC/`anon`/`authenticated`. |
 | Imports | Don't import `reserved` rows from SalesProcess — map them to `cancelled`. Otherwise the trigger gives them a fresh 48h hold and they take seats. |
+
+## Migration 008 — one proof file, one payment (9 Oct)
+
+From Zixuan's 9.12 questions (manual payment modal).
+
+| Change | What it means for the app |
+| --- | --- |
+| Unique index `payment_proof_key_uq` on `payment.proof_file_key` where not null | The same uploaded proof cannot be saved on two payments, so a double-click or retry on the modal can't record it twice. The error message contains `payment_proof_key_uq`; show "already recorded". Payments with no proof (Stripe) are not limited. |
+| If it fails to build | Two existing payments share a proof file. The header of the migration has the query that lists them; a person decides which row is real. Nothing is changed for you. |
 
 ## Where this is stricter or more specific than the spec
 
