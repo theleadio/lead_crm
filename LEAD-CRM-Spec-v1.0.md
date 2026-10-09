@@ -1,4 +1,4 @@
-# LEAD CRM — Software Specification v1.13
+# LEAD CRM — Software Specification v1.14
 
 _Last updated 13 Oct 2026 · Owner: Shawn_
 
@@ -6,6 +6,7 @@ _Last updated 13 Oct 2026 · Owner: Shawn_
 
 | Version | Date | Changes |
 | --- | --- | --- |
+| v1.14 | 13 Oct 2026 | Decisions on six rebase questions: enrolments cannot be deleted, only cancelled; enrolment history `changed_by` stays NULL (the actor is in `audit_log`); `class.cancelled_reason` stays unenforced; Zixuan's eight hand-written outbox inserts stay (§12.11 note). O35 gap list gains `enrolment_status_history.reason` (§15.3). |
 | v1.13 | 13 Oct 2026 | S1 Shawn-side, rebased onto v1.12: event contract and outbox drain with backoff and dead letters (§2, §3, §7); pre-freeze schema migrations 009 and 010 (§12.11); nameless WhatsApp person convention (§11.2); open items O17-O19, O21, O23-O35 and O44 (§15.3; the checkout-link question was O16 until upstream took that number for part payments). O20 and O22 are closed: seats and expiry are the database's job since migrations 006 and 007. |
 | v1.12 | 9 Oct 2026 | Decisions O2, O11 and O13 recorded (§15.3, decision calendar): message bodies are not stored; anonymisation ships as built with a written erasure checklist for outside systems (§12.10); old `audit_log` values stay for go-live and `audit_log` is readable by super_admin only (§6). Privacy review still to confirm all three. |
 | v1.11 | 9 Oct 2026 | From Zixuan's 9.12 questions (manual payment): proof files and the private bucket, one proof per payment (migration 008, §5), part payments, late payments on confirmed enrolments, one invoice for several students, no correction route in the app (§9.12, §12.7); new open item O16 for Finance (part payments, HRDC timing). Nothing else changes. |
@@ -1029,6 +1030,8 @@ For junk and test records only. Refused for anyone with an enrolment or payment;
 | Stripe Checkout link of a reservation | Stripe | Expires by itself at the hold time; Shawn's worker expires it early on ClassCancelled (§12.8) | Class cancel | Never |
 | Date/venue shown in reminders | `class` row | Shawn's workers, read at send time (§12.8) | Each send | Never |
 
+**Register notes (v1.14).** (1) Enrolments are never deleted: `enrolment_status_history` references them and is append-only, so an import or admin tool that needs an enrolment gone must cancel it. (2) `enrolment_status_history.changed_by` is always NULL: the database does not know the actor, and the `audit_log` row of the status move has it. (3) `class.cancelled_reason` is written by `cancelClass()` but not enforced by a CHECK, so a class cancelled by direct SQL has none. (4) `lib/classes/service.ts`, `lib/enrolments/service.ts` and `lib/classes/notices.ts` insert into `event_outbox` by hand in eight places; this is equivalent to `raiseEvent` and stays.
+
 ## 13. Errors, States & Logging
 
 **Error messages say what happened and what to do.** Never "An error occurred", never a raw exception.
@@ -1175,7 +1178,7 @@ Everything else: manual UAT with Wei Ping, Ops and Sales during Sprint 5 (30 Nov
 | O32 | A withdrawn HRDC task looks the same as a completed one, and the timeline shows "Task done". | hrdc-task.ts, timeline, reports | Tue 13 Oct | Shawn |
 | O33 | `done_at` requires `done_by`, so a worker (system actor, no user) can never close a task. | Stripe worker, expiry sweep | Tue 13 Oct | Shawn |
 | O34 | `event_outbox` has no backoff, no dead-letter marker and no stable order; a failing row burns all 5 attempts in milliseconds. | drain.ts, health panel | Tue 13 Oct | Shawn |
-| O35 | Erasure leaves personal data behind inside our database: `integration_event.payload` (raw webhook bodies; O2 says message text is not stored, so the payload must not keep it past processing either), `task.title`, unmatched-payment task notes, URLs (O14). The `audit_log` part is decided (O13, v1.12: rows stay for go-live, super_admin only) and sits on the §12.10 erasure checklist with the outside systems. | erase_person, retention, privacy review | Tue 13 Oct | Shawn |
+| O35 | Erasure leaves personal data behind inside our database: `integration_event.payload` (raw webhook bodies; O2 says message text is not stored, so the payload must not keep it past processing either), `task.title`, unmatched-payment task notes, `enrolment_status_history.reason` (copies the free-text `cancelled_reason`; `erase_person` does not clear it), URLs (O14). The `audit_log` part is decided (O13, v1.12: rows stay for go-live, super_admin only) and sits on the §12.10 erasure checklist with the outside systems. | erase_person, retention, privacy review | Tue 13 Oct | Shawn |
 | O44 | Does creating a checkout link move the deal to `checkout_sent`? Spec is silent. | Checkout link | TBD by Shawn | Shawn |
 
 **Decision calendar (added 23 Sep).** Every open item now has a date. If an answer misses its date, the fallback in the last column is what gets built — nobody waits.
@@ -1210,7 +1213,7 @@ Everything else: manual UAT with Wei Ping, Ops and Sales during Sprint 5 (30 Nov
 | O32 Withdrawn vs done HRDC task | Tue 13 Oct | Shawn | Add `task.is_cancelled` flag with CHECK that it implies `done_at`; withdrawals set it and the timeline shows "withdrawn". Migration 009. DDL: see docs/superpowers/notes/2026-10-08-pre-freeze-schema-review.md, S-10. |
 | O33 Workers cannot close tasks | Tue 13 Oct | Shawn | Relax the CHECK to `done_by` needs `done_at`; who closed it stays in `audit_log`. Migration 009. DDL: see docs/superpowers/notes/2026-10-08-pre-freeze-schema-review.md, S-11. |
 | O34 Outbox backoff and dead letters | Tue 13 Oct | Shawn | Add `next_attempt_at`, `dead_at`, `seq` and the due index; same backoff columns on `integration_event`. Built: migration 010. DDL: see docs/superpowers/notes/2026-10-08-pre-freeze-schema-review.md, S-12. |
-| O35 Erasure gaps | Tue 13 Oct | Shawn | Extend `erase_person` to clear `task.title` and match_payment task notes, and add a retention job that blanks `integration_event.payload`. `audit_log` is settled by O13 (v1.12): old values stay for go-live, and the §12.10 checklist already lists them with Stripe, WATI, the email provider and the proof bucket, so nothing is built for audit. Payment notes and URLs still follow the privacy review and O14. Not built yet. DDL: see docs/superpowers/notes/2026-10-08-pre-freeze-schema-review.md, S-13. |
+| O35 Erasure gaps | Tue 13 Oct | Shawn | Extend `erase_person` to clear `task.title`, match_payment task notes and `enrolment_status_history.reason` (that table is append-only, so the clearing function needs a controlled exception), and add a retention job that blanks `integration_event.payload`. `audit_log` is settled by O13 (v1.12): old values stay for go-live, and the §12.10 checklist already lists them with Stripe, WATI, the email provider and the proof bucket, so nothing is built for audit. Payment notes and URLs still follow the privacy review and O14. Not built yet. DDL: see docs/superpowers/notes/2026-10-08-pre-freeze-schema-review.md, S-13. |
 
 O23-O35 (added 8 Oct, from the pre-freeze schema review) are dated Tue 13 Oct, three days before the 16 Oct freeze. O17-O19, O21 and O44 (added 7 Oct; O44 was numbered O16 until 13 Oct, when upstream used O16 for part payments) remain undated until Shawn sets dates. O20 and O22 were closed on 9 Oct (see above).
 
