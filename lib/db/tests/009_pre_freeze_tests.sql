@@ -148,8 +148,9 @@ INSERT INTO person (id, full_name, email) VALUES
 SELECT pg_temp.check('the new table is system-written: no version column, 15 versioned tables as before',
   NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'enrolment_status_history' AND column_name = 'version')
   AND (SELECT count(*) = 15 FROM information_schema.columns WHERE column_name = 'version' AND table_schema = 'public'));
+-- rate_limit_hit (012) is plumbing, not a business table, so it is not counted.
 SELECT pg_temp.check('24 tables',
-  (SELECT count(*) = 24 FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'));
+  (SELECT count(*) = 24 FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' AND table_name <> 'rate_limit_hit'));
 
 -- S-04 trigger: every writer is covered, no application code involved
 SELECT pg_temp.check('inserting an enrolment wrote NULL -> status history',

@@ -35,7 +35,9 @@ async function dutySuperAdmin(): Promise<string | null> {
 export async function raiseDuplicateTask(
   newPersonId: string,
   candidate: DuplicatePair,
-  viewer: Viewer,
+  // Null for the public form (§8.2): no signed-in user, `created_by` and the
+  // audit actor are NULL (§4, system actor).
+  viewer: Pick<Viewer, "id"> | null,
 ): Promise<void> {
   const sql = db();
   const assignee = await dutySuperAdmin();
@@ -45,10 +47,10 @@ export async function raiseDuplicateTask(
     VALUES ('review_duplicate',
             ${`Possible duplicate of ${candidate.fullName}`},
             ${newPersonId}, ${candidate.id}, ${assignee},
-            now(), ${viewer.id})
+            now(), ${viewer?.id ?? null})
     RETURNING id`;
   await writeAudit({
-    userId: viewer.id,
+    userId: viewer?.id ?? null,
     action: "create",
     entity: "task",
     entityId: task.id,
