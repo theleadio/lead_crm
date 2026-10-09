@@ -1,5 +1,7 @@
 # S1 Shawn-side work — design
 
+> **Superseded in part, 9 Oct 2026.** The seat-reservation work in this document (`reserveSeat`, `computeClassStatus`, the expiry sweep) was dropped: `feat/classes` migrations 006 and 007 do seats, class status and `expire_reservations()` in the database. The event contract and the outbox drain stand.
+
 Date: 7 Oct 2026 · Owner: Shawn · Path: architectural (new subsystems: event bus, seat reservation)
 
 ## Purpose

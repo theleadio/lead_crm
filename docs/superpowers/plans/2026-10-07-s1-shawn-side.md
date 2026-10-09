@@ -1,5 +1,7 @@
 # S1 Shawn-side work Implementation Plan
 
+> **Superseded in part, 9 Oct 2026.** The seat-reservation work in this document (`reserveSeat`, `computeClassStatus`, the expiry sweep) was dropped: `feat/classes` migrations 006 and 007 do seats, class status and `expire_reservations()` in the database. The event contract and the outbox drain stand.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the event contract, the outbox drain and seat reservation, each proven on a local Postgres, and draft the matching spec delta.
