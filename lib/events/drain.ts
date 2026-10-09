@@ -30,7 +30,7 @@ export async function drainOutbox(
       const handler = handlers[r.type];
       try {
         if (handler)
-          await (sql as postgres.TransactionSql).savepoint(() =>
+          await (sql as unknown as postgres.TransactionSql).savepoint(() =>
             handler({
               id: r.id,
               type: r.type,

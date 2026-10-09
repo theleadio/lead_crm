@@ -1,6 +1,7 @@
 // Integration tests for the §11.1 outbox drain: SKIP LOCKED claim, retry cap,
 // savepoint per handler. Skipped when DATABASE_URL isn't set.
 import { after, test } from "node:test";
+import postgres from "postgres";
 import assert from "node:assert/strict";
 import { drainOutbox } from "../lib/events/drain.ts";
 import type { EventHandler } from "../lib/events/handlers.ts";
@@ -133,6 +134,8 @@ it("drain: batch limits claims", async () => {
   assert.equal((await row(ids[2])).processed_at, null);
 });
 
+// Rows are back-dated ~10 years so they are the oldest pending rows and fill
+// both batches exactly, whatever else is in the database.
 test(
   "drain: two concurrent drains never process the same row",
   { skip },
@@ -143,7 +146,7 @@ test(
         const [r] = await db()`
         INSERT INTO event_outbox (type, aggregate_type, aggregate_id, payload, created_at)
         VALUES ('ClassPublished', 'class', ${crypto.randomUUID()}, '{}',
-                now() - make_interval(secs => ${100 + 20 - i}))
+                now() - interval '10 years' - make_interval(secs => ${20 - i}))
         RETURNING id`;
         ids.push(r.id);
       }
@@ -162,6 +165,68 @@ test(
       assert.equal(seen.length, 20);
       assert.equal(new Set(seen).size, 20);
     } finally {
+      await db()`DELETE FROM event_outbox WHERE id = ANY(${ids}::uuid[])`;
+    }
+  },
+);
+
+// Deterministic SKIP LOCKED proof: a row locked by another connection must be
+// skipped (plain FOR UPDATE would block until the lock is released).
+test(
+  "drain: skips a row locked by another connection instead of waiting",
+  { skip },
+  async () => {
+    const ids: string[] = [];
+    const other = postgres(process.env.DATABASE_URL!, { max: 1 });
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let locked!: () => void;
+    const lockTaken = new Promise<void>((r) => (locked = r));
+    let holder: Promise<unknown> | undefined;
+    try {
+      for (let i = 0; i < 3; i++) {
+        const [r] = await db()`
+          INSERT INTO event_outbox (type, aggregate_type, aggregate_id, payload, created_at)
+          VALUES ('ClassPublished', 'class', ${crypto.randomUUID()}, '{}',
+                  now() - interval '10 years' - make_interval(secs => ${3 - i}))
+          RETURNING id`;
+        ids.push(r.id);
+      }
+      const [lockedId, ...rest] = ids;
+      holder = other.begin(async (tx) => {
+        await tx`SELECT id FROM event_outbox WHERE id = ${lockedId} FOR UPDATE`;
+        locked();
+        await held;
+      });
+      await lockTaken;
+
+      const seen: string[] = [];
+      const handlers = {
+        ClassPublished: async (e: { id: string }) => {
+          seen.push(e.id);
+        },
+      };
+      let timer: NodeJS.Timeout | undefined;
+      const r = await Promise.race([
+        drainOutbox({ batch: 3, handlers }),
+        new Promise<never>((_, rej) => {
+          timer = setTimeout(
+            () => rej(new Error("drain blocked on a locked row")),
+            3000,
+          );
+        }),
+      ]).finally(() => clearTimeout(timer));
+
+      assert.equal(r.claimed, 2);
+      assert.deepEqual(seen, rest);
+      assert.equal((await row(lockedId)).processed_at, null);
+      assert.equal((await row(lockedId)).attempts, 0);
+      for (const id of rest)
+        assert.notEqual((await row(id)).processed_at, null);
+    } finally {
+      release();
+      await holder?.catch(() => {});
+      await other.end();
       await db()`DELETE FROM event_outbox WHERE id = ANY(${ids}::uuid[])`;
     }
   },
