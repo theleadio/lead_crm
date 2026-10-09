@@ -17,6 +17,7 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/008_payment_proof_unique.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/009_pre_freeze_schema.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/010_outbox_backoff.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/011_task_source_key.sql
     psql -d <db> -f lib/db/tests/schema_constraints.sql
     psql -d <db> -f lib/db/tests/002_merge_erase_tests.sql
     psql -d <db> -f lib/db/tests/003_company_from_form_tests.sql
@@ -27,6 +28,7 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -f lib/db/tests/008_payment_proof_unique_tests.sql
     psql -d <db> -f lib/db/tests/009_pre_freeze_tests.sql
     psql -d <db> -f lib/db/tests/010_outbox_backoff_tests.sql
+    psql -d <db> -f lib/db/tests/011_task_source_key_tests.sql
 
 Current result on PostgreSQL 16 with 001–008 applied: 38 of 38, 42 of 42, 26 of 26, 8 of 8, 9 of 9, 26 of 26, 14 of 14 and 6 of 6. 001–007 were also run with and without Supabase's `anon`/`authenticated` roles present; 008 was run without them (it creates no functions, so privileges don't apply).
 
@@ -155,6 +157,15 @@ Backfills:
 - `seq` for existing rows follows `(created_at, id)`. Adding an identity column to a populated table fills it in unspecified order, so the migration adds a plain `bigint`, numbers it with `row_number()`, makes it `NOT NULL`, attaches the identity and starts the sequence after the highest number. It is skipped once the column exists, so a re-run never renumbers.
 - Pending rows with `attempts >= 5` get `dead_at = now()`: they were dead letters under the old rule. Nothing is deleted; revive them with `retryDeadEvents()` once the cause is fixed. The UPDATE bumps `updated_at`.
 - `next_attempt_at` on existing rows is the migration time, so every pending row is due at once; `seq` keeps their order.
+
+## Migration 011 — task source key (9 Oct, renumbered 13 Oct)
+
+For the outbox handlers (`lib/events/handlers.ts`, spec §11.1). One transaction; safe to re-run; no backfill.
+
+| Change | What it means |
+| --- | --- |
+| `task.source_key` | NULL for every task a person creates. A handler writes `<event id>:<what>[:<enrolment id>]` and inserts with `ON CONFLICT (source_key) WHERE source_key IS NOT NULL DO NOTHING`, so running an event twice opens one task, not two. |
+| `task_source_key_uq` | Unique where not null, and not limited to open tasks: a task that was done is not recreated by a repeat. |
 
 ## Where this is stricter or more specific than the spec
 

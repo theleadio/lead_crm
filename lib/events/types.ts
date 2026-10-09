@@ -58,7 +58,7 @@ export type EventPayloads = {
   ClassChanged: {
     classId: string;
     changedFields: Record<string, unknown>;
-    noticeId: string;
+    noticeId: string | null; // null when Ops saved quietly (v1.10)
   };
   ClassNoticeApproved: { noticeId: string; classId: string };
   ClassCancelled: { classId: string; reason: string; enrolmentIds: string[] };
