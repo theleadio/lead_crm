@@ -70,19 +70,20 @@ SELECT pg_temp.expect_fail('backfill stops with no_seats instead of overselling'
   $q$SELECT backfill_reservation_holds()$q$, 'no_seats: class K2%');
 SELECT pg_temp.check('K2 still has exactly 1 seat taken',
   class_seats_taken('00000000-0000-0000-0000-0000000c1a56') = 1);
-DELETE FROM enrolment WHERE person_id = '00000000-0000-0000-0000-0000000000a4';
+-- Cancel, not DELETE: migration 009 gives every enrolment status history, which is append-only.
+UPDATE enrolment SET status = 'cancelled' WHERE person_id = '00000000-0000-0000-0000-0000000000a4';
 
 -- The CHECK
 ALTER TABLE enrolment ADD CONSTRAINT enrolment_reserved_has_hold
   CHECK (status <> 'reserved' OR seat_reserved_until IS NOT NULL);
-SELECT pg_temp.check('CHECK re-added without error once no-hold rows are gone', true);
+SELECT pg_temp.check('CHECK re-added without error once no reserved row lacks a hold', true);
 INSERT INTO enrolment (person_id, class_id, status, seat_reserved_until) VALUES
   ('00000000-0000-0000-0000-0000000000a4', '00000000-0000-0000-0000-0000000c1a55', 'reserved', NULL);
 SELECT pg_temp.check('a writer that sends no hold still passes: the trigger fills it',
-  (SELECT seat_reserved_until IS NOT NULL FROM enrolment WHERE person_id = '00000000-0000-0000-0000-0000000000a4'));
+  (SELECT seat_reserved_until IS NOT NULL FROM enrolment WHERE person_id = '00000000-0000-0000-0000-0000000000a4' AND status = 'reserved'));
 ALTER TABLE enrolment DISABLE TRIGGER enrolment_fill_reservation;
 SELECT pg_temp.expect_fail('with the trigger off, a reserved row with no hold is refused by the CHECK',
-  $q$UPDATE enrolment SET seat_reserved_until = NULL WHERE person_id = '00000000-0000-0000-0000-0000000000a4'$q$,
+  $q$UPDATE enrolment SET seat_reserved_until = NULL WHERE person_id = '00000000-0000-0000-0000-0000000000a4' AND status = 'reserved'$q$,
   '%enrolment_reserved_has_hold%');
 ALTER TABLE enrolment ENABLE TRIGGER enrolment_fill_reservation;
 
