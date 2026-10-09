@@ -1,4 +1,4 @@
-# LEAD CRM — Software Specification v1.11
+# LEAD CRM — Software Specification v1.12
 
 _Last updated 9 Oct 2026 · Owner: Shawn_
 
@@ -6,6 +6,7 @@ _Last updated 9 Oct 2026 · Owner: Shawn_
 
 | Version | Date | Changes |
 | --- | --- | --- |
+| v1.12 | 9 Oct 2026 | Decisions O2, O11 and O13 recorded (§15.3, decision calendar): message bodies are not stored; anonymisation ships as built with a written erasure checklist for outside systems (§12.10); old `audit_log` values stay for go-live and `audit_log` is readable by super_admin only (§6). Privacy review still to confirm all three. |
 | v1.11 | 9 Oct 2026 | From Zixuan's 9.12 questions (manual payment): proof files and the private bucket, one proof per payment (migration 008, §5), part payments, late payments on confirmed enrolments, one invoice for several students, no correction route in the app (§9.12, §12.7); new open item O16 for Finance (part payments, HRDC timing). Nothing else changes. |
 | v1.10 | 6 Oct 2026 | From Zixuan's class screens (commit 7ee0c7a): EnrolmentCancelled per freed seat on a class cancel, reason `class_cancelled`; ClassChanged also on "Save quietly" with `noticeId: null` (§11.1, §12.8). Cancelling a class: refused once it has started, moves only students not yet taught, expires their Stripe links (§9.10, §12.8); `onboarded → cancelled` added (§12.4); register rows (§12.11). |
 | v1.9 | 6 Oct 2026 | From Zixuan's review of 006: migration 007 (every reservation has a hold; seat-guard fix) (§5, §12.1); import rule for reservations (§12.1); class has two separate controls — status and website — instead of one publish button (§9.10, §12.1); register rows (§12.11). |
@@ -307,7 +308,7 @@ Indexes: (start_date, is_public, status), course_id.
 
 **`app_user`** — email (unique), full_name, role_code, is_active, employment_type (full_time, part_time), last_login_at.
 
-**`message_log`** — person_id, enquiry_id, channel (whatsapp, email), direction (in, out), external_message_id (unique where not null), template_name, status, sent_at, body (nullable — PDPA decision open, Section 15).
+**`message_log`** — person_id, enquiry_id, channel (whatsapp, email), direction (in, out), external_message_id (unique where not null), template_name, status, sent_at, body (nullable and left empty — decided 9 Oct, v1.12: metadata only, O2. WATI keeps the conversation text; the enquiry keeps a short `summary`).
 
 **`event_outbox`** — type, aggregate_type, aggregate_id, payload jsonb, created_at, processed_at, attempts, last_error. Index on processed_at where null.
 
@@ -428,7 +429,7 @@ F = full, E = create/edit, R = read, A = assigned records only, — = no access.
 | export CSV        | F           | request    | aggregate only | —       | —       | class lists | —         |
 | merge person      | F           | —          | —              | propose | propose | propose     | —         |
 | app_user/settings | F           | —          | —              | —       | —       | —           | —         |
-| audit_log         | R           | R          | —              | —       | —       | —           | —         |
+| audit_log         | R           | —          | —              | —       | —       | —           | —         |
 
 ¹ Marketing sees person records with phone/email masked (`012-•••• 6789`, `s••••@gmail.com`), no export.
 ² Sales sees payments only on deals they own.
@@ -983,6 +984,18 @@ All three are database functions in migration 002 (`lib/db/migrations/002_merge_
 **Erasure (PDPA)** — `erase_person(person, actor, reason)`
 Anonymise, don't delete. The name becomes "Erased person". Email, phones, job title, notes, WATI/Stripe ids, message bodies, enquiry summaries, task notes and tags are cleared. Records previously merged into the person are anonymised too. Enrolments, payments, touchpoints and consent stay, so revenue, attribution and the opt-out record still add up. The email and phone are then free for a new signup. See O11–O14.
 
+**Erasure checklist (v1.12, O11).** `erase_person()` only covers our database. The person's data also exists elsewhere, so an erasure request is not finished until a super_admin has worked through this list and written the result in the erasure reason or a linked note:
+
+| Where | What to do |
+| --- | --- |
+| Stripe | Ask Stripe to delete or redact the customer record where allowed; card and payment records Stripe must keep stay there |
+| WATI | Delete the contact and conversation in WATI |
+| Email provider | Remove the address from lists and suppress it; delete stored messages where practical |
+| Payment proof bucket | Proof files stay with the payment row (O12) and can show a name and account number. The privacy review decides whether to keep or redact them; until then they stay |
+| `audit_log` | Earlier rows still hold the person's old values (O13). Not redacted at go-live |
+
+Do not tell the person their data is "fully erased" until the privacy review has confirmed the wording for what is kept and why.
+
 **Soft delete** — `soft_delete_person(person, actor, reason)`
 For junk and test records only. Refused for anyone with an enrolment or payment; use erasure instead. The audit row stores the reason, not a copy of the record.
 
@@ -1144,7 +1157,7 @@ Everything else: manual UAT with Wei Ping, Ops and Sales during Sprint 5 (30 Nov
 |---|---|---|---|
 | O8 website deploy access | **Fri 25 Sep** | Management | Blocker, not a fallback — escalate the same day; Sprint 3 cannot start without it |
 | O1 auth (SSO vs email+MFA) | Fri 2 Oct | Shawn | Email + password with MFA (see below) |
-| O2 store message bodies | Fri 9 Oct | Shawn + privacy review | Metadata only; no bodies stored |
+| O2 store message bodies | Fri 9 Oct | Shawn + privacy review | **Decided 9 Oct (v1.12): metadata only; no bodies stored.** Revisit with AI classification (Phase 5) |
 | O3 reservation expiry | Fri 16 Oct | Operations | 48 hours — for reservations staff make. Stripe-path holds are 24 hours (Stripe's maximum), decided 5 Oct |
 | O9 corporate booker model | Fri 16 Oct | Operations | Build as specified in 12.2 |
 | O4 first-response SLA | Fri 30 Oct | Wei Ping | 1 business hour, configurable |
@@ -1153,8 +1166,8 @@ Everything else: manual UAT with Wei Ping, Ops and Sales during Sprint 5 (30 Nov
 | O7 HRDC lead time and claim window | Fri 13 Nov | Finance | Ship as editable settings with no default; Ops fills them in |
 | O10 certificate numbering | January | Operations | Out of MVP |
 | O15 merge `fields` map | Fri 2 Oct | Zixuan + Shawn | The contact fields shown on 9.3: full name, preferred name, email, phone, WhatsApp, job title, language, owner |
-| O11 anonymisation = erasure | Fri 9 Oct | Shawn + privacy review | Ship anonymisation as built |
-| O13 audit_log history | Fri 9 Oct | Shawn + privacy review | Leave audit rows as they are; revisit in January |
+| O11 anonymisation = erasure | Fri 9 Oct | Shawn + privacy review | **Decided 9 Oct (v1.12): ship as built, plus the erasure checklist in 12.10.** Privacy review to confirm the wording and what is kept |
+| O13 audit_log history | Fri 9 Oct | Shawn + privacy review | **Decided 9 Oct (v1.12): leave audit rows as they are for go-live; `audit_log` readable by super_admin only; controlled redaction considered in January** |
 | O14 personal data in URLs | Fri 16 Oct | Shawn | Keep only utm_*, gclid, fbclid and the path; drop other query parameters at capture |
 | O12 payment record retention | Fri 13 Nov | Finance / accountant | Keep payment rows indefinitely; erasure never touches them |
 | O16 part payments and HRDC timing | Fri 16 Oct | Finance | Build as written in 9.12: confirm only when payments reach the price; HRDC recorded when the money arrives |
