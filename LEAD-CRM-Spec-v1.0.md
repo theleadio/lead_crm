@@ -1,4 +1,4 @@
-# LEAD CRM — Software Specification v1.14
+# LEAD CRM — Software Specification v1.15
 
 _Last updated 13 Oct 2026 · Owner: Shawn_
 
@@ -6,6 +6,7 @@ _Last updated 13 Oct 2026 · Owner: Shawn_
 
 | Version | Date | Changes |
 | --- | --- | --- |
+| v1.15 | 13 Oct 2026 | Public intake API built: `GET /api/public/schedule` (§8.1) and `POST /api/public/leads` (§8.2) as specified, in `lib/public/`; migration 012 (rate-limit counter); what was decided where the spec was silent (§8.1, §8.2 "Built" notes); env variables for the public API (§2); `LeadCaptured` and `ConsentChanged` now raised by it (§11.1); a soft match on the public form raises the same §7.1 pair task as `POST /api/people` (§8.2); open items O39-O43, O38 reworded. `/register` (§8.3) is not built (O43). |
 | v1.14 | 13 Oct 2026 | Decisions on six rebase questions: enrolments cannot be deleted, only cancelled; enrolment history `changed_by` stays NULL (the actor is in `audit_log`); `class.cancelled_reason` stays unenforced; Zixuan's eight hand-written outbox inserts stay (§12.11 note). O35 gap list gains `enrolment_status_history.reason` (§15.3). First outbox handlers for `EnrolmentCancelled`, `ClassCancelled` and `ClassChanged` (§3, §11.1); migration 011 `task.source_key`; open items O36-O38. |
 | v1.13 | 13 Oct 2026 | S1 Shawn-side, rebased onto v1.12: event contract and outbox drain with backoff and dead letters (§2, §3, §7); pre-freeze schema migrations 009 and 010 (§12.11); nameless WhatsApp person convention (§11.2); open items O17-O19, O21, O23-O35 and O44 (§15.3; the checkout-link question was O16 until upstream took that number for part payments). O20 and O22 are closed: seats and expiry are the database's job since migrations 006 and 007. |
 | v1.12 | 9 Oct 2026 | Decisions O2, O11 and O13 recorded (§15.3, decision calendar): message bodies are not stored; anonymisation ships as built with a written erasure checklist for outside systems (§12.10); old `audit_log` values stay for go-live and `audit_log` is readable by super_admin only (§6). Privacy review still to confirm all three. |
@@ -106,7 +107,11 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY   - older projects call it the anon key
 STRIPE_SECRET_KEY
 STRIPE_WEBHOOK_SECRET
 WATI_API_BASE / WATI_TOKEN
-PUBLIC_API_KEY        - website -> CRM form intake
+PUBLIC_API_KEY        - website -> CRM form intake and schedule (X-Api-Key). Several keys, comma separated, allow a rotation; each at least 16 characters; unset = the public API is closed
+PUBLIC_ALLOWED_ORIGINS - LEAD website origins, comma separated (https://thelead.io). No wildcard; unset = no browser origin is allowed
+PUBLIC_WEBSITE_URL    - base of the registerUrl in the schedule feed (https://thelead.io)
+TURNSTILE_SECRET_KEY  - CAPTCHA check (O39). Unset = the form endpoint refuses every submission
+PUBLIC_CAPTCHA_DISABLED - "true" switches the CAPTCHA off outside production, for local development only
 S3_BUCKET / S3_REGION / S3_ACCESS_KEY / S3_SECRET_KEY
 ESP_API_KEY
 SENTRY_DSN
@@ -408,6 +413,12 @@ Only one `pending` notice per class at a time — a second edit while one is pen
 | --- | --- | --- |
 | task | add `source_key text`; unique index `task_source_key_uq` where not null | A handler that runs twice for one event must not open a second task (§11.1); stays unique after the task is done |
 
+**Schema changes 13 Oct, migration 012 (v1.15)**
+
+| Table | Change | Why |
+| --- | --- | --- |
+| new `rate_limit_hit` (unlogged) | `(bucket, window_start)` primary key, `hits`; function `rate_limit_take(bucket, window_seconds)` counts one hit and returns the total; rows older than an hour are swept by the next call; EXECUTE revoked from PUBLIC/`anon`/`authenticated` | 10 requests per IP per minute on the public API (§8.2) needs a counter that works on serverless. The bucket is a keyed hash of the IP, never the address. Not a business table; not counted in the 24 |
+
 **Onboarding templates have no table, deliberately.** WhatsApp templates must be Meta-approved and live in WATI; email templates live in the ESP. Settings links out to both.
 
 **Deferred to January:** `campaign`, `ad`, `ad_metric_daily`, `content_item`, `attendance`, `class_session`. Do not build screens for these.
@@ -601,6 +612,14 @@ Rules:
 - Cached 5 minutes at edge; class edit purges cache (§12).
 - CORS allows LEAD website origins only.
 
+**Built (v1.15)** — `lib/public/schedule.ts`, `lib/public/handlers.ts`, route `app/api/public/schedule/route.ts`. Decisions where the spec was silent:
+
+- **Key.** `X-Api-Key` is required on this route too (§8 intro says the API is key-protected). The feed is public by design, so a copy cached at the edge may be served without the key; nothing in it is private (O42).
+- **Cache.** `Cache-Control: public, s-maxage=300`. Errors are `no-store`. There is no purge: a class edit shows within 5 minutes, and the `ClassChanged` handler stays a no-op (O38).
+- **Filters.** `language` en/zh; `track` one of the six course tracks; `city` matched case-insensitively and exactly; `limit` 1-100, default 50 (§14: never more than 100 rows). A bad value is 400 `validation_failed`, not an empty list.
+- **Today** is the date in Asia/Kuala_Lumpur; a class starting today is listed. Order: `start_date`, `start_time`, `code`.
+- **Fields.** `courseName` is the Chinese name for a `zh` class when the course has one, else English. `priceMyr` is the class price, else the course list price, as a string with two decimals. An online class has `venueName` and `city` null. `registerUrl` is `PUBLIC_WEBSITE_URL` + `/register/<code>`, or null when that is unset. The response is built from a fixed list of columns, so `online_url`, trainers, notes, capacity and seat counts cannot reach it; the tests assert on the serialised body.
+
 ### 8.2 POST /api/public/leads
 
 Accepts a form submission from any landing page or the website contact form.
@@ -662,6 +681,20 @@ Never trust the client — attribution is informational; server records landingU
 
 **Added 24 Sep:** `hrdcIntended` (optional boolean, default false). When true, the new deal gets `funding_type = 'hrdc'`.
 
+**Built (v1.15)** — `lib/public/leads.ts`, `lib/public/guard.ts`, `lib/validation/public.ts`, route `app/api/public/leads/route.ts`, migration 012. Order in the code: origin, key, 10/IP/min, body size and validation, replay lookup, CAPTCHA, 3/phone/hour, then the transaction (steps 2-7). Decisions where the spec was silent:
+
+- **Key and origin.** `X-Api-Key` compared in constant time (both sides hashed first); several keys allowed for rotation; unset or short = 503, never open. A request with an `Origin` header not on `PUBLIC_ALLOWED_ORIGINS` is 403; no `Origin` (a server call) is allowed with a valid key. Preflight is answered for listed origins only.
+- **CAPTCHA.** An injectable verifier. Default: Cloudflare Turnstile when `TURNSTILE_SECRET_KEY` is set (O39), otherwise every submission is refused. `PUBLIC_CAPTCHA_DISABLED=true` switches it off outside production only. A failure of the check itself counts as failed.
+- **Rate limits.** 10/IP/min in `rate_limit_hit` (migration 012, fixed one-minute window, so a burst can reach twice the limit across a window edge); 3/phone/hour counted from the person's `web_form` touchpoints in the last hour, no table. Both 429 with `Retry-After`. A replayed call counts for neither and needs no new CAPTCHA token. The IP comes from `x-real-ip`, then `x-forwarded-for`, which is only sound behind a proxy that overwrites both (O40).
+- **Idempotency.** The key is stored as `touchpoint.external_ref` (channel `web_form`, O31). A replay returns 201 with the same `personId` and `dealId` and writes nothing. Two calls at once: the second rolls back whole and answers with the first's result. The key is optional; without it each call is a new submission. A reused key with a different body returns the first result (known gap, MVP).
+- **Person.** Found by the CRM's own hard-match rule (§12.2); a soft match creates the person flagged for review and, as `POST /api/people` does (commit 1758c22), raises the §7.1 `review_duplicate` task in the same transaction (`person_id` the new person, `related_person_id` the match, `created_by` NULL); an unnormalisable phone is stored and flagged (§4). An existing person's fields are never changed, so a new email or phone given by a known person is not added (O41). `created_by` is null. Each created person and deal gets an `audit_log` row with no personal data in it.
+- **Touchpoint.** All attribution fields; `landing_url` is the body's value only if its origin is on the allow-list, else the `Referer` header; both, and `referrer`, are cut down to the path plus `utm_*`, `gclid`, `fbclid` (the O14 fallback). Lengths are capped by the schema. If the person has no touchpoint yet and `firstTouch` names a different source or campaign, `firstTouch` becomes the first touch (its own touchpoint, dated by the cookie, kept only if the date is not in the future or over 400 days old) and this submission is a later one; otherwise this submission is the first touch.
+- **Message.** There is no column for `message`; it is appended to `person.notes` (O41).
+- **Consent.** A ticked box writes `marketing_email` and `marketing_whatsapp` grants (source `web_form`) unless already granted, and raises `ConsentChanged` for each. An unticked box writes nothing: it is the form's default, not a withdrawal (absence of a row already means no consent, §14).
+- **Deal.** Individual pipeline, stage `new`, no owner, `funding_type` `hrdc` or empty, `source_touchpoint_id` set (O30). The class comes from `classCode`, else the course from `courseInterest` (codes matched case-insensitively; unknown codes are ignored, the lead is still captured). "Open deal for the same course" = this person has a deal not won/lost and not deleted with the same `course_id` (both empty counts as the same); that deal is reused, nothing is created, and `hrdcIntended` does not change it.
+- **Outbox.** `LeadCaptured` is raised for every accepted submission, new deal or not, in the transaction. The payload is the §11.1 one, so a worker can tell the deal was an existing one only by its age.
+- **Errors.** 400 `validation_failed` (with `fields`), 400 `invalid_json`, 401 `unauthorized`, 403 `origin_not_allowed`, 403 `captcha_failed`, 413 `payload_too_large` (32 KB), 429 `rate_limited`, 503 `not_configured`, 500 `server_error`. An unexpected error logs only the error name and code, never the body.
+
 ### 8.3 POST /api/public/register (added 24 Sep)
 
 `/register/<classCode>` (§10.4) needs a Stripe link without a session, so it calls this instead of the internal checkout route. Body: everything in 8.2, plus required `classCode` and `hrdcIntended`.
@@ -672,6 +705,8 @@ Server behaviour, in order:
 2. Load the class by classCode. 409 `class_unavailable` if not public, status `draft`/`cancelled`/`completed`, or already started. Seats are **not** judged here — the stored status can lag up to 15 minutes after a reservation expires; step 4 decides.
 3. If `hrdcIntended`: no checkout; return `201 { next: 'hrdc_contact' }`.
 4. Otherwise create a `reserved` enrolment with `seat_reserved_until` = now + `stripe_reservation_hours` (seat check in the transaction; the database raises `no_seats` → 409 `no_seats` if full), create the Stripe Checkout session (Shawn's code) with `expires_at` set to the same time, store it on the deal, return `201 { next: 'checkout', checkoutUrl }`.
+
+**Not built (v1.15).** This route needs a Stripe Checkout session and there are no Stripe keys yet (O43). Steps 1-2 are the same code as `/leads`.
 
 **Price always comes from the class record on the server** — nothing in the request body can set an amount. The Stripe session carries `deal_id`, `enrolment_id`, `class_id` in metadata so the webhook can match it.
 
@@ -805,7 +840,7 @@ Written to `event_outbox` inside the same transaction as the business write. Mis
 | EnrolmentCancelled   | Status → cancelled — by the app (one per enrolment, including each one a class cancel frees, reason `class_cancelled`, v1.10), or by `expire_reservations()` with reason `reservation_expired` (written by the database) | enrolmentId, reason | Notifies Ops, except for `class_cancelled` (ClassCancelled covers it) and `reservation_expired`. Never messages the student. Seats are counted, so there is nothing to release. **Built (v1.14):** one Ops task per cancellation; nothing is sent |
 | EnrolmentTransferred | Moved between classes                | enrolmentId, fromClassId, toClassId       | Sends transfer confirmation              |
 | PaymentRecorded      | Manual payment saved                 | paymentId, enrolmentId, method, amountMyr | Reconciliation, receipt                  |
-| ClassChanged         | Date/time/venue edited on a class with confirmed/onboarded/attended enrolments — both "Save and prepare notice" and "Save quietly" (v1.10) | classId, changedFields, noticeId — `null` when Ops saved quietly | Clears the schedule cache. `noticeId` null = recorded, tell nobody. Students are told only through ClassNoticeApproved. **Built (v1.14):** registered, checks the payload, does nothing else, because no schedule cache exists yet (O38) |
+| ClassChanged         | Date/time/venue edited on a class with confirmed/onboarded/attended enrolments — both "Save and prepare notice" and "Save quietly" (v1.10) | classId, changedFields, noticeId — `null` when Ops saved quietly | Clears the schedule cache. `noticeId` null = recorded, tell nobody. Students are told only through ClassNoticeApproved. **Built (v1.14):** registered, checks the payload, does nothing else. The feed (§8.1, v1.15) is read live and cached for 5 minutes with a header, so there is nothing to purge (O38) |
 | ClassNoticeApproved  | Ops approves change notice           | noticeId, classId                         | Sends to all confirmed students          |
 | ClassCancelled       | Class cancelled                      | classId, reason, enrolmentIds             | Notifies the students in `enrolmentIds` once, flags refunds, expires any open Stripe Checkout link of a cancelled reservation (v1.10). **Built (v1.14):** per enrolment one "tell the student" Ops task, plus a "refund needed" Ops task where `payment_net` still holds money; the link of an unpaid reservation goes to `expireCheckoutSession()`, a no-op until O36 |
 | ClassPublished       | is_public or status changes — **written by the database (migration 006), not the app** | classId, fromStatus, toStatus, fromPublic, toPublic | Purges schedule cache |
@@ -1037,6 +1072,8 @@ For junk and test records only. Refused for anyone with an enrolment or payment;
 | `is_public` | — | Operations: Show/Hide on website; Back to draft clears it (§12.1) | By hand | — |
 | Stripe Checkout link of a reservation | Stripe | Expires by itself at the hold time; Shawn's worker expires it early on ClassCancelled (§12.8) | Class cancel | Never until O36 is built; until then the link lives to its hold time |
 | Ops tasks from events (`source_key` set) | `event_outbox` | `drainOutbox()` handlers (§11.1) | Next drain run after the event | Until the next drain run |
+| Public form: person, touchpoint, consent, deal, `LeadCaptured` | Form body | `captureLead()` in `lib/public/leads.ts`, one transaction (§8.2) | Each accepted submission | Never |
+| IP rate-limit counters (`rate_limit_hit`) | Request headers | `rate_limit_take()` (012), swept by the next call | Each request that passes the key | Rows live up to an hour |
 | Date/venue shown in reminders | `class` row | Shawn's workers, read at send time (§12.8) | Each send | Never |
 
 **Register notes (v1.14).** (1) Enrolments are never deleted: `enrolment_status_history` references them and is append-only, so an import or admin tool that needs an enrolment gone must cancel it. (2) `enrolment_status_history.changed_by` is always NULL: the database does not know the actor, and the `audit_log` row of the status move has it. (3) `class.cancelled_reason` is written by `cancelClass()` but not enforced by a CHECK, so a class cancelled by direct SQL has none. (4) `lib/classes/service.ts`, `lib/enrolments/service.ts` and `lib/classes/notices.ts` insert into `event_outbox` by hand in eight places; this is equivalent to `raiseEvent` and stays.
@@ -1099,7 +1136,7 @@ Toasts last 5 seconds, dismissible, never carry the only copy of something impor
 - HTTPS only; HSTS on.
 - MFA available for every account, required for super_admin.
 - Passwords hashed by auth provider — never rolled by hand.
-- Rate limits: 5 failed sign-ins/account/15min; public endpoints per §8.
+- Rate limits: 5 failed sign-ins/account/15min; public endpoints per §8 (built v1.15: 10/IP/min in the database, 3/phone/hour from touchpoints; O40).
 - Uploads: images + PDF only, 10MB max, content-type verified server-side (not by extension), private bucket, short-lived signed URLs.
 - Zod validation on every endpoint; never trust a client-sent id — always check caller may touch that record.
 - Parameterised queries only. No string-built SQL anywhere.
@@ -1190,7 +1227,12 @@ Everything else: manual UAT with Wei Ping, Ops and Sales during Sprint 5 (30 Nov
 | O35 | Erasure leaves personal data behind inside our database: `integration_event.payload` (raw webhook bodies; O2 says message text is not stored, so the payload must not keep it past processing either), `task.title`, unmatched-payment task notes, `enrolment_status_history.reason` (copies the free-text `cancelled_reason`; `erase_person` does not clear it), URLs (O14). The `audit_log` part is decided (O13, v1.12: rows stay for go-live, super_admin only) and sits on the §12.10 erasure checklist with the outside systems. | erase_person, retention, privacy review | Tue 13 Oct | Shawn |
 | O36 | Expiring an open Stripe Checkout link on ClassCancelled needs a Stripe call; the handler calls a port `expireCheckoutSession(sessionId)` that is a no-op today. | Stripe worker | Stripe test keys | Shawn |
 | O37 | Tasks the handlers create have no assignee and type `other`; Home lists only tasks assigned to the viewer, so Ops will not see them there. Who gets them, and do refund and "tell the student" need their own task types (a schema change)? | Tasks screen, Home | Fri 16 Oct | Shawn + Zixuan + Operations |
-| O38 | `ClassChanged` is meant to clear a schedule cache; no cache and no public schedule route exist yet, so the handler does nothing. Decide the cache (or none, if the feed is read live) when §8.1 is built. | GET /api/public/schedule | When §8.1 is built | Shawn |
+| O38 | `ClassChanged` is meant to clear a schedule cache. §8.1 is built (v1.15) and caches only through the `Cache-Control` header (5 minutes at the edge), so there is no cache of ours to clear and the handler stays a no-op. If a class edit must show at once, the host needs a purge call (host-specific; not decided). | GET /api/public/schedule | When the host is chosen | Shawn |
+| O39 | Which CAPTCHA provider? The spec says "CAPTCHA" (§8.2, §10.3) and never names one. | POST /api/public/leads, website forms | Fri 30 Oct | Shawn + Zixuan |
+| O40 | Rate limiting at the app (migration 012) or at the edge? The app counter works anywhere; an edge limiter (Vercel firewall, Cloudflare, a load balancer) is cheaper per request and stops floods before they reach the database. The client IP is read from `x-real-ip` / `x-forwarded-for`, which is only right behind a proxy that overwrites them. | POST /api/public/leads | When the host is chosen | Shawn |
+| O41 | What a public form does not save. `message` has no column and goes into `person.notes` (which `erase_person` clears, §12.10, and which is not the WATI message text that O2 says we do not store); a new email or phone from a person we already know is not added to them; `jobTitle` and `preferredLanguage` are used only when the person is new. A `message` column, or a row for the visitor's question, is a schema change. | Sales follow-up, §5 | Fri 16 Oct (schema freeze) | Shawn + Zixuan |
+| O42 | Public API settings and the cached schedule. Someone has to set `PUBLIC_API_KEY`, `PUBLIC_ALLOWED_ORIGINS`, `PUBLIC_WEBSITE_URL`, `TURNSTILE_SECRET_KEY` on the host and give the website its key. A schedule response cached at the edge may be served without the key; the data is public by design. | Website (§10), O8 | Mon 2 Nov | Shawn + Zixuan |
+| O43 | `POST /api/public/register` (§8.3) is not built: it needs a Stripe Checkout session and there are no Stripe test keys. | §8.3, §10.4 | Stripe test keys | Shawn |
 | O44 | Does creating a checkout link move the deal to `checkout_sent`? Spec is silent. | Checkout link | TBD by Shawn | Shawn |
 
 **Decision calendar (added 23 Sep).** Every open item now has a date. If an answer misses its date, the fallback in the last column is what gets built — nobody waits.
@@ -1228,9 +1270,14 @@ Everything else: manual UAT with Wei Ping, Ops and Sales during Sprint 5 (30 Nov
 | O35 Erasure gaps | Tue 13 Oct | Shawn | Extend `erase_person` to clear `task.title`, match_payment task notes and `enrolment_status_history.reason` (that table is append-only, so the clearing function needs a controlled exception), and add a retention job that blanks `integration_event.payload`. `audit_log` is settled by O13 (v1.12): old values stay for go-live, and the §12.10 checklist already lists them with Stripe, WATI, the email provider and the proof bucket, so nothing is built for audit. Payment notes and URLs still follow the privacy review and O14. Not built yet. DDL: see docs/superpowers/notes/2026-10-08-pre-freeze-schema-review.md, S-13. |
 | O36 Expire Stripe link on class cancel | Stripe test keys | Shawn | Keep the no-op port; implement it with the Stripe webhook work. The session id is `deal.checkout_session_id` (no new column). The real call must treat an already expired or completed session as success. |
 | O37 Where handler tasks land | Fri 16 Oct | Shawn + Zixuan | Leave them unassigned, type `other`, title says what to do; the Tasks screen shows unassigned tasks to Operations and super_admin. A new task type needs a schema change before the freeze. |
-| O38 Schedule cache | When §8.1 is built | Shawn | Registered no-op. If the feed is read live there is nothing to clear and the row can go. |
+| O38 Schedule cache | When the host is chosen | Shawn | No purge: the feed is cached 5 minutes by header and the handler stays a no-op. |
+| O39 CAPTCHA provider | Fri 30 Oct | Shawn + Zixuan | Cloudflare Turnstile (invisible mode available, free, no ad tracking). Built behind a verifier; without a secret the endpoint refuses everything. |
+| O40 Rate limit layer | When the host is chosen | Shawn | Keep the app counter (012) and the per-phone count; add an edge limiter as a second line when the host has one. Drop `rate_limit_hit` only if the edge limiter is there and tested. |
+| O41 What a form does not save | Fri 16 Oct | Shawn + Zixuan | `message` appended to `person.notes`; known people are not updated from a form; staff see the touchpoint and notes on the person. |
+| O42 Public API settings | Mon 2 Nov | Shawn + Zixuan | The API stays closed (503) and the schedule feed shows the last cached copy on the website until the four variables are set. |
+| O43 /register | Stripe test keys | Shawn | Not built. The website's register page uses the lead form and the checkout link sent from the deal (§7.1) until it is. |
 
-O23-O35 (added 8 Oct, from the pre-freeze schema review) are dated Tue 13 Oct, three days before the 16 Oct freeze. O36-O38 (added 9 Oct, with the first handlers) are dated in the calendar. O17-O19, O21 and O44 (added 7 Oct; O44 was numbered O16 until 13 Oct, when upstream used O16 for part payments) remain undated until Shawn sets dates. O20 and O22 were closed on 9 Oct (see above).
+O23-O35 (added 8 Oct, from the pre-freeze schema review) are dated Tue 13 Oct, three days before the 16 Oct freeze. O36-O38 (added 9 Oct, with the first handlers) and O39-O43 (added 9 Oct, with the public API) are dated in the calendar. O17-O19, O21 and O44 (added 7 Oct; O44 was numbered O16 until 13 Oct, when upstream used O16 for part payments) remain undated until Shawn sets dates. O20 and O22 were closed on 9 Oct (see above).
 
 The two that matter this week are **O8** and **O1**. O8 is the only item that can stop a whole sprint — Zixuan can't build Section 10 against a website she can't deploy to.
 

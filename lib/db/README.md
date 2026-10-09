@@ -18,6 +18,7 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/009_pre_freeze_schema.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/010_outbox_backoff.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/011_task_source_key.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/012_rate_limit.sql
     psql -d <db> -f lib/db/tests/schema_constraints.sql
     psql -d <db> -f lib/db/tests/002_merge_erase_tests.sql
     psql -d <db> -f lib/db/tests/003_company_from_form_tests.sql
@@ -29,10 +30,11 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -f lib/db/tests/009_pre_freeze_tests.sql
     psql -d <db> -f lib/db/tests/010_outbox_backoff_tests.sql
     psql -d <db> -f lib/db/tests/011_task_source_key_tests.sql
+    psql -d <db> -f lib/db/tests/012_rate_limit_tests.sql
 
 Current result on PostgreSQL 16 with 001–008 applied: 38 of 38, 42 of 42, 26 of 26, 8 of 8, 9 of 9, 26 of 26, 14 of 14 and 6 of 6. 001–007 were also run with and without Supabase's `anon`/`authenticated` roles present; 008 was run without them (it creates no functions, so privileges don't apply).
 
-With 001–009 applied on PostgreSQL 17 (empty database, 9 Oct, on `feat/s1-rebased`): `schema_constraints.sql` 38 of 38, 002 42, 003 26, 004 8, 005 9, 006 26, 007 14, 008 55, 009 16 (all passed). The scripts need an empty database, not a seeded one.
+With 001–012 applied on PostgreSQL 17 (empty database, 13 Oct, on `feat/s1-stack`): `schema_constraints.sql` 38 of 38, 002 42, 003 26, 004 8, 005 9, 006 26, 007 14, 008 6, 009 55, 010 16, 011 9, 012 13 (all passed). Upstream's 008 test needed `paid_at` on its succeeded payments once 009 added the payment CHECKs. The scripts need an empty database, not a seeded one.
 
 The tests live outside `migrations/` on purpose, so no migration runner ever executes them.
 
@@ -166,6 +168,17 @@ For the outbox handlers (`lib/events/handlers.ts`, spec §11.1). One transaction
 | --- | --- |
 | `task.source_key` | NULL for every task a person creates. A handler writes `<event id>:<what>[:<enrolment id>]` and inserts with `ON CONFLICT (source_key) WHERE source_key IS NOT NULL DO NOTHING`, so running an event twice opens one task, not two. |
 | `task_source_key_uq` | Unique where not null, and not limited to open tasks: a task that was done is not recreated by a repeat. |
+
+## Migration 012 — rate-limit counter (9 Oct, renumbered 13 Oct)
+
+For the public intake API (`lib/public/guard.ts`, spec §8.2). One transaction; safe to re-run; no backfill.
+
+| Change | What it means |
+| --- | --- |
+| `rate_limit_hit` (unlogged) | One row per (bucket, one-minute window) with a hit count. The bucket is a keyed hash of the caller's IP, never the address. Unlogged: a crash may reset the counters, nothing else. |
+| `rate_limit_take(bucket, window_seconds)` | Counts one hit in the current window and returns the total. Atomic. Deletes rows older than an hour first, so no cleanup job is needed. Not callable by `anon`/`authenticated`. |
+
+Drop the table and function if the host gets an edge rate limiter you trust (open item O40).
 
 ## Where this is stricter or more specific than the spec
 
