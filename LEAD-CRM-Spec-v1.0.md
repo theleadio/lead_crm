@@ -1,11 +1,12 @@
-# LEAD CRM — Software Specification v1.12
+# LEAD CRM — Software Specification v1.13
 
-_Last updated 9 Oct 2026 · Owner: Shawn_
+_Last updated 13 Oct 2026 · Owner: Shawn_
 
 ## Changelog
 
 | Version | Date | Changes |
 | --- | --- | --- |
+| v1.13 | 13 Oct 2026 | S1 Shawn-side, rebased onto v1.12: event contract and outbox drain with backoff and dead letters (§2, §3, §7); pre-freeze schema migrations 009 and 010 (§12.11); nameless WhatsApp person convention (§11.2); open items O17-O19, O21, O23-O35 and O44 (§15.3; the checkout-link question was O16 until upstream took that number for part payments). O20 and O22 are closed: seats and expiry are the database's job since migrations 006 and 007. |
 | v1.12 | 9 Oct 2026 | Decisions O2, O11 and O13 recorded (§15.3, decision calendar): message bodies are not stored; anonymisation ships as built with a written erasure checklist for outside systems (§12.10); old `audit_log` values stay for go-live and `audit_log` is readable by super_admin only (§6). Privacy review still to confirm all three. |
 | v1.11 | 9 Oct 2026 | From Zixuan's 9.12 questions (manual payment): proof files and the private bucket, one proof per payment (migration 008, §5), part payments, late payments on confirmed enrolments, one invoice for several students, no correction route in the app (§9.12, §12.7); new open item O16 for Finance (part payments, HRDC timing). Nothing else changes. |
 | v1.10 | 6 Oct 2026 | From Zixuan's class screens (commit 7ee0c7a): EnrolmentCancelled per freed seat on a class cancel, reason `class_cancelled`; ClassChanged also on "Save quietly" with `noticeId: null` (§11.1, §12.8). Cancelling a class: refused once it has started, moves only students not yet taught, expires their Stripe links (§9.10, §12.8); `onboarded → cancelled` added (§12.4); register rows (§12.11). |
@@ -60,7 +61,7 @@ One Next.js repo, one Postgres database, TypeScript everywhere.
 | Database       | PostgreSQL, managed (Supabase or equivalent, Singapore region)      | Section 5                                              |
 | DB access      | Prisma or Drizzle — Shawn picks and owns the schema file            | Zixuan uses generated client, never raw SQL in screens |
 | Auth           | Platform auth (email+password or Google SSO) with MFA available     | Section 6                                              |
-| Jobs           | Postgres-backed queue (pg-boss)                                     | Shawn's side                                           |
+| Jobs           | `drainOutbox()` in `lib/events/drain.ts`; trigger TBD (§3)          | Shawn's side                                           |
 | File storage   | S3-compatible bucket (receipts, HRDC documents)                     | Private bucket, signed URLs only                       |
 | Email          | Transactional ESP (Resend/Postmark class)                           | Shawn's side                                           |
 | Hosting        | Vercel or equivalent; database in Singapore                         |                                                        |
@@ -146,7 +147,7 @@ DB --> VIEWS
 
 **Layering rule.** Screen → API route → service function in `/lib` → database. No DB calls in React components, no business logic in components either — seat maths, dedupe, status transitions all live in `/lib` so API and workers apply the same rules. **Exception (v1.8):** a rule that must hold whoever writes the row — the app, a webhook, n8n, an import or SQL — lives in the database instead (seats and class status are the first case). §12.11 lists who writes every derived or time-based value.
 
-**The outbox.** Every write that others might react to also inserts a row into `event_outbox` in the same transaction. Zixuan's code writes these rows; Shawn's workers read them. A screen's write that forgets its outbox row means the automation silently never runs — events in Section 11 are acceptance criteria, not an afterthought.
+**The outbox.** Every write that others might react to also inserts a row into `event_outbox` in the same transaction. Zixuan's code writes these rows; Shawn's workers read them. New application code writes them through `raiseEvent(type, aggregateId, payload, actorId)` in `lib/events/raise.ts`, which joins the caller's transaction (the deal stage move uses it; `lib/classes` and `lib/enrolments` still insert the same columns directly, which is equivalent). The database writes `ClassPublished` and the `EnrolmentCancelled` of an expired reservation itself (§12.11). The drain, a plain function `drainOutbox()` in `lib/events/drain.ts` (trigger chosen once hosting is known), claims rows that are due (`next_attempt_at <= now()`) and not dead, in `(next_attempt_at, seq)` order, with `FOR UPDATE SKIP LOCKED`. Each handler runs inside a savepoint; an event with no handler is closed as processed. A failure pushes `next_attempt_at` out (30 s, 2 min, 10 min, 1 h); the 5th failure sets `dead_at` (migration 010): the row stays pending and visible with `last_error`, is never claimed again, and `retryDeadEvents()` revives it. The handler registry is empty this round, so draining only closes events and no automation runs yet. The whole batch runs in one transaction, so if it rolls back, side effects already caused by earlier handlers in it repeat: handlers must be idempotent. `npm run events:drain` runs it by hand; no scheduler or HTTP route exists yet. A screen's write that forgets its outbox row means the automation silently never runs — events in Section 11 are acceptance criteria, not an afterthought.
 
 **Deliberately not in the app:** dashboards/charts (BI tool reads DB), sending email/WhatsApp (screens raise events, workers send), ad platform data (n8n writes it, nothing in app reads it before January).
 
@@ -485,7 +486,7 @@ REST under `/api`, JSON, session cookie auth. Shared zod schema validation (form
 | POST /api/deals                               | Create                           | Zixuan |                                                                                          |
 | PATCH /api/deals/:id                          | Update fields                    | Zixuan |                                                                                          |
 | POST /api/deals/:id/stage                     | Move stage                       | Zixuan | body `{toStage, lostReasonId?}`; writes history + outbox event; 422 if lost without an active reason |
-| POST /api/deals/:id/checkout-link             | Generate Stripe link             | Shawn  | Returns `{url}` and stores it on the deal (§7.1); Zixuan calls from deal screen                                           |
+| POST /api/deals/:id/checkout-link             | Generate Stripe link             | Shawn  | Returns `{url}` and stores it on the deal (§7.1); Zixuan calls from deal screen; parked, see below |
 | GET/POST/PATCH /api/courses[/:id]             | Course catalogue                 | Zixuan | GET readable by every role that reads deals (§6). Optional `?active=true` (v1.6). Used for the 9.5 course filter and the deal course picker — no separate options route |
 | GET /api/classes                              | List with seat counts            | Zixuan | Returns capacity, confirmedCount, reservedCount, seatsAvailable                          |
 | POST/PATCH /api/classes[/:id]                 | Create/edit                      | Zixuan | Takes optional `notice: 'prepare' \| 'skip'`; see §7.1 (409 `notice_decision_required`)   |
@@ -540,6 +541,7 @@ From Zixuan's review of §9–11 against the table above.
 - GET /api/deals also returns `stageTotals: [{stage, count, totalMyr}]` over the whole filtered set (not the current page). Board headers use it.
 - PATCH /api/classes/:id takes optional `notice: 'prepare' | 'skip'`. If the edit touches a notice field on a class with confirmed enrolments and `notice` is absent → **409 `notice_decision_required`** with `{recipientCount}`, nothing saved. UI shows the 9.9 dialog and resubmits with the choice. The server decides whether a notice is needed, never the client.
 - POST /api/deals/:id/checkout-link stores `checkout_url`, `checkout_session_id`, `checkout_sent_at` on the deal as well as returning it.
+- POST /api/deals/:id/checkout-link creates a `reserved` enrolment (as §8.3), charges the class price (`class.price_myr`, else `course.list_price_myr`), individual non-HRDC deals with a class only; `deal.amount_myr` never reaches Stripe. **Status: parked until Stripe test keys exist.**
 
 **Concurrency** (revised 1 Oct, v1.7). Every editable table has an integer `version` (migration 005) that the database raises by exactly 1 on every update; the app cannot set it. GET on a record returns `version`. PATCH sends `If-Match: <version>`; the server runs `UPDATE … WHERE id = $1 AND version = $2`. 0 rows → look the row up: gone → 404, otherwise 409, and the client shows "someone else changed this record — reload". Missing header → 428. Any update bumps the version, including system ones (for example `last_activity_at` when a message arrives), so an open form can conflict with a background change — that is expected, not a bug. A merge also bumps the survivor.
 
@@ -814,6 +816,8 @@ Event names are exact — a typo is a silent failure. They live in one shared Ty
 | n8n (Meta Lead Ads) | person, touchpoint, deal                 | Same as form leads                                                 |
 | Workers             | task, enrolment.onboarding_step          | Tasks appearing that nobody created by hand                        |
 
+**Nameless WhatsApp person (S-02, O24).** `person.full_name` stays NOT NULL. When WATI sends a message from a number with no profile name, the intake writes the WhatsApp profile name if there is one, otherwise the phone number as received, and sets `needs_review = true` with `needs_review_reason = 'no_name'`. The UI shows the phone as the display name; correcting the name through the normal edit clears the flag.
+
 **Implication for UI:** any record may change underneath the user at any moment. Lists refetch on window focus. Detail screens send If-Match with the record's version (§7).
 
 ### 11.3 Unmatched payments
@@ -1010,6 +1014,9 @@ For junk and test records only. Refused for anyone with an enrolment or payment;
 | Reservation expiry | `seat_reserved_until` | `expire_reservations()` on Supabase Cron (Shawn); Stripe webhook on `checkout.session.expired` | Every 15 min / on the Stripe event | 15 min |
 | `ClassPublished` event | `class.status`, `is_public` | Database trigger (006) | On change | Never |
 | `version` | — | Database trigger (005) | Every update | Never |
+| `enrolment_status_history` | `enrolment.status` | Database trigger (009), on insert and on every status change; no application code writes it | Every status change | Never |
+| `class.cancelled_at` / `cancelled_reason` | — | `cancelled_at`: database trigger (009). `cancelled_reason`: `cancelClass()` | Class → cancelled | Never |
+| Outbox retry (`next_attempt_at`, `dead_at`) | `event_outbox` | `drainOutbox()` (010) | Each failed attempt | Until the next drain run |
 | HRDC deadline task | Deal fields | App, same transaction (§12.6, guard 004) | Stage or deadline change | Never |
 | `last_activity_at` | §12.9 list | `touchPersonActivity()` in `/lib`; workers call the same helper | Each listed event | Never |
 | Lifecycle stage | Payments, enrolments | Computed on read (§12.3) | On read | Never |
@@ -1150,6 +1157,26 @@ Everything else: manual UAT with Wei Ping, Ops and Sales during Sprint 5 (30 Nov
 | O14 | `touchpoint.landing_url` / `referrer` can carry personal data in the query string (e.g. `?email=`). Strip at capture? | Touchpoint capture, erasure | Sprint 2 | Shawn |
 | O15 | Which fields can the 9.3 merge screen choose between (the `fields` map)? | Merge route validation | Sprint 1 | Zixuan + Shawn |
 | O16 | Part payments and HRDC timing: is an enrolment confirmed only when payments reach the price? Is an HRDC payment recorded only when the money arrives? | 9.12, payment rule in the database | Sprint 2 | Finance |
+| O17 | _Closed 9 Oct._ Checkout Sessions expire within 24 h; reservation default is 48 h. Decided 5 Oct: the Stripe path holds 24 h (`stripe_reservation_hours`, migration 006, §8.3). | — | — | — |
+| O18 | Discounts through the link (deal amount ≠ class price). Proposed: not in MVP. | Checkout link | TBD by Shawn | Shawn |
+| O19 | `aggregate_type` for events other than `DealStageChanged`. Built as: `LeadCaptured`, `ConsentChanged` → `person`; `Enrolment*` → `enrolment`; `PaymentRecorded` → `payment`; `Class*`, `ClassNoticeApproved` → `class`; `EnquiryConverted` → `enquiry` (one map in `lib/events/types.ts`). Confirm. | Event contract | TBD by Shawn | Shawn |
+| O20 | _Closed 9 Oct._ `reserveSeat` rules (public flag, "started" date, status recompute). Superseded: seat checks and class status are database triggers (migration 006, §12.1); the TypeScript `reserveSeat` was dropped. | — | — | — |
+| O21 | Retry cap and backoff for a failing event: 5 attempts, waiting 30 s, 2 min, 10 min, 1 h between them, then `dead_at` is set and the row waits for `retryDeadEvents()` (migration 010). Confirm the schedule, and decide who reviews dead rows. | Outbox drain | TBD by Shawn | Shawn |
+| O22 | _Closed 9 Oct._ Re-booking after an expired reservation. Superseded: `expire_reservations()` cancels expired reservations every 15 minutes (migration 006) and migration 007 backfills holds. | — | — | — |
+| O23 | A `match_payment` task cannot point at its payment, so the match route cannot find the task it must close. | Stripe worker, 9.12 match screen | Tue 13 Oct | Shawn |
+| O24 | A WhatsApp-only person with no name cannot be stored: `full_name` is NOT NULL and the spec does not say what to write. | WATI intake, every screen that shows a name | Tue 13 Oct | Shawn + Zixuan |
+| O25 | Payment rows can contradict themselves (status vs refunded amount, missing `paid_at`), refunds have no date, and three code paths define "paid" differently. | Stripe worker, manual payment, lifecycle, BI | Tue 13 Oct | Shawn |
+| O26 | Enrolment status has no history or transition times; the person timeline shows only the current status. | Enrolment routes, expiry sweep, BI | Tue 13 Oct | Shawn + Zixuan |
+| O27 | The spec uses columns §5 never defines: class internal notes, class cancel reason and date, HRDC document key. | Zixuan 9.6, 9.8 to 9.10 | Tue 13 Oct | Shawn + Zixuan |
+| O28 | A `reserved` enrolment with no `seat_reserved_until` holds its seat forever and no sweep can find it. | POST /api/enrolments, `expire_reservations()` | Tue 13 Oct | Shawn + Zixuan |
+| O29 | Touchpoints are append-only with no external reference, so a repeated import or retried webhook cannot be deduplicated or undone. | Data import, Lead Ads, WATI | Tue 13 Oct | Shawn |
+| O30 | A deal does not record the touchpoint that created it, so campaign-to-revenue reports have to guess. | Public intake, reporting views | Tue 13 Oct | Shawn |
+| O31 | The public-form `idempotencyKey` has no place to live; `integration_event` cannot hold it cleanly. | /api/public/leads, /register | Tue 13 Oct | Shawn |
+| O32 | A withdrawn HRDC task looks the same as a completed one, and the timeline shows "Task done". | hrdc-task.ts, timeline, reports | Tue 13 Oct | Shawn |
+| O33 | `done_at` requires `done_by`, so a worker (system actor, no user) can never close a task. | Stripe worker, expiry sweep | Tue 13 Oct | Shawn |
+| O34 | `event_outbox` has no backoff, no dead-letter marker and no stable order; a failing row burns all 5 attempts in milliseconds. | drain.ts, health panel | Tue 13 Oct | Shawn |
+| O35 | Erasure leaves personal data behind inside our database: `integration_event.payload` (raw webhook bodies; O2 says message text is not stored, so the payload must not keep it past processing either), `task.title`, unmatched-payment task notes, URLs (O14). The `audit_log` part is decided (O13, v1.12: rows stay for go-live, super_admin only) and sits on the §12.10 erasure checklist with the outside systems. | erase_person, retention, privacy review | Tue 13 Oct | Shawn |
+| O44 | Does creating a checkout link move the deal to `checkout_sent`? Spec is silent. | Checkout link | TBD by Shawn | Shawn |
 
 **Decision calendar (added 23 Sep).** Every open item now has a date. If an answer misses its date, the fallback in the last column is what gets built — nobody waits.
 
@@ -1171,6 +1198,21 @@ Everything else: manual UAT with Wei Ping, Ops and Sales during Sprint 5 (30 Nov
 | O14 personal data in URLs | Fri 16 Oct | Shawn | Keep only utm_*, gclid, fbclid and the path; drop other query parameters at capture |
 | O12 payment record retention | Fri 13 Nov | Finance / accountant | Keep payment rows indefinitely; erasure never touches them |
 | O16 part payments and HRDC timing | Fri 16 Oct | Finance | Build as written in 9.12: confirm only when payments reach the price; HRDC recorded when the money arrives |
+| O23 match_payment task link | Tue 13 Oct | Shawn | Add `task.payment_id` with a CHECK and a one-open-task-per-payment unique index. Migration 009. DDL: see docs/superpowers/notes/2026-10-08-pre-freeze-schema-review.md, S-01. |
+| O24 Nameless WhatsApp person | Tue 13 Oct | Shawn + Zixuan | No DDL. Keep `full_name` NOT NULL; the WhatsApp intake writes the WhatsApp profile name or the phone as received, sets `needs_review` with reason `no_name`, and the UI shows the phone. Written into §11.2 (v1.11). See S-02 in the review. |
+| O25 Payment integrity | Tue 13 Oct | Shawn | Add `refunded_at`, the status/refund/`paid_at` CHECKs, a unique Stripe session index and one `payment_net` revenue view. Migration 009. DDL: see docs/superpowers/notes/2026-10-08-pre-freeze-schema-review.md, S-03. |
+| O26 Enrolment status history | Tue 13 Oct | Shawn + Zixuan | Add an append-only `enrolment_status_history` table (24th table), written by a database trigger on `enrolment` so every writer is covered (§3, §12.11). Migration 009. DDL: see docs/superpowers/notes/2026-10-08-pre-freeze-schema-review.md, S-04. |
+| O27 Undefined columns | Tue 13 Oct | Shawn + Zixuan | Add `class.notes`, `class.cancelled_reason`, `class.cancelled_at` and `deal.hrdc_document_key`. A trigger stamps `cancelled_at`; `cancelClass()` writes the reason. Migration 009. DDL: see docs/superpowers/notes/2026-10-08-pre-freeze-schema-review.md, S-05. |
+| O28 Reservation with no expiry | Tue 13 Oct | Shawn + Zixuan | Covered upstream: migration 007 has the CHECK (`enrolment_reserved_has_hold`) and the backfill. Migration 009 adds only the sweep index. DDL: see docs/superpowers/notes/2026-10-08-pre-freeze-schema-review.md, S-06. |
+| O29 Touchpoint external ref | Tue 13 Oct | Shawn | Add `touchpoint.external_ref` with a unique index on (channel, external_ref). Migration 009. DDL: see docs/superpowers/notes/2026-10-08-pre-freeze-schema-review.md, S-07. |
+| O30 Deal source touchpoint | Tue 13 Oct | Shawn | Add `deal.source_touchpoint_id`, set by public intake, n8n and WATI. Migration 009. DDL: see docs/superpowers/notes/2026-10-08-pre-freeze-schema-review.md, S-08. |
+| O31 Idempotency key home | Tue 13 Oct | Shawn | Option A: store the key as `touchpoint.external_ref` (channel `web_form`), no new table; relies on O29 and O30. DDL: see docs/superpowers/notes/2026-10-08-pre-freeze-schema-review.md, S-09. |
+| O32 Withdrawn vs done HRDC task | Tue 13 Oct | Shawn | Add `task.is_cancelled` flag with CHECK that it implies `done_at`; withdrawals set it and the timeline shows "withdrawn". Migration 009. DDL: see docs/superpowers/notes/2026-10-08-pre-freeze-schema-review.md, S-10. |
+| O33 Workers cannot close tasks | Tue 13 Oct | Shawn | Relax the CHECK to `done_by` needs `done_at`; who closed it stays in `audit_log`. Migration 009. DDL: see docs/superpowers/notes/2026-10-08-pre-freeze-schema-review.md, S-11. |
+| O34 Outbox backoff and dead letters | Tue 13 Oct | Shawn | Add `next_attempt_at`, `dead_at`, `seq` and the due index; same backoff columns on `integration_event`. Built: migration 010. DDL: see docs/superpowers/notes/2026-10-08-pre-freeze-schema-review.md, S-12. |
+| O35 Erasure gaps | Tue 13 Oct | Shawn | Extend `erase_person` to clear `task.title` and match_payment task notes, and add a retention job that blanks `integration_event.payload`. `audit_log` is settled by O13 (v1.12): old values stay for go-live, and the §12.10 checklist already lists them with Stripe, WATI, the email provider and the proof bucket, so nothing is built for audit. Payment notes and URLs still follow the privacy review and O14. Not built yet. DDL: see docs/superpowers/notes/2026-10-08-pre-freeze-schema-review.md, S-13. |
+
+O23-O35 (added 8 Oct, from the pre-freeze schema review) are dated Tue 13 Oct, three days before the 16 Oct freeze. O17-O19, O21 and O44 (added 7 Oct; O44 was numbered O16 until 13 Oct, when upstream used O16 for part payments) remain undated until Shawn sets dates. O20 and O22 were closed on 9 Oct (see above).
 
 The two that matter this week are **O8** and **O1**. O8 is the only item that can stop a whole sprint — Zixuan can't build Section 10 against a website she can't deploy to.
 
