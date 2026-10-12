@@ -37,7 +37,13 @@ function filterSql(sql: postgres.Sql, q: ClassListQuery) {
   return sql`${classWhenSql(sql, q.when)}
     ${q.courseId ? sql`AND c.course_id = ${q.courseId}` : sql``}
     ${q.status ? sql`AND c.status = ${q.status}` : sql``}
-    ${q.language ? sql`AND c.language = ${q.language}` : sql``}`;
+    ${q.language ? sql`AND c.language = ${q.language}` : sql``}
+    ${
+      q.pendingNotice
+        ? sql`AND EXISTS (SELECT 1 FROM class_notice n
+                          WHERE n.class_id = c.id AND n.status = 'pending')`
+        : sql``
+    }`;
 }
 
 // Spec §7 sort=: allow-list only, so sorting can never reach a column the

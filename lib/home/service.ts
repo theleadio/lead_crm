@@ -5,7 +5,7 @@ import {
   requirePermission,
   type Viewer,
 } from "../auth/permissions.ts";
-import { seatTakenSql } from "../classes/seats.ts";
+import { classWhenSql, seatTakenSql } from "../classes/seats.ts";
 import { listDeals } from "../deals/service.ts";
 import { PIPELINES, type Pipeline, type Stage } from "../deals/types.ts";
 import { sumMyr } from "../format/money.ts";
@@ -194,7 +194,14 @@ export async function needsAttention(
             WHERE needs_review AND deleted_at IS NULL AND merged_into_id IS NULL`
       : null,
     mayApproveNotices
-      ? sql`SELECT count(*)::int AS n FROM class_notice WHERE status = 'pending'`
+      ? // Counted over the classes the panel's link actually shows, so the
+        // number and the page agree: it opens the §9.8 list filtered to
+        // pending notices, and that list is upcoming by default (§9.8). A
+        // stale notice left on a class that has already run is found with
+        // `?when=past&filter[pendingNotice]=true`.
+        sql`SELECT count(*)::int AS n
+            FROM class_notice n JOIN class c ON c.id = n.class_id
+            WHERE n.status = 'pending' AND ${classWhenSql(sql, "upcoming")}`
       : null,
   ]);
 

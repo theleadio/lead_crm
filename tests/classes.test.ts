@@ -26,6 +26,9 @@ test("no query means upcoming classes, page 1 of 25", () => {
     courseId: undefined,
     status: undefined,
     language: undefined,
+    // §9.0 links here with filter[pendingNotice]=true; absent means the whole
+    // list, not "no pending notice".
+    pendingNotice: undefined,
     sort: undefined,
   });
 });

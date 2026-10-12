@@ -9,6 +9,8 @@ import {
   needsAttention,
   upcomingClasses,
 } from "../lib/home/service.ts";
+import { listClasses } from "../lib/classes/service.ts";
+import { classListQuerySchema } from "../lib/validation/class-query.ts";
 import { closeDb, db, rollbackAfter } from "../lib/sql.ts";
 
 after(closeDb);
@@ -280,4 +282,39 @@ it("§6 decides which panels a role may read", async () => {
   await myOpenDeals(marketing);
   await myTasks(marketing);
   await upcomingClasses(partTimer);
+});
+
+// §9.0: the count and the link must agree. The panel sends Operations to the
+// §9.8 list filtered to pending notices, and that list is upcoming by
+// default — so a notice left on a class that has already run is in neither.
+it("the pending-notice count matches the list its link opens", async () => {
+  const ops = await newUser("operations");
+  const course = await newCourse();
+  const upcoming = await newClass(course, 7);
+  const ran = await newClass(course, -30, { endDays: -29 });
+  const before = (await needsAttention(ops)).pendingNotices ?? 0;
+
+  const sql = db();
+  const fields = sql.json({ venueName: { from: "A", to: "B" } });
+  await sql`
+    INSERT INTO class_notice (class_id, changed_fields, recipient_count)
+    VALUES (${upcoming}, ${fields}, 3), (${ran}, ${fields}, 2)`;
+
+  // Two pending notices exist, but only the upcoming one is counted.
+  assert.equal((await needsAttention(ops)).pendingNotices, before + 1);
+
+  const listed = (
+    await listClasses(
+      classListQuerySchema.parse({ pendingNotice: "true", limit: 100 }),
+      ops,
+    )
+  ).data;
+  assert.equal(
+    listed.some((c) => c.id === upcoming),
+    true,
+  );
+  assert.equal(
+    listed.some((c) => c.id === ran),
+    false,
+  );
 });

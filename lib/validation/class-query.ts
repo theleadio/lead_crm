@@ -31,6 +31,13 @@ export const classListQuerySchema = z.object({
   courseId: uuid.optional(),
   status: z.enum(CLASS_STATUSES).optional(),
   language: z.enum(CLASS_LANGUAGES).optional(),
+  // §9.10 notices: the classes waiting on Operations to approve a change
+  // notice. The §9.0 needs-attention panel links straight here, and the
+  // §9.8 list offers it as a filter of its own.
+  pendingNotice: z
+    .enum(["true"])
+    .transform(() => true)
+    .optional(),
   sort: z.enum(CLASS_SORTS).optional(),
   page: z.coerce.number().int().min(1).default(1),
   // §14: never more than 100 rows at once, anywhere.
@@ -45,6 +52,7 @@ export function readClassParams(sp: URLSearchParams) {
     courseId: sp.get("filter[courseId]") ?? undefined,
     status: sp.get("filter[status]") ?? undefined,
     language: sp.get("filter[language]") ?? undefined,
+    pendingNotice: sp.get("filter[pendingNotice]") ?? undefined,
     sort: sp.get("sort") ?? undefined,
     page: sp.get("page") ?? undefined,
     limit: sp.get("limit") ?? undefined,

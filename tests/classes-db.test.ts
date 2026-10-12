@@ -10,7 +10,10 @@ import {
   type Viewer,
 } from "../lib/auth/permissions.ts";
 import { closeDb, db, rollbackAfter } from "../lib/sql.ts";
-import { classListQuerySchema } from "../lib/validation/class-query.ts";
+import {
+  classListQuerySchema,
+  readClassParams,
+} from "../lib/validation/class-query.ts";
 
 after(closeDb);
 
@@ -298,4 +301,76 @@ it("every role may read the schedule, and a role without class read may not", as
     () => listClasses(query(), { id: ops.id, role: "nobody" as never }),
     PermissionError,
   );
+});
+
+// §9.0 needs attention -> §9.8: Operations asks which classes are waiting on
+// them to approve a change notice (§9.10). Without this the dashboard's link
+// could only drop them on the whole list.
+it("filter[pendingNotice] keeps the classes waiting on an approval", async () => {
+  const courseId = await newCourse();
+  const waiting = await newClass({ courseId });
+  const approved = await newClass({ courseId });
+  const quiet = await newClass({ courseId });
+  const sql = db();
+  const fields = sql.json({
+    startDate: { from: "2026-10-06", to: "2026-10-13" },
+  });
+  // §5: an approved notice must name who approved it and when.
+  const [approver] = await sql`
+    INSERT INTO app_user (email, full_name, role_code)
+    VALUES (${`${crypto.randomUUID()}@lead.test`}, 'Approver', 'operations')
+    RETURNING id`;
+  await sql`
+    INSERT INTO class_notice (class_id, status, changed_fields, recipient_count,
+                              approved_by, approved_at)
+    VALUES (${waiting}, 'pending', ${fields}, 3, NULL, NULL),
+           (${approved}, 'approved', ${fields}, 3, ${approver.id}, now())`;
+
+  const ids = (await listClasses(query({ pendingNotice: "true" }), ops)).data
+    .map((c) => c.id)
+    .filter((id) => [waiting, approved, quiet].includes(id));
+  assert.deepEqual(ids, [waiting]);
+
+  // Without the filter all three are still listed, so it narrows rather than
+  // replaces the view.
+  const all = (await listClasses(query(), ops)).data.map((c) => c.id);
+  for (const id of [waiting, approved, quiet])
+    assert.ok(all.includes(id), `${id} should be in the unfiltered list`);
+});
+
+it("the pending-notice filter still obeys upcoming and past", async () => {
+  const courseId = await newCourse();
+  const ran = await newClass({ courseId, startOffset: -30, endOffset: -29 });
+  const sql = db();
+  await sql`
+    INSERT INTO class_notice (class_id, status, changed_fields, recipient_count)
+    VALUES (${ran}, 'pending', ${sql.json({ venueName: { from: "A", to: "B" } })}, 2)`;
+
+  // A notice left on a class that has already run is not in the default view,
+  // which is what the §9.0 count is scoped to; it is found under past.
+  const upcoming = (await listClasses(query({ pendingNotice: "true" }), ops))
+    .data;
+  assert.equal(
+    upcoming.some((c) => c.id === ran),
+    false,
+  );
+  const past = (
+    await listClasses(query({ when: "past", pendingNotice: "true" }), ops)
+  ).data;
+  assert.equal(
+    past.some((c) => c.id === ran),
+    true,
+  );
+});
+
+// §7: the filter is read from the URL shape the §9.0 link uses.
+it("filter[pendingNotice] is read from the query string", async () => {
+  const parsed = classListQuerySchema.parse(
+    readClassParams(new URLSearchParams("filter[pendingNotice]=true")),
+  );
+  assert.equal(parsed.pendingNotice, true);
+  const absent = classListQuerySchema.parse(
+    readClassParams(new URLSearchParams("")),
+  );
+  assert.equal(absent.pendingNotice, undefined);
 });

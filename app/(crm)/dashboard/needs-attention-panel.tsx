@@ -23,10 +23,10 @@ export function NeedsAttentionPanel({ data }: { data: HomeNeedsAttention }) {
       : {
           key: "notices",
           count: data.pendingNotices,
-          // ponytail: the classes list has no "has a pending notice" filter,
-          // so this lands on the list. Point it at a filtered list when 9.8
-          // grows one.
-          href: "/classes",
+          // §9.8 filter, so this lands on the classes actually waiting on
+          // the reader rather than on the whole list. The list is upcoming by
+          // default and the count above is scoped to match it.
+          href: "/classes?filter[pendingNotice]=true",
           icon: <BellRing className="size-4.5" />,
           title: "Class notices to approve",
           hint: "Students are not told until you approve",
