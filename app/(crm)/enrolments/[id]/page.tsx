@@ -59,10 +59,13 @@ export default async function EnrolmentDetailPage(
 
   return (
     <div className="space-y-6">
-      <BackLink
-        href={`/classes/${enrolment.classId}?tab=roster`}
-        label="Roster"
-      />
+      {/* §9 cross-screen: this link means "up to this record's own list",
+          not "back". It reads the same on every visit, whether the enrolment
+          was opened from the §9.10 Roster, the §9.11 list or the §9.2
+          Enrolments panel. Where the reader came from is the browser's Back
+          button, which knows the real history; the class is one click away
+          below, by its code. */}
+      <BackLink href="/enrolments" label="Enrolments" />
       <EnrolmentHeader enrolment={enrolment} canWrite={canWrite} />
 
       <div className="grid gap-6 lg:grid-cols-2">
