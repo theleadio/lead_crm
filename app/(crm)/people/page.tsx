@@ -6,7 +6,8 @@ import {
 } from "@/lib/auth/permissions";
 import { listPeople } from "@/lib/people/service";
 import { peopleListQuerySchema } from "@/lib/validation/people-query";
-import { NO_FILTERS, PeopleList } from "./people-list";
+import { NO_FILTERS } from "./filters";
+import { PeopleList } from "./people-list";
 
 // Hiding buttons here is UX only — every API route re-checks (spec §6).
 export default async function PeoplePage({

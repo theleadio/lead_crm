@@ -15,6 +15,7 @@ import {
   TableCard,
 } from "@/components/list-kit";
 import { Toast } from "@/components/toast";
+import { NO_FILTERS, type Filters } from "./filters";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,27 +48,6 @@ const STAGE_VARIANT: Record<
   lead: "outline",
   student: "secondary",
   customer: "default",
-};
-
-export type Filters = {
-  stage: string;
-  language: string;
-  needsReview: string;
-  owner: string;
-  tags: string[];
-  hasOpenDeal: string;
-  createdFrom: string;
-  createdTo: string;
-};
-export const NO_FILTERS: Filters = {
-  stage: "",
-  language: "",
-  needsReview: "",
-  owner: "",
-  tags: [],
-  hasOpenDeal: "",
-  createdFrom: "",
-  createdTo: "",
 };
 
 type LoadState =
