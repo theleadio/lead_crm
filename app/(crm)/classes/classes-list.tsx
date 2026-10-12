@@ -56,10 +56,14 @@ const MODE_LABELS: Record<string, string> = {
 // opens one.
 export function ClassesList({
   initial,
+  initialPendingNotice,
   courses,
   canWrite,
 }: {
   initial: ListResponse<ClassListItem> | null;
+  // §9.0 links here with the notice filter already on, so the control has to
+  // open set — otherwise the screen shows filtered rows under "all".
+  initialPendingNotice: boolean;
   courses: CourseOption[];
   // §6 course/class row: super_admin and operations. Hiding the controls is
   // UX — the write routes keep their own checks.
@@ -69,6 +73,9 @@ export function ClassesList({
   const [courseId, setCourseId] = useState("");
   const [status, setStatus] = useState("");
   const [language, setLanguage] = useState("");
+  const [pendingNotice, setPendingNotice] = useState(
+    initialPendingNotice ? "true" : "",
+  );
   const [sort, setSort] = useState("");
   const [page, setPage] = useState(1);
   const [state, setState] = useState<State>(
@@ -79,7 +86,7 @@ export function ClassesList({
   // True until we fetch once. Without it, going back to the server's query
   // (clearing every filter) skips the fetch and leaves the old rows up.
   const showingInitial = useRef(true);
-  const filtered = !!courseId || !!status || !!language;
+  const filtered = !!courseId || !!status || !!language || !!pendingNotice;
 
   const reload = useCallback(() => {
     setState({ status: "loading" });
@@ -105,6 +112,7 @@ export function ClassesList({
       !courseId &&
       !status &&
       !language &&
+      pendingNotice === (initialPendingNotice ? "true" : "") &&
       !sort &&
       page === 1
     )
@@ -122,6 +130,7 @@ export function ClassesList({
     if (courseId) params.set("filter[courseId]", courseId);
     if (status) params.set("filter[status]", status);
     if (language) params.set("filter[language]", language);
+    if (pendingNotice) params.set("filter[pendingNotice]", pendingNotice);
     fetch(`/api/classes?${params}`)
       .then(async (res) => {
         const body = await res.json();
@@ -143,7 +152,18 @@ export function ClassesList({
     return () => {
       ignore = true;
     };
-  }, [initial, when, courseId, status, language, sort, page, reloadKey]);
+  }, [
+    initial,
+    initialPendingNotice,
+    when,
+    courseId,
+    status,
+    language,
+    pendingNotice,
+    sort,
+    page,
+    reloadKey,
+  ]);
 
   const rows = state.status === "ready" ? state.result.data : [];
   const onSort = (s: string) => {
@@ -154,6 +174,7 @@ export function ClassesList({
     setCourseId("");
     setStatus("");
     setLanguage("");
+    setPendingNotice("");
     setPage(1);
   };
 
@@ -231,6 +252,15 @@ export function ClassesList({
             ["en", "English"],
             ["zh", "中文"],
           ]}
+        />
+        <FilterSelect
+          label="Notice"
+          value={pendingNotice}
+          onChange={(v) => {
+            setPendingNotice(v);
+            setPage(1);
+          }}
+          options={[["true", "Waiting on approval"]]}
         />
         {filtered && (
           <Button variant="ghost" onClick={clearFilters}>
