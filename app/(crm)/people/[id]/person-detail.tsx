@@ -138,7 +138,20 @@ export function PersonDetailView({
 
   return (
     <div className="space-y-6">
-      <BackLink href="/people" label="People" />
+      {/* Up to this record's list (§9 cross-screen), narrowed to the queue
+          the record is in: a person still flagged belongs to the §9.1 review
+          queue, so the one link on the screen keeps Ops inside it instead of
+          dropping them in the whole directory. Derived from the record, not
+          from where the reader came from — the browser's Back button owns
+          history. Once the flag is cleared the link is the plain list again. */}
+      {p.needsReview ? (
+        <BackLink
+          href="/people?filter[needsReview]=true"
+          label="People to review"
+        />
+      ) : (
+        <BackLink href="/people" label="People" />
+      )}
 
       <DetailHeader
         title={
