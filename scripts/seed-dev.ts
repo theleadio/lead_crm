@@ -155,8 +155,7 @@ async function seed() {
         VALUES (${name}, ${email},
                 ${`0${local.slice(0, 2)}-${local.slice(2, 5)} ${local.slice(5)}`},
                 ${`+60${local}`}, ${`+60${local}`}, ${i % 3 === 2 ? "zh" : "en"},
-                ${owner}, ${i % 11 === 3},
-                ${i % 11 === 3 ? "possible_duplicate_company" : null},
+                ${owner}, false, NULL,
                 ${activity === null ? null : daysAgo(activity)}, ${created}, ${created})
         RETURNING id`;
 
@@ -363,6 +362,44 @@ async function seed() {
       days: 4,
       amount_myr: null,
     });
+
+    // §12.2 rule 3(b): the one real soft match in the seed — same normalised
+    // name, same email local part, different domain, unrelated phones so the
+    // hard match on phone_e164 never fires first. Written as createPerson
+    // would write it: the flag plus the §7.1 pair task naming both records,
+    // assigned to the duty super_admin and due today.
+    const [original] = await tx`
+      INSERT INTO person (full_name, email, phone, phone_e164, whatsapp_e164,
+                          preferred_language, owner_user_id, created_at, updated_at)
+      VALUES ('Lim Siew Hoon', 'siewhoon.lim@gmail.com', '012-700 1001',
+              '+60127001001', '+60127001001', 'en', ${SEED_USERS.weiPing},
+              ${daysAgo(30)}, ${daysAgo(30)})
+      RETURNING id`;
+    const [twin] = await tx`
+      INSERT INTO person (full_name, email, phone, phone_e164, whatsapp_e164,
+                          preferred_language, owner_user_id, needs_review,
+                          needs_review_reason, created_at, updated_at)
+      VALUES ('LIM SIEW-HOON', 'siewhoon.lim@acme.com', '012-700 2002',
+              '+60127002002', '+60127002002', 'en', ${SEED_USERS.weiPing},
+              true, 'possible_duplicate_email', ${daysAgo(2)}, ${daysAgo(2)})
+      RETURNING id`;
+    await tx`
+      INSERT INTO task (type, title, person_id, related_person_id,
+                        assigned_user_id, due_at, created_by)
+      VALUES ('review_duplicate', 'Possible duplicate of Lim Siew Hoon',
+              ${twin.id}, ${original.id}, ${SEED_USERS.admin},
+              ${daysAgo(2)}, ${SEED_USERS.admin})`;
+
+    // The other half of the §9.2 banner: a person flagged with no pair
+    // recorded, as every record flagged before pairs were kept looks. The
+    // screen must show the reason alone — §9.3 has nothing to open.
+    await tx`
+      INSERT INTO person (full_name, email, phone, phone_e164,
+                          preferred_language, needs_review, needs_review_reason,
+                          created_at, updated_at)
+      VALUES ('Chandran Pillai', 'chandran.p@example.com', '012-700 3003',
+              '+60127003003', 'en', true, 'possible_duplicate_company',
+              ${daysAgo(40)}, ${daysAgo(40)})`;
 
     // Spec §4: a phone that couldn't be normalised is kept and flagged.
     await tx`

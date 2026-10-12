@@ -127,6 +127,15 @@ export function canExportClassLists(viewer: Viewer): boolean {
   return viewer.role === "super_admin" || viewer.role === "operations";
 }
 
+// §12.2 review queue: the roles that may work a flagged person — person
+// write, excluding the assigned-only kind, whose "A" covers their own
+// records rather than everyone else's queue. The §9.0 panel is shown to
+// exactly these roles, so both read it from here.
+export function canReviewFlagged(viewer: Viewer): boolean {
+  const write = permissionFor(viewer, "person", "write");
+  return write.allowed && !write.assignedOnly;
+}
+
 // Merge person row: super_admin merges; sales/support/operations may propose.
 export function mergeAccess(role: Role): "full" | "propose" | "none" {
   if (role === "super_admin") return "full";

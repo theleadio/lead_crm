@@ -1,7 +1,7 @@
 import {
+  canReviewFlagged,
   canWriteClass,
   PermissionError,
-  permissionFor,
   requirePermission,
   type Viewer,
 } from "../auth/permissions.ts";
@@ -179,8 +179,7 @@ export async function needsAttention(
   // Flagged people are for the roles that may edit a person (§6 person write).
   // A part-timer's "A" covers their own records, so a queue of everyone
   // else's possible duplicates is not theirs to work through.
-  const people = permissionFor(viewer, "person", "write");
-  const mayReviewPeople = people.allowed && !people.assignedOnly;
+  const mayReviewPeople = canReviewFlagged(viewer);
   // Notices are approved by super_admin and operations only (§7.1, §9.10).
   const mayApproveNotices = canWriteClass(viewer);
   // Nothing this role can act on is a forbidden panel, not an empty one (§6).

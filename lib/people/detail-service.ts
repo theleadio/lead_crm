@@ -13,6 +13,7 @@ import { normalizePhoneE164 } from "../format/phone.ts";
 import { db, withTransaction } from "../sql.ts";
 import type { PersonUpdate } from "../validation/person.ts";
 import { findDuplicate } from "./dedupe.ts";
+import { openPairFor } from "./duplicate-review.ts";
 import { stageSql } from "./lifecycle.ts";
 import {
   dedupeCandidates,
@@ -95,7 +96,16 @@ async function findVisible(
   return exists ? { kind: "forbidden" } : { kind: "not_found" };
 }
 
-function toDetailPerson(p: PersonRow, viewer: Viewer): PersonDetail["person"] {
+// Only a flagged person can have an open pair, so an unflagged one is not
+// worth the query (§12.2 rule 3).
+const pairIfFlagged = (p: PersonRow) =>
+  p.needs_review ? openPairFor(p.id) : Promise.resolve(null);
+
+function toDetailPerson(
+  p: PersonRow,
+  viewer: Viewer,
+  duplicateOf: PersonDetail["person"]["duplicateOf"],
+): PersonDetail["person"] {
   const masked = masksContactDetails(viewer.role);
   return {
     id: p.id,
@@ -114,6 +124,7 @@ function toDetailPerson(p: PersonRow, viewer: Viewer): PersonDetail["person"] {
     companyNameGiven: p.company_name_given,
     needsReview: p.needs_review,
     needsReviewReason: reviewReason(p),
+    duplicateOf,
     lastActivityAt: p.last_activity_at?.toISOString() ?? null,
     createdAt: p.created_at.toISOString(),
     version: p.version,
@@ -155,6 +166,9 @@ export async function getPersonDetail(
   if (found.kind !== "ok") return found;
   const p = found.person;
   const sql = db();
+
+  // §12.2 rule 3: who they may duplicate.
+  const duplicateOf = await pairIfFlagged(p);
 
   const touches = await sql`
     SELECT id, occurred_at, channel, utm_source, utm_campaign, is_first_touch
@@ -239,7 +253,7 @@ export async function getPersonDetail(
   return {
     kind: "ok",
     detail: {
-      person: toDetailPerson(p, viewer),
+      person: toDetailPerson(p, viewer, duplicateOf),
       attribution: {
         firstTouch: first ? toTouch(first) : null,
         latestTouch: latest && latest.id !== first?.id ? toTouch(latest) : null,
@@ -446,7 +460,10 @@ export async function updatePerson(
 
     if (Object.keys(fields).length) return { kind: "invalid", fields };
     if (!Object.keys(set).length)
-      return { kind: "updated", person: toDetailPerson(p, viewer) };
+      return {
+        kind: "updated",
+        person: toDetailPerson(p, viewer, await pairIfFlagged(p)),
+      };
 
     // §9.2: saving a phone or email that belongs to someone else → 409.
     const candidate = {
@@ -495,7 +512,10 @@ export async function updatePerson(
     const [fresh] = await sql<
       PersonRow[]
     >`${selectPerson(sql)} WHERE p.id = ${id}`;
-    return { kind: "updated", person: toDetailPerson(fresh, viewer) };
+    return {
+      kind: "updated",
+      person: toDetailPerson(fresh, viewer, await pairIfFlagged(fresh)),
+    };
   });
 }
 

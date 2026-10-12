@@ -40,3 +40,11 @@ export const personUpdateSchema = z.object({
 });
 
 export type PersonUpdate = z.infer<typeof personUpdateSchema>;
+
+// POST /api/people/:id/review/dismiss — §12.2 false positive. The note is
+// optional and goes to the audit row, never to the person (§9.2).
+export const reviewDismissSchema = z.object({
+  note: z.string().trim().max(2000).optional(),
+});
+
+export type ReviewDismiss = z.infer<typeof reviewDismissSchema>;

@@ -7,7 +7,7 @@ import {
   enrolmentTransferSchema,
 } from "../lib/validation/enrolment.ts";
 import { classNoticeEditSchema } from "../lib/validation/class-notice.ts";
-import { personSchema } from "../lib/validation/person.ts";
+import { personSchema, reviewDismissSchema } from "../lib/validation/person.ts";
 
 test("personSchema requires full name", () => {
   const result = personSchema.safeParse({ fullName: "" });
@@ -152,5 +152,18 @@ test("enrolmentTransferSchema needs a target class id", () => {
   assert.equal(
     enrolmentTransferSchema.safeParse({ toClassId: CREATE.classId }).success,
     true,
+  );
+});
+
+test("reviewDismissSchema takes no note, and refuses one over 2000", () => {
+  assert.equal(reviewDismissSchema.safeParse({}).success, true);
+  assert.equal(
+    reviewDismissSchema.safeParse({ note: " they work at the same place " })
+      .data?.note,
+    "they work at the same place",
+  );
+  assert.equal(
+    reviewDismissSchema.safeParse({ note: "x".repeat(2001) }).success,
+    false,
   );
 });

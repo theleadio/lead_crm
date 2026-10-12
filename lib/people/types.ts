@@ -76,6 +76,10 @@ export type PersonDetail = {
     companyNameGiven: string | null;
     needsReview: boolean;
     needsReviewReason: string | null;
+    // The record §12.2 matched them against, from the open §7.1
+    // `review_duplicate` task. Null when no pair was recorded or the other
+    // record is gone — the §9.2 banner then shows the reason alone.
+    duplicateOf: { id: string; fullName: string } | null;
     lastActivityAt: string | null;
     createdAt: string;
     // Integer row version (migration 005); send back as If-Match (§7 v1.7).
