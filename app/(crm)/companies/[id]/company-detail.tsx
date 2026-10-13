@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import type { CompanyDetail } from "@/lib/companies/types";
 import { formatDate } from "@/lib/format/date";
 import { formatMoneyMyr } from "@/lib/format/money";
+import { displayName } from "@/lib/people/types";
 import type { ListResponse, PersonListItem } from "@/lib/people/types";
 import {
   CompanyFormDialog,
@@ -490,7 +491,7 @@ function AddPerson({
     setOpen(false);
     setQ("");
     setResults(null);
-    onAdded(p.fullName || p.phone || "this person");
+    onAdded(displayName(p.fullName, p.phone));
   }
 
   if (!open)
@@ -530,7 +531,7 @@ function AddPerson({
               onClick={() => attach(p)}
               className="hover:bg-surface-sunken focus-visible:outline-focus-ring w-full rounded-sm px-2 py-1.5 text-left focus-visible:outline-2 disabled:opacity-50"
             >
-              {p.fullName || p.phone || "Unnamed"}
+              {displayName(p.fullName, p.phone)}
               {p.email && <span className="text-ink-muted"> · {p.email}</span>}
               {currentIds.includes(p.id) && (
                 <span className="text-ink-muted"> (already here)</span>

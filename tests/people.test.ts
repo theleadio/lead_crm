@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { likeEscape, parsePersonQuery } from "../lib/people/search.ts";
+import { displayName } from "../lib/people/types.ts";
 import { formatLastActivity } from "../lib/format/date.ts";
 
 // Spec §9.1: all three phone shapes must find the same person.
@@ -38,4 +39,18 @@ test("formatLastActivity: relative under 7 days, absolute after, dash when none"
   assert.equal(formatLastActivity("not a date", now), "—");
   assert.equal(formatLastActivity("2026-09-20T04:00:00Z", now), "3 days ago");
   assert.equal(formatLastActivity("2026-08-14T04:00:00Z", now), "14 Aug 2026");
+});
+
+// Spec §11.2: a WhatsApp-only contact may have no usable name, so the phone
+// stands in for it — on the 9.1 list, 9.2 detail, 9.4 members and the 9.10
+// roster alike, because they all ask this one function.
+test("displayName: a name wins, then the phone, then Unnamed", () => {
+  assert.equal(displayName("Tan Mei Ling", "012-345 6789"), "Tan Mei Ling");
+  assert.equal(displayName(null, "012-345 6789"), "012-345 6789");
+  assert.equal(displayName("", "012-345 6789"), "012-345 6789");
+  // A name of spaces is no name: " " would otherwise print as a blank cell.
+  assert.equal(displayName("   ", "012-345 6789"), "012-345 6789");
+  assert.equal(displayName("  Tan Mei Ling  ", null), "Tan Mei Ling");
+  assert.equal(displayName(null, null), "Unnamed");
+  assert.equal(displayName(undefined, "  "), "Unnamed");
 });

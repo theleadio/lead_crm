@@ -20,6 +20,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatDate, formatLastActivity, formatTime } from "@/lib/format/date";
 import { formatMoneyMyr } from "@/lib/format/money";
+import { displayName } from "@/lib/people/types";
+import { NewDeal } from "../../deals/new-deal";
 import type {
   ConsentState,
   ListResponse,
@@ -68,11 +70,20 @@ export function PersonDetailView({
   canWrite,
   canExportData,
   canEditCompany,
+  canMerge,
+  canReview,
+  canCreateDeal,
 }: {
   id: string;
   canWrite: boolean;
   canExportData: boolean;
   canEditCompany: boolean;
+  // §9.3 is super_admin's; the other queue roles may only propose (§6).
+  canMerge: boolean;
+  // §12.2: may clear a flag that was a false positive.
+  canReview: boolean;
+  // §9.2 quick action: the §6 deal row, not the person row.
+  canCreateDeal: boolean;
 }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
@@ -127,7 +138,7 @@ export function PersonDetailView({
 
   const { detail } = state;
   const p = detail.person;
-  const displayName = p.fullName || p.phone || "Unnamed";
+  const name = displayName(p.fullName, p.phone);
   const counts: Counts = {
     deals: detail.deals?.length ?? 0,
     enrolments: detail.enrolments?.length ?? 0,
@@ -137,12 +148,25 @@ export function PersonDetailView({
 
   return (
     <div className="space-y-6">
-      <BackLink href="/people" label="People" />
+      {/* Up to this record's list (§9 cross-screen), narrowed to the queue
+          the record is in: a person still flagged belongs to the §9.1 review
+          queue, so the one link on the screen keeps Ops inside it instead of
+          dropping them in the whole directory. Derived from the record, not
+          from where the reader came from — the browser's Back button owns
+          history. Once the flag is cleared the link is the plain list again. */}
+      {p.needsReview ? (
+        <BackLink
+          href="/people?filter[needsReview]=true"
+          label="People to review"
+        />
+      ) : (
+        <BackLink href="/people" label="People" />
+      )}
 
       <DetailHeader
         title={
           <>
-            {displayName}
+            {name}
             {p.preferredName && (
               <span className="text-ink-muted font-normal">
                 {" "}
@@ -172,6 +196,12 @@ export function PersonDetailView({
         }
         actions={
           <>
+            {canCreateDeal && (
+              <NewDeal
+                pipeline="individual"
+                person={{ id: p.id, fullName: name }}
+              />
+            )}
             {p.email && !p.email.includes("•") && (
               <Button variant="outline" asChild>
                 <a href={`mailto:${p.email}`}>Email</a>
@@ -194,8 +224,8 @@ export function PersonDetailView({
                     Export data (CSV)
                   </a>
                 </Button>
-                <DeletePerson id={p.id} name={displayName} counts={counts} />
-                <ErasePerson id={p.id} name={displayName} counts={counts} />
+                <DeletePerson id={p.id} name={name} counts={counts} />
+                <ErasePerson id={p.id} name={name} counts={counts} />
               </>
             )}
           </>
@@ -203,9 +233,13 @@ export function PersonDetailView({
       />
 
       {p.needsReview && (
-        <p className="border-warning bg-warning-soft text-warning rounded-md border px-4 py-2 text-sm">
-          Needs review: {p.needsReviewReason}
-        </p>
+        <ReviewBanner
+          person={p}
+          name={name}
+          canMerge={canMerge}
+          canReview={canReview}
+          onCleared={reload}
+        />
       )}
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -260,7 +294,16 @@ export function PersonDetailView({
             <Panel title="Enrolments" empty={!detail.enrolments.length}>
               {detail.enrolments.map((e) => (
                 <Row key={e.id}>
-                  <span>{e.classCode}</span>
+                  {/* §9.11: the enrolment's own screen, where its status,
+                      payments and transfer live. */}
+                  <span>
+                    <Link
+                      href={`/enrolments/${e.id}`}
+                      className="text-blue-ink underline"
+                    >
+                      {e.classCode}
+                    </Link>
+                  </span>
                   <span className="capitalize">{label(e.status)}</span>
                   <span>
                     {e.pricePaidMyr
@@ -726,6 +769,130 @@ function TimelinePanel({ personId }: { personId: string }) {
         </>
       )}
     </Panel>
+  );
+}
+
+// §12.2 / §9.2: why the record is flagged, who it may duplicate, and the two
+// ways out — merge them (§9.3) or say they are different people. A flag with
+// no pair recorded shows the reason alone: §9.3 has nothing to open.
+function ReviewBanner({
+  person,
+  name,
+  canMerge,
+  canReview,
+  onCleared,
+}: {
+  person: PersonDetail["person"];
+  name: string;
+  canMerge: boolean;
+  canReview: boolean;
+  onCleared: () => void;
+}) {
+  const other = person.duplicateOf;
+  return (
+    <div className="border-warning bg-warning-soft text-warning space-y-2 rounded-md border px-4 py-3 text-sm">
+      <p>Needs review: {person.needsReviewReason}</p>
+      {other && (
+        <p>
+          Possible duplicate of{" "}
+          <Link href={`/people/${other.id}`} className="underline">
+            {other.fullName || "an unnamed record"}
+          </Link>
+          .
+        </p>
+      )}
+      {(canReview || (canMerge && other)) && (
+        <div className="flex flex-wrap gap-2 pt-1">
+          {canMerge && other && (
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`/people/${person.id}/merge?with=${other.id}`}>
+                Compare and merge
+              </Link>
+            </Button>
+          )}
+          {canReview && (
+            <NotADuplicate
+              id={person.id}
+              name={name}
+              version={person.version}
+              other={other}
+              onCleared={onCleared}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Clearing a flag is not undoable from the screen, so it confirms first
+// (§9 cross-screen, §13). The note goes to the audit row, never to the
+// person. A failure leaves the banner up with the message beside it.
+function NotADuplicate({
+  id,
+  name,
+  version,
+  other,
+  onCleared,
+}: {
+  id: string;
+  name: string;
+  version: number;
+  other: { id: string; fullName: string } | null;
+  onCleared: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState("");
+
+  async function dismiss() {
+    const res = await fetch(
+      `/api/people/${encodeURIComponent(id)}/review/dismiss`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "If-Match": String(version),
+        },
+        body: JSON.stringify({ note: note.trim() || undefined }),
+      },
+    );
+    if (!res.ok)
+      return (
+        (await res.json().catch(() => null))?.error?.message ??
+        "Couldn't clear the review flag."
+      );
+    flash(`${name} is no longer flagged for review.`);
+    onCleared();
+  }
+
+  return (
+    <>
+      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+        Not a duplicate
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="Not a duplicate"
+        body={
+          <>
+            {name} stops being flagged for review
+            {other ? ` and the task about ${other.fullName} is closed` : ""}.
+            Nothing about either record changes.
+          </>
+        }
+        confirmLabel="Clear the flag"
+        onConfirm={dismiss}
+      >
+        <Input
+          aria-label="Why they are not a duplicate"
+          placeholder="Why (optional)"
+          value={note}
+          maxLength={2000}
+          onChange={(e) => setNote(e.target.value)}
+        />
+      </ConfirmDialog>
+    </>
   );
 }
 

@@ -1,34 +1,9 @@
 import Link from "next/link";
 import { ChevronRight, MapPin, Monitor } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { formatDate } from "@/lib/format/date";
+import { classStatusBadge, seatBarColor } from "@/lib/classes/types";
+import { formatDateRange } from "@/lib/format/date";
 import type { HomeClass } from "@/lib/home/types";
-
-// §4 date format, with the day of a multi-day class compacted onto the
-// front: "06 – 07 Oct 2026".
-function classDates(c: HomeClass): string {
-  const end = formatDate(`${c.endDate}T00:00:00Z`);
-  if (c.startDate === c.endDate) return end;
-  return `${formatDate(`${c.startDate}T00:00:00Z`).slice(0, 2)} – ${end}`;
-}
-
-// §12.1 status colours, same meaning as the 9.8 list.
-const STATUS: Record<
-  string,
-  { label: string; variant: "default" | "secondary" | "success" | "warning" }
-> = {
-  draft: { label: "Draft", variant: "secondary" },
-  open: { label: "Open", variant: "success" },
-  few_seats: { label: "Few seats", variant: "warning" },
-  full: { label: "Full", variant: "default" },
-  completed: { label: "Completed", variant: "secondary" },
-};
-
-function seatBarColor(status: string): string {
-  if (status === "full") return "bg-primary";
-  if (status === "few_seats") return "bg-warning";
-  return "bg-success";
-}
 
 export function ClassesPanel({
   classes,
@@ -79,10 +54,7 @@ export function ClassesPanel({
             </thead>
             <tbody>
               {classes.map((c) => {
-                const status = STATUS[c.status] ?? {
-                  label: c.status,
-                  variant: "secondary" as const,
-                };
+                const status = classStatusBadge(c.status);
                 const pct = Math.min(
                   100,
                   Math.round((c.sold / c.capacity) * 100),
@@ -97,7 +69,9 @@ export function ClassesPanel({
                         {c.courseName}
                       </span>
                     </td>
-                    <td className="py-3 pr-4 text-[13px]">{classDates(c)}</td>
+                    <td className="py-3 pr-4 text-[13px]">
+                      {formatDateRange(c.startDate, c.endDate)}
+                    </td>
                     <td className="text-ink-muted py-3 pr-4 text-[13px]">
                       {c.language === "zh" ? "中文" : "English"}
                     </td>

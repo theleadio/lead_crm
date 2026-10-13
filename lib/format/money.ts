@@ -16,6 +16,19 @@ export function sumMyr(amounts: string[]): string {
   return `${sign}${abs.slice(0, -2)}.${abs.slice(-2)}`;
 }
 
+// Whether two numeric(12,2) strings are the same amount, so "3200", "3200.00"
+// and " 3200.0 " all read as equal. Compared in whole cents rather than
+// through Number(), for the §12.7 reason above. Either side missing is not a
+// comparison, so it is never "different" — the §9.12 mismatch note stays
+// silent when an enrolment has no stored price.
+export function sameMoney(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): boolean {
+  if (!a?.trim() || !b?.trim()) return true;
+  return sumMyr([a]) === sumMyr([b]);
+}
+
 // Spec §4: RM3,200.00 — never round for display before totals are computed.
 export function formatMoneyMyr(amountMyr: number | string): string {
   const amount = typeof amountMyr === "string" ? Number(amountMyr) : amountMyr;

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { permissionFor } from "@/lib/auth/permissions";
+import { canWriteClass, permissionFor } from "@/lib/auth/permissions";
 import { formatDate } from "@/lib/format/date";
 import {
   myOpenDeals,
@@ -58,15 +58,16 @@ export default async function DashboardPage() {
   const canReadDeals = permissionFor(user, "deal", "read").allowed;
   const canReadClasses = permissionFor(user, "class", "read").allowed;
   const peopleWrite = permissionFor(user, "person", "write");
+  // The panel has a row per item, each with its own permission (§9.0), so it
+  // loads for any role that can act on at least one of them.
   const canReviewPeople = peopleWrite.allowed && !peopleWrite.assignedOnly;
+  const canAttend = canReviewPeople || canWriteClass(user);
 
   const [tasks, deals, classes, attention] = await Promise.all([
     panel("tasks", () => myTasks(user)),
     canReadDeals ? panel("deals", () => myOpenDeals(user)) : null,
     canReadClasses ? panel("classes", () => upcomingClasses(user)) : null,
-    canReviewPeople
-      ? panel("needs attention", () => needsAttention(user))
-      : null,
+    canAttend ? panel("needs attention", () => needsAttention(user)) : null,
   ]);
 
   const now = new Date();

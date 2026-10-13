@@ -123,13 +123,16 @@ async function seed() {
         ('AIA', 'AI Agentic Automation', 'AI 智能体自动化', 'certification', 2, 3200, true),
         ('AIM', 'AI Mastery', 'AI 精通', 'mastery', 3, 4800, true)
       RETURNING id`;
+    // AIM capacity is 30, not 25: the loop below enrols every student and
+    // customer (30 of 60), and migration 006 refuses the 26th with no_seats.
+    // 30 fills the class exactly, so the seed still shows a full class on 9.8.
     const [, aimClass] = await tx`
       INSERT INTO class (course_id, code, start_date, end_date, language, mode,
                          venue_name, venue_address, city, capacity, status, is_public) VALUES
         (${aia.id}, 'AIA-2610-EN', '2026-10-06', '2026-10-07', 'en', 'in_person',
          'AI365 Hub', 'Oval Damansara', 'Kuala Lumpur', 30, 'open', true),
         (${aim.id}, 'AIM-2610-EN', '2026-10-20', '2026-10-22', 'en', 'in_person',
-         'AI365 Hub', 'Oval Damansara', 'Kuala Lumpur', 25, 'open', true)
+         'AI365 Hub', 'Oval Damansara', 'Kuala Lumpur', 30, 'open', true)
       RETURNING id`;
 
     const owners = [SEED_USERS.weiPing, SEED_USERS.daphne, SEED_USERS.leeYee];
@@ -152,8 +155,7 @@ async function seed() {
         VALUES (${name}, ${email},
                 ${`0${local.slice(0, 2)}-${local.slice(2, 5)} ${local.slice(5)}`},
                 ${`+60${local}`}, ${`+60${local}`}, ${i % 3 === 2 ? "zh" : "en"},
-                ${owner}, ${i % 11 === 3},
-                ${i % 11 === 3 ? "possible_duplicate_company" : null},
+                ${owner}, false, NULL,
                 ${activity === null ? null : daysAgo(activity)}, ${created}, ${created})
         RETURNING id`;
 
@@ -361,10 +363,104 @@ async function seed() {
       amount_myr: null,
     });
 
+    // §12.2 rule 3(b): the one real soft match in the seed — same normalised
+    // name, same email local part, different domain, unrelated phones so the
+    // hard match on phone_e164 never fires first. Written as createPerson
+    // would write it: the flag plus the §7.1 pair task naming both records,
+    // assigned to the duty super_admin and due today.
+    const [original] = await tx`
+      INSERT INTO person (full_name, email, phone, phone_e164, whatsapp_e164,
+                          preferred_language, owner_user_id, created_at, updated_at)
+      VALUES ('Lim Siew Hoon', 'siewhoon.lim@gmail.com', '012-700 1001',
+              '+60127001001', '+60127001001', 'en', ${SEED_USERS.weiPing},
+              ${daysAgo(30)}, ${daysAgo(30)})
+      RETURNING id`;
+    const [twin] = await tx`
+      INSERT INTO person (full_name, email, phone, phone_e164, whatsapp_e164,
+                          preferred_language, owner_user_id, needs_review,
+                          needs_review_reason, created_at, updated_at)
+      VALUES ('LIM SIEW-HOON', 'siewhoon.lim@acme.com', '012-700 2002',
+              '+60127002002', '+60127002002', 'en', ${SEED_USERS.weiPing},
+              true, 'possible_duplicate_email', ${daysAgo(2)}, ${daysAgo(2)})
+      RETURNING id`;
+    await tx`
+      INSERT INTO task (type, title, person_id, related_person_id,
+                        assigned_user_id, due_at, created_by)
+      VALUES ('review_duplicate', 'Possible duplicate of Lim Siew Hoon',
+              ${twin.id}, ${original.id}, ${SEED_USERS.admin},
+              ${daysAgo(2)}, ${SEED_USERS.admin})`;
+
+    // The other half of the §9.2 banner: a person flagged with no pair
+    // recorded, as every record flagged before pairs were kept looks. The
+    // screen must show the reason alone — §9.3 has nothing to open.
+    await tx`
+      INSERT INTO person (full_name, email, phone, phone_e164,
+                          preferred_language, needs_review, needs_review_reason,
+                          created_at, updated_at)
+      VALUES ('Chandran Pillai', 'chandran.p@example.com', '012-700 3003',
+              '+60127003003', 'en', true, 'possible_duplicate_company',
+              ${daysAgo(40)}, ${daysAgo(40)})`;
+
     // Spec §4: a phone that couldn't be normalised is kept and flagged.
     await tx`
       INSERT INTO person (full_name, phone, needs_review, needs_review_reason, created_at, updated_at)
       VALUES ('Unknown Format', '12345', true, 'phone_unnormalised', ${daysAgo(61)}, ${daysAgo(61)})`;
+
+    // 9.10 class detail: one class carrying every roster shape — a seat held,
+    // a live reservation, an expired one, a cancelled row and a waitlisted
+    // one — plus a notice waiting for approval (§12.1, §5 class_notice).
+    const [detailClass] = await tx`
+      INSERT INTO class (course_id, code, start_date, end_date, start_time,
+                         end_time, language, mode, venue_name, venue_address,
+                         city, capacity, status, is_public)
+      VALUES (${aia.id}, 'AIA-2611-EN', '2026-11-10', '2026-11-11', '09:00',
+              '17:00', 'en', 'in_person', 'AI365 Hub', 'Oval Damansara',
+              'Kuala Lumpur', 12, 'open', true)
+      RETURNING id`;
+    const roster: [string, string, string | null][] = [
+      ["confirmed", "Chong Wai Keat", null],
+      ["payment_pending", "Nurul Aina", null],
+      ["reserved", "Siti Zubaidah", "2 days"],
+      ["reserved", "Expired Hold", "-3 hours"],
+      ["cancelled", "Lim Jia Hui", null],
+      ["waitlisted", "Raj Kumaran", null],
+    ];
+    for (const [i, [status, name, hold]] of roster.entries()) {
+      // A phone is unique per §12.2 (person_phone_e164_uq), so each of these
+      // gets its own.
+      const local = `1990000${i}0`;
+      const [p] = await tx`
+        INSERT INTO person (full_name, phone, phone_e164, preferred_language)
+        VALUES (${name}, ${`0${local.slice(0, 2)}-${local.slice(2, 5)} ${local.slice(5)}`},
+                ${`+60${local}`}, 'en')
+        RETURNING id`;
+      await tx`
+        INSERT INTO enrolment (person_id, class_id, status, seat_reserved_until,
+                               price_paid_myr, payer_type, cancelled_reason)
+        VALUES (${p.id}, ${detailClass.id}, ${status},
+                now() + ${hold}::interval,
+                ${status === "confirmed" ? 3200 : null},
+                ${status === "payment_pending" ? "company" : "self"},
+                ${status === "cancelled" ? "changed_mind" : null})`;
+    }
+    // A venue move the two confirmed-or-later students have not been told
+    // about yet: 9.10 is where Operations approves it (§9.9, §11.1).
+    await tx`
+      INSERT INTO class_notice (class_id, status, changed_fields, message_en,
+                                message_zh, recipient_count, created_by)
+      VALUES (${detailClass.id}, 'pending',
+              ${tx.json({ venueName: { from: "AI365 Hub", to: "Menara LEAD" } })},
+              'Hello, there is a change to your class AIA-2611-EN.
+
+Venue: AI365 Hub → Menara LEAD
+
+Everything else stays the same.',
+              '您好，您报名的课程 AIA-2611-EN 有以下更动。
+
+上课地点: AI365 Hub → Menara LEAD
+
+其他安排不变。',
+              1, ${SEED_USERS.admin})`;
   });
 
   const [{ people }] = await sql`SELECT count(*)::int AS people FROM person`;

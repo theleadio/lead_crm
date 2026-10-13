@@ -6,6 +6,7 @@ import {
   agingTone,
   daysInStage,
   initials,
+  suggestDealValue,
 } from "../lib/deals/format.ts";
 
 const now = new Date(2026, 8, 28, 9, 0); // 28 Sep 2026, 9am local
@@ -42,4 +43,28 @@ test("optimistic totals add and subtract in whole sen", () => {
 test("initials use first and last name", () => {
   assert.equal(initials("Tan Mei Ling"), "TL");
   assert.equal(initials("wei"), "W");
+});
+
+// §12.7: a starting number for the §9.6 Value field, never the money itself.
+test("suggestDealValue offers the list price, times the seats", () => {
+  assert.deepEqual(suggestDealValue("4500.00", ""), {
+    amount: "4500.00",
+    seats: 1,
+  });
+  assert.deepEqual(suggestDealValue("4500.00", "10"), {
+    amount: "45000.00",
+    seats: 10,
+  });
+  // Whole sen: 0.1 + 0.2 arithmetic must not reach a money field.
+  assert.equal(suggestDealValue("3333.33", "3")?.amount, "9999.99");
+});
+
+test("suggestDealValue suggests nothing it cannot stand behind", () => {
+  // A course with no list price, and a course that isn't chosen yet.
+  assert.equal(suggestDealValue(null, "2"), null);
+  assert.equal(suggestDealValue(undefined, "2"), null);
+  assert.equal(suggestDealValue("0.00", "2"), null);
+  // Headcount empty, zero, negative or half-typed is one seat, not a crash.
+  for (const headcount of ["", "0", "-4", "abc", "1.5"])
+    assert.equal(suggestDealValue("800.00", headcount)?.amount, "800.00");
 });

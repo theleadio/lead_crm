@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { LostReasonDialog } from "../lost-reason-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CompanySelect } from "./company-select";
+import { CreateEnrolment } from "./create-enrolment";
 import {
   BackLink,
   DetailError,
@@ -19,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatDate } from "@/lib/format/date";
 import { formatMoneyMyr } from "@/lib/format/money";
-import { agingTone, daysInStage } from "@/lib/deals/format";
+import { agingTone, daysInStage, suggestDealValue } from "@/lib/deals/format";
 import {
   FUNDING_TYPES,
   STAGES,
@@ -198,7 +199,12 @@ export function DealDetailView({
           </>
         }
         actions={
-          <DealActions deal={d} canWrite={canWrite} onNotice={setToast} />
+          <DealActions
+            deal={d}
+            canWrite={canWrite}
+            onNotice={setToast}
+            onReload={reload}
+          />
         }
       />
 
@@ -274,8 +280,8 @@ export function DealDetailView({
           {/* §9.6: a won deal with no enrolment should get one. */}
           {d.stage === "won" && !d.enrolments.length && (
             <p className="text-ink-muted text-sm">
-              This deal is won with no enrolment yet. Create one so the student
-              has a seat — available with the Enrolments screen (9.11).
+              This deal is won with no enrolment yet. Use Create enrolment above
+              so the student has a seat.
             </p>
           )}
 
@@ -303,36 +309,35 @@ export function DealDetailView({
   );
 }
 
-// Send checkout link, Create enrolment and Add task wait on routes that
-// aren't built (proposal: Shawn's, 9.11, 9.14). Disabled and labelled, so
-// the screen says "coming" rather than "not in the product".
+// Send checkout link and Add task still wait on routes that aren't built
+// (Shawn's checkout, 9.14). Disabled and labelled, so the screen says
+// "coming" rather than "not in the product". Create enrolment is live: §9.11
+// landed, and this is the only screen that knows the deal (§9.6).
 function DealActions({
   deal,
   canWrite,
   onNotice,
+  onReload,
 }: {
   deal: DealDetail;
   canWrite: boolean;
   onNotice: (message: React.ReactNode) => void;
+  onReload: () => void;
 }) {
   if (!canWrite) return null;
   return (
     <>
-      <Button
-        variant="outline"
-        disabled
-        title="Waiting on the Stripe checkout route (Shawn)"
-      >
+      <Button variant="outline" disabled title="Not available yet">
         Send checkout link
       </Button>
-      <Button
-        variant="outline"
-        disabled
-        title="Waiting on the Enrolments screen (9.11)"
-      >
-        Create enrolment
-      </Button>
-      <Button variant="outline" disabled title="Waiting on Tasks (9.14)">
+      <CreateEnrolment
+        dealId={deal.id}
+        personId={deal.person.id}
+        personName={deal.person.name}
+        courseId={deal.course?.id ?? null}
+        onCreated={onReload}
+      />
+      <Button variant="outline" disabled title="Not available yet">
         Add task
       </Button>
       {deal.checkoutUrl && (
@@ -497,7 +502,9 @@ function EditForm({
     });
   }
   const [owners, setOwners] = useState<OwnerOption[]>([]);
-  const [courses, setCourses] = useState<Ref[]>([]);
+  const [courses, setCourses] = useState<
+    (Ref & { listPriceMyr: string | null })[]
+  >([]);
   const [reasons, setReasons] = useState<{ id: string; labelEn: string }[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<{
@@ -518,9 +525,16 @@ function EditForm({
       .then((r) => (r.ok ? r.json() : { data: [] }))
       .then((b) =>
         setCourses(
-          (b.data as { id: string; nameEn: string }[]).map((c) => ({
+          (
+            b.data as {
+              id: string;
+              nameEn: string;
+              listPriceMyr: string | null;
+            }[]
+          ).map((c) => ({
             id: c.id,
             name: c.nameEn,
+            listPriceMyr: c.listPriceMyr,
           })),
         ),
       )
@@ -541,6 +555,14 @@ function EditForm({
   );
   const set = (key: keyof Form) => (value: string) =>
     setForm((f) => ({ ...f, [key]: value }));
+
+  // A starting number for an empty Value field (§12.7).
+  const suggestedValue = form.amountMyr.trim()
+    ? null
+    : suggestDealValue(
+        courses.find((c) => c.id === form.courseId)?.listPriceMyr,
+        form.headcount,
+      );
 
   // §9 cross-screen: warn before losing typed input.
   useEffect(() => {
@@ -681,7 +703,9 @@ function EditForm({
       <ReadOnlyRow
         label="Class"
         value={deal.class?.name ?? null}
-        hint="Set with the Classes screen (9.8)"
+        // §9.6: the enrolment owns it — created from this deal, or moved by a
+        // §9.11 transfer. Nothing to edit here.
+        hint="Follows the enrolment below"
       />
 
       <Field id="headcount" label="Headcount" error={fieldErrors.headcount}>
@@ -703,6 +727,26 @@ function EditForm({
           value={form.amountMyr}
           onChange={(e) => set("amountMyr")(e.target.value)}
         />
+        {/* §12.7: the value is sales' own forecast and revenue never comes
+            from it, so this only offers a number to start from — the course
+            list price, times the headcount on a corporate deal. Shown while
+            the field is empty; it never overwrites a typed figure and never
+            follows a later price change. */}
+        {suggestedValue && (
+          <p className="text-ink-muted text-xs">
+            <button
+              type="button"
+              className="text-blue-ink underline"
+              onClick={() => set("amountMyr")(suggestedValue.amount)}
+            >
+              Use {formatMoneyMyr(suggestedValue.amount)}
+            </button>{" "}
+            —{" "}
+            {suggestedValue.seats > 1
+              ? `list price × ${suggestedValue.seats} seats`
+              : "the course list price, before any discount"}
+          </p>
+        )}
       </Field>
 
       <Field

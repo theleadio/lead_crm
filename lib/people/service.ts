@@ -10,6 +10,7 @@ import { maskEmail, maskPhone } from "../format/mask.ts";
 import { normalizePhoneE164 } from "../format/phone.ts";
 import { db, withTransaction } from "../sql.ts";
 import type { PersonInput } from "../validation/person.ts";
+import { raiseDuplicateTask } from "./duplicate-review.ts";
 import { findDuplicate, normaliseName, SOFT_REASON_TEXT } from "./dedupe.ts";
 import { stageSql } from "./lifecycle.ts";
 import { likeEscape, parsePersonQuery } from "./search.ts";
@@ -344,6 +345,16 @@ export async function createPerson(
               ${needsReview}, ${reviewCode}, ${viewer.id})
       RETURNING id`;
     // §12.9: a manual create is not an activity — last_activity_at stays null.
+
+    // §12.2 rule 3 / §7.1: a soft match also records WHO the new person may
+    // duplicate, in the same transaction. Without it the flag says "someone"
+    // and §9.3 has nothing to open.
+    if (dup.kind === "soft")
+      await raiseDuplicateTask(
+        row.id,
+        { id: dup.match.id, fullName: dup.match.fullName },
+        viewer,
+      );
 
     await writeAudit({
       userId: viewer.id,

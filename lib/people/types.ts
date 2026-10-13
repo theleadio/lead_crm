@@ -2,6 +2,16 @@
 // Mirrors spec §5 `person`; field names will be checked against Shawn's
 // generated client once the schema lands.
 
+// Spec §11.2: a WhatsApp-only contact may reach us with no usable name, so
+// every screen shows the phone in its place. One function, because the rule
+// was written out at five call sites and they have to agree (§3).
+export function displayName(
+  fullName: string | null | undefined,
+  phone: string | null | undefined,
+): string {
+  return fullName?.trim() || phone?.trim() || "Unnamed";
+}
+
 export type Language = "en" | "zh";
 export type LifecycleStage = "lead" | "student" | "customer";
 
@@ -66,6 +76,10 @@ export type PersonDetail = {
     companyNameGiven: string | null;
     needsReview: boolean;
     needsReviewReason: string | null;
+    // The record §12.2 matched them against, from the open §7.1
+    // `review_duplicate` task. Null when no pair was recorded or the other
+    // record is gone — the §9.2 banner then shows the reason alone.
+    duplicateOf: { id: string; fullName: string } | null;
     lastActivityAt: string | null;
     createdAt: string;
     // Integer row version (migration 005); send back as If-Match (§7 v1.7).

@@ -1,5 +1,10 @@
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { canWriteCompany, permissionFor } from "@/lib/auth/permissions";
+import {
+  canReviewFlagged,
+  canWriteCompany,
+  canWriteDeal,
+  permissionFor,
+} from "@/lib/auth/permissions";
 import { PersonDetailView } from "./person-detail";
 
 // Spec §9.2. Hiding the edit form is UX only — PATCH re-checks (spec §6).
@@ -18,6 +23,9 @@ export default async function PersonPage(props: PageProps<"/people/[id]">) {
       canWrite={canWrite}
       canExportData={canExportData}
       canEditCompany={user ? canWriteCompany(user) : false}
+      canMerge={user?.role === "super_admin"}
+      canReview={user ? canReviewFlagged(user) : false}
+      canCreateDeal={user ? canWriteDeal(user) : false}
     />
   );
 }

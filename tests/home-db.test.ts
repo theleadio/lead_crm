@@ -9,6 +9,8 @@ import {
   needsAttention,
   upcomingClasses,
 } from "../lib/home/service.ts";
+import { listClasses } from "../lib/classes/service.ts";
+import { classListQuerySchema } from "../lib/validation/class-query.ts";
 import { closeDb, db, rollbackAfter } from "../lib/sql.ts";
 
 after(closeDb);
@@ -236,13 +238,33 @@ it("seats sold follows §12.1", async () => {
 
 it("flagged people count; deleted and merged ones do not", async () => {
   const user = await newUser("sales");
-  const before = (await needsAttention(user)).needsReview;
+  const before = (await needsAttention(user)).needsReview ?? 0;
   const survivor = await newPerson();
   await newPerson({ needsReview: true });
   await newPerson({ needsReview: true, deleted: true });
   await newPerson({ needsReview: true, mergedInto: survivor });
 
   assert.equal((await needsAttention(user)).needsReview, before + 1);
+});
+
+// §9.0: a row per item, each gated on its own permission. Operations approves
+// notices (§9.10) and only reads people, so it sees one count and not the other.
+it("each needs-attention item is counted only for the roles that can act", async () => {
+  const ops = await newUser("operations");
+  const sales = await newUser("sales");
+  const classId = await newClass(await newCourse(), 7);
+  const before = (await needsAttention(ops)).pendingNotices ?? 0;
+  await db()`
+    INSERT INTO class_notice (class_id, changed_fields, recipient_count)
+    VALUES (${classId}, ${db().json({ startDate: { from: "2026-10-06", to: "2026-10-13" } })}, 3)`;
+
+  const forOps = await needsAttention(ops);
+  assert.equal(forOps.pendingNotices, before + 1);
+  assert.equal(forOps.needsReview, null);
+
+  const forSales = await needsAttention(sales);
+  assert.equal(forSales.pendingNotices, null);
+  assert.equal(typeof forSales.needsReview, "number");
 });
 
 // --- permissions -----------------------------------------------------------
@@ -260,4 +282,39 @@ it("§6 decides which panels a role may read", async () => {
   await myOpenDeals(marketing);
   await myTasks(marketing);
   await upcomingClasses(partTimer);
+});
+
+// §9.0: the count and the link must agree. The panel sends Operations to the
+// §9.8 list filtered to pending notices, and that list is upcoming by
+// default — so a notice left on a class that has already run is in neither.
+it("the pending-notice count matches the list its link opens", async () => {
+  const ops = await newUser("operations");
+  const course = await newCourse();
+  const upcoming = await newClass(course, 7);
+  const ran = await newClass(course, -30, { endDays: -29 });
+  const before = (await needsAttention(ops)).pendingNotices ?? 0;
+
+  const sql = db();
+  const fields = sql.json({ venueName: { from: "A", to: "B" } });
+  await sql`
+    INSERT INTO class_notice (class_id, changed_fields, recipient_count)
+    VALUES (${upcoming}, ${fields}, 3), (${ran}, ${fields}, 2)`;
+
+  // Two pending notices exist, but only the upcoming one is counted.
+  assert.equal((await needsAttention(ops)).pendingNotices, before + 1);
+
+  const listed = (
+    await listClasses(
+      classListQuerySchema.parse({ pendingNotice: "true", limit: 100 }),
+      ops,
+    )
+  ).data;
+  assert.equal(
+    listed.some((c) => c.id === upcoming),
+    true,
+  );
+  assert.equal(
+    listed.some((c) => c.id === ran),
+    false,
+  );
 });

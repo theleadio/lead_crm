@@ -65,7 +65,12 @@ export type HomeClass = {
   sold: number;
 };
 
+// One count per item, and null for an item this role cannot act on (§9.0:
+// "each shown only to roles that can act on it"). Operations approves notices
+// but only reads people; sales is the other way round.
 export type HomeNeedsAttention = {
   // People flagged by the §12.2 duplicate rules, still live.
-  needsReview: number;
+  needsReview: number | null;
+  // Change notices waiting for approval on 9.10 (§5 `class_notice`).
+  pendingNotices: number | null;
 };

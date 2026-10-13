@@ -15,6 +15,7 @@ import {
   TableCard,
 } from "@/components/list-kit";
 import { Toast } from "@/components/toast";
+import { NO_FILTERS, type Filters } from "./filters";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +28,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDate, formatLastActivity } from "@/lib/format/date";
+import { displayName } from "@/lib/people/types";
 import type {
   LifecycleStage,
   ListResponse,
@@ -46,27 +48,6 @@ const STAGE_VARIANT: Record<
   lead: "outline",
   student: "secondary",
   customer: "default",
-};
-
-type Filters = {
-  stage: string;
-  language: string;
-  needsReview: string;
-  owner: string;
-  tags: string[];
-  hasOpenDeal: string;
-  createdFrom: string;
-  createdTo: string;
-};
-const NO_FILTERS: Filters = {
-  stage: "",
-  language: "",
-  needsReview: "",
-  owner: "",
-  tags: [],
-  hasOpenDeal: "",
-  createdFrom: "",
-  createdTo: "",
 };
 
 type LoadState =
@@ -94,12 +75,16 @@ function filterParams(q: string, f: Filters): URLSearchParams {
 
 export function PeopleList({
   initialQ,
+  initialFilters = NO_FILTERS,
   initial,
   canWrite,
   canExport,
   canAdd,
 }: {
   initialQ: string;
+  // Filters the server already applied to `initial` — a deep link such as
+  // Home's "People to review" (§9.0) opens the list on them.
+  initialFilters?: Filters;
   initial: ListResponse<PersonListItem> | null;
   canWrite: boolean;
   canExport: boolean;
@@ -107,7 +92,7 @@ export function PeopleList({
 }) {
   const [search, setSearch] = useState(initialQ);
   const [q, setQ] = useState(initialQ);
-  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  const [filters, setFilters] = useState<Filters>(initialFilters);
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState<PeopleSort | undefined>(undefined);
   const [state, setState] = useState<LoadState>(
@@ -174,7 +159,7 @@ export function PeopleList({
       showingInitial.current &&
       reloadKey === 0 &&
       q === initialQ &&
-      filters === NO_FILTERS &&
+      filters === initialFilters &&
       page === 1 &&
       !sort
     )
@@ -206,7 +191,7 @@ export function PeopleList({
     return () => {
       ignore = true;
     };
-  }, [initial, initialQ, q, filters, sort, page, reloadKey]);
+  }, [initial, initialQ, initialFilters, q, filters, sort, page, reloadKey]);
 
   function changeSort(next: string) {
     setSort(next as PeopleSort);
@@ -653,7 +638,7 @@ function PersonRow({
   onToggle: () => void;
 }) {
   // Spec §11.2: WhatsApp-only contacts may have no name — show the phone.
-  const displayName = person.fullName || person.phone || "Unnamed";
+  const name = displayName(person.fullName, person.phone);
   const shownTags = person.tags.slice(0, 3);
   const hiddenTags = person.tags.slice(3);
   const router = useRouter();
@@ -674,7 +659,7 @@ function PersonRow({
         <TableCell>
           <input
             type="checkbox"
-            aria-label={`Select ${displayName}`}
+            aria-label={`Select ${name}`}
             checked={selected}
             onChange={onToggle}
           />
@@ -693,7 +678,7 @@ function PersonRow({
             </span>
           )}
           <Link href={href} className="hover:underline">
-            {displayName}
+            {name}
           </Link>
         </span>
       </TableCell>

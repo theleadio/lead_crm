@@ -119,6 +119,23 @@ export function canExportPeople(role: Role): boolean {
   return role === "super_admin";
 }
 
+// Export CSV row again, the other half: operations exports "class lists", so
+// a class roster (§9.10) is theirs to take out while a person export is not.
+// Kept separate from canWriteClass — the matrix gives these on different
+// lines, and a reader should see the matrix, not a coincidence.
+export function canExportClassLists(viewer: Viewer): boolean {
+  return viewer.role === "super_admin" || viewer.role === "operations";
+}
+
+// §12.2 review queue: the roles that may work a flagged person — person
+// write, excluding the assigned-only kind, whose "A" covers their own
+// records rather than everyone else's queue. The §9.0 panel is shown to
+// exactly these roles, so both read it from here.
+export function canReviewFlagged(viewer: Viewer): boolean {
+  const write = permissionFor(viewer, "person", "write");
+  return write.allowed && !write.assignedOnly;
+}
+
 // Merge person row: super_admin merges; sales/support/operations may propose.
 export function mergeAccess(role: Role): "full" | "propose" | "none" {
   if (role === "super_admin") return "full";
@@ -142,6 +159,21 @@ export function canWriteCompany(viewer: Viewer): boolean {
 // one, and so the two resources can diverge without hunting callers (§9.7).
 export function canWriteCourse(viewer: Viewer): boolean {
   return viewer.role === "super_admin" || viewer.role === "operations";
+}
+
+// Spec §6 course/class row again, for classes (§9.9). Same two roles as
+// courses today; kept separate so the two can diverge without hunting
+// callers.
+export function canWriteClass(viewer: Viewer): boolean {
+  return viewer.role === "super_admin" || viewer.role === "operations";
+}
+
+// Spec §6 enrolment row: super_admin and operations have F, management,
+// sales and support read, marketing and part_time have nothing. Named
+// separately from the class check because §6 gives them on different lines —
+// a support user who may read an enrolment may not change one (§9.11).
+export function canWriteEnrolment(viewer: Viewer): boolean {
+  return permissionFor(viewer, "enrolment", "write").allowed;
 }
 
 // Spec 6 deal row: super_admin, sales and support move and edit deals;

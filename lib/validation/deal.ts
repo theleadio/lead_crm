@@ -76,33 +76,48 @@ export type DealStageBody = z.infer<typeof dealStageBodySchema>;
 // "sent as null" (clear).
 const nullableUuid = uuid.nullable().optional();
 
-export const dealUpdateSchema = z
-  .object({
-    companyId: nullableUuid,
-    courseId: nullableUuid,
-    ownerId: nullableUuid,
-    headcount: z
-      .number()
-      .int("Headcount is a whole number")
-      .positive("Headcount is at least 1")
-      .nullable()
-      .optional(),
-    // numeric(12,2) as a string — never a JS number (spec §4, §12.7).
-    amountMyr: z
-      .string()
-      .regex(/^\d{1,10}(\.\d{1,2})?$/, "Enter an amount like 4500 or 4500.00")
-      .nullable()
-      .optional(),
-    fundingType: z.enum(FUNDING_TYPES).nullable().optional(),
-    hrdcGrantRef: z.string().trim().max(100).nullable().optional(),
-    hrdcApprovalDate: z.iso.date().nullable().optional(),
-    hrdcDeadlineDate: z.iso.date().nullable().optional(),
-    // Only a correction on an already-lost deal; the service refuses it on
-    // any other stage, and refuses clearing it (§12.5, proposal Q4).
-    lostReasonId: nullableUuid,
-  })
+const dealFields = z.object({
+  companyId: nullableUuid,
+  courseId: nullableUuid,
+  ownerId: nullableUuid,
+  headcount: z
+    .number()
+    .int("Headcount is a whole number")
+    .positive("Headcount is at least 1")
+    .nullable()
+    .optional(),
+  // numeric(12,2) as a string — never a JS number (spec §4, §12.7).
+  amountMyr: z
+    .string()
+    .regex(/^\d{1,10}(\.\d{1,2})?$/, "Enter an amount like 4500 or 4500.00")
+    .nullable()
+    .optional(),
+  fundingType: z.enum(FUNDING_TYPES).nullable().optional(),
+  hrdcGrantRef: z.string().trim().max(100).nullable().optional(),
+  hrdcApprovalDate: z.iso.date().nullable().optional(),
+  hrdcDeadlineDate: z.iso.date().nullable().optional(),
+  // Only a correction on an already-lost deal; the service refuses it on
+  // any other stage, and refuses clearing it (§12.5, proposal Q4).
+  lostReasonId: nullableUuid,
+});
+
+export const dealUpdateSchema = dealFields
   .strict()
-  .refine((b) => Object.keys(b).length > 0, {
-    message: "Nothing to save",
-  });
+  .refine((b) => Object.keys(b).length > 0, { message: "Nothing to save" });
 export type DealUpdateBody = z.infer<typeof dealUpdateSchema>;
+
+// POST /api/deals — spec §7 "Create" (Zixuan), the New deal control on §9.5
+// and §9.2. The stage is not a field: every deal starts in `new` (§8.2 does
+// the same), and moves from there through POST /api/deals/:id/stage so the
+// history and DealStageChanged are never skipped. `classId` is not a field
+// either — the enrolment owns it (§9.6).
+// `lostReasonId` is dropped: only a lost deal has a reason, and a new deal
+// is in `new` (§12.5).
+export const dealCreateSchema = dealFields
+  .omit({ lostReasonId: true })
+  .extend({
+    pipeline: z.enum(PIPELINES),
+    personId: uuid,
+  })
+  .strict();
+export type DealCreateBody = z.infer<typeof dealCreateSchema>;
