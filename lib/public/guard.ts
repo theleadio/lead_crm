@@ -5,7 +5,7 @@ import { db } from "../sql.ts";
 
 // Spec §8: the trust boundary of the public API — API key, CORS allow-list,
 // CAPTCHA, rate limit. Nothing here logs a request body, a phone, an email or
-// an IP (PDPA, §14).
+// an IP, and the public lead code writes no IP to audit_log either (PDPA, §14).
 
 export type Env = Record<string, string | undefined>;
 
@@ -84,10 +84,22 @@ export function requestIp(headers: Headers): string | null {
   );
 }
 
-// 10/IP/min (§8.2). The bucket is an HMAC of the address keyed with the API
-// key, so the table never holds an IP. Returns true when over the limit.
+// The HMAC key of the IP bucket: a server-only secret. It must not be the API
+// key, which the website's browsers hold, or anyone with the key could
+// rebuild the bucket of a known address. Unset or shorter than 16 characters
+// = not configured = the lead route stays closed (503), like the API key.
+export function rateLimitSecret(env: Env): string | null {
+  const s = (env.RATE_LIMIT_SECRET ?? "").trim();
+  return s.length >= 16 ? s : null;
+}
+
+// 10/IP/min (§8.2). The bucket is an HMAC of the address keyed with
+// RATE_LIMIT_SECRET, so the table never holds an IP (the keyed hash is a
+// pseudonym: it lives at most an hour). The caller has checked rateLimitSecret.
+// Returns true when over the limit.
 export async function ipLimited(env: Env, ip: string | null): Promise<boolean> {
-  const secret = apiKeys(env)[0] ?? "";
+  const secret = rateLimitSecret(env);
+  if (!secret) throw new Error("RATE_LIMIT_SECRET not configured");
   const bucket = ip
     ? `ip:${createHmac("sha256", secret).update(ip).digest("hex")}`
     : "ip:unknown";

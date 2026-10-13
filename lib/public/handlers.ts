@@ -8,6 +8,7 @@ import {
   originAllowed,
   phoneLimited,
   rateLimited,
+  rateLimitSecret,
   requestIp,
   withCors,
   type CaptchaVerifier,
@@ -102,6 +103,8 @@ export async function handleLead(request: Request, d: PublicDeps = live()) {
   const origin = request.headers.get("origin");
   const denied = gate(request, d);
   if (denied) return denied;
+  if (!rateLimitSecret(d.env))
+    return fail(d, origin, 503, "not_configured", "Not available.");
 
   // Step 1: rate limit per IP, before any parsing or CAPTCHA call.
   const ip = requestIp(request.headers);
@@ -167,7 +170,6 @@ export async function handleLead(request: Request, d: PublicDeps = live()) {
 
   try {
     const result = await captureLead(input, {
-      ip,
       landingUrl,
       referrer: cleanUrl(input.attribution?.referrer),
     });

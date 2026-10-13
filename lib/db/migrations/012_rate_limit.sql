@@ -8,9 +8,11 @@
 -- limiter (Vercel firewall, Cloudflare, a load balancer) this table can be
 -- dropped; the app-side check is then a second line, not the only one (O40).
 --
--- One row per (bucket, fixed window). The bucket is an HMAC of the IP, never
--- the address itself (PDPA). A fixed window lets a caller send up to twice the
--- limit across a window boundary; that is accepted for a spam brake.
+-- One row per (bucket, fixed window). The bucket is an HMAC of the IP keyed with
+-- the server-only RATE_LIMIT_SECRET (not the website's API key), never the
+-- address itself (PDPA). The route writes no IP to audit_log either. A fixed
+-- window lets a caller send up to twice the limit across a window boundary;
+-- that is accepted for a spam brake.
 -- UNLOGGED: counters may be lost after a crash, which only resets a limit.
 -- Rows older than an hour are deleted by the next call (no job needed).
 --

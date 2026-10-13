@@ -14,7 +14,9 @@ import type { LeadInput } from "../validation/public.ts";
 
 export type LeadResult = { personId: string; dealId: string };
 export type LeadContext = {
-  ip: string | null;
+  // No ip: audit_log is append-only, so a public write must not put the
+  // visitor's address there (PDPA; guard.ts keeps it out of the rate-limit
+  // table too).
   // Already cleaned by cleanUrl(); chosen by the route from body and headers.
   landingUrl: string | null;
   referrer: string | null;
@@ -151,7 +153,6 @@ async function insertLead(
         entityId: personId,
         before: null,
         after: { source: "public_form", formName: input.formName },
-        ip: ctx.ip,
       });
     }
 
@@ -279,7 +280,6 @@ async function insertLead(
         entityId: dealId,
         before: null,
         after: { source: "public_form", pipeline: "individual", stage: "new" },
-        ip: ctx.ip,
       });
     }
 

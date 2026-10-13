@@ -18,6 +18,7 @@ import {
   handleSchedule,
 } from "../lib/public/handlers.ts";
 import { cleanUrl } from "../lib/public/leads.ts";
+import { createHmac } from "node:crypto";
 import { normalizePhoneE164 } from "../lib/format/phone.ts";
 import {
   clearReviewFlag,
@@ -30,8 +31,10 @@ after(closeDb);
 
 const KEY = "test-key-0123456789abcdef";
 const ORIGIN = "https://thelead.io";
+const RL_SECRET = "rl-secret-0123456789abcdef";
 const ENV = {
   PUBLIC_API_KEY: KEY,
+  RATE_LIMIT_SECRET: RL_SECRET,
   PUBLIC_ALLOWED_ORIGINS: ORIGIN,
   PUBLIC_WEBSITE_URL: "https://thelead.io/",
 };
@@ -42,7 +45,10 @@ const nextIp = () => `10.${(++n >> 8) & 255}.${n & 255}.7`;
 
 function lead(
   body: unknown,
-  o: { headers?: Record<string, string>; env?: typeof ENV } = {},
+  o: {
+    headers?: Record<string, string>;
+    env?: Record<string, string | undefined>;
+  } = {},
 ) {
   return handleLead(
     new Request("https://crm.test/api/public/leads", {
@@ -294,6 +300,37 @@ it("rate limit: 10 per IP per minute, the 11th is 429 with Retry-After, another 
   );
 });
 
+it("rate limit: the IP bucket is keyed with RATE_LIMIT_SECRET, not with the API key the browsers hold", async () => {
+  const ip = "198.51.100.77";
+  await ok(await lead(form(), { headers: { "x-real-ip": ip } }));
+  const bucket = (k: string) =>
+    `ip:${createHmac("sha256", k).update(ip).digest("hex")}`;
+  assert.equal(
+    await count("rate_limit_hit", "bucket = $1", bucket(RL_SECRET)),
+    1,
+  );
+  assert.equal(await count("rate_limit_hit", "bucket = $1", bucket(KEY)), 0);
+});
+
+it("rate limit: no RATE_LIMIT_SECRET (unset, empty, short) closes the lead route with 503 and writes nothing; the schedule is unaffected", async () => {
+  for (const v of [undefined, "", "   ", "short"]) {
+    const email = uniqueEmail();
+    const res = await lead(form({ email }), {
+      env: { ...ENV, RATE_LIMIT_SECRET: v },
+    });
+    assert.equal(res.status, 503);
+    assert.equal((await res.json()).error.code, "not_configured");
+    assert.equal(await count("person", "email_norm = $1", email), 0);
+  }
+  const sched = await handleSchedule(
+    new Request("https://crm.test/api/public/schedule", {
+      headers: { "x-api-key": KEY },
+    }),
+    { env: { ...ENV, RATE_LIMIT_SECRET: undefined } },
+  );
+  assert.equal(sched.status, 200);
+});
+
 it("rate limit: 3 per phone per hour, counted on accepted submissions, the 4th is 429", async () => {
   const phone = uniquePhone();
   for (let i = 0; i < 3; i++) await ok(await lead(form({ phone })));
@@ -400,11 +437,16 @@ it("lead: a minimal submission makes person, first touchpoint, new deal and one 
     touchpointId: t.id,
   });
   assert.equal(ev[0].aggregate_type, "person");
-  // Creates are audited (§4), with no personal data in the audit row.
-  const [a] = await db()`
-    SELECT after::text AS after FROM audit_log
-    WHERE entity = 'person' AND entity_id = ${body.personId}`;
-  assert.ok(!a.after.includes(email));
+  // Creates are audited (§4), with no personal data in the audit row: no
+  // email, and no IP either (audit_log is append-only and cannot be erased).
+  const audits = await db()`
+    SELECT after::text AS after, ip FROM audit_log
+    WHERE entity_id IN (${body.personId}, ${body.dealId})`;
+  assert.equal(audits.length, 2);
+  for (const a of audits) {
+    assert.ok(!a.after.includes(email));
+    assert.equal(a.ip, null);
+  }
 });
 
 it("lead: the same email (any case) or the same phone (any format) finds the existing person", async () => {

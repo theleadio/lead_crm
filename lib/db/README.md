@@ -175,7 +175,7 @@ For the public intake API (`lib/public/guard.ts`, spec §8.2). One transaction; 
 
 | Change | What it means |
 | --- | --- |
-| `rate_limit_hit` (unlogged) | One row per (bucket, one-minute window) with a hit count. The bucket is a keyed hash of the caller's IP, never the address. Unlogged: a crash may reset the counters, nothing else. |
+| `rate_limit_hit` (unlogged) | One row per (bucket, one-minute window) with a hit count. The bucket is a hash of the caller's IP keyed with the server-only `RATE_LIMIT_SECRET`, never the address. Unlogged: a crash may reset the counters, nothing else. |
 | `rate_limit_take(bucket, window_seconds)` | Counts one hit in the current window and returns the total. Atomic. Deletes rows older than an hour first, so no cleanup job is needed. Not callable by `anon`/`authenticated`. |
 
 Drop the table and function if the host gets an edge rate limiter you trust (open item O40).
