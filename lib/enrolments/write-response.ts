@@ -70,6 +70,12 @@ export async function enrolmentWriteResponse(
         "not_transferable",
         `Only a confirmed enrolment can be transferred. This one is ${enumLabel(result.status).toLowerCase()}.`,
       );
+    case "deal_course_mismatch":
+      return apiError(
+        422,
+        "deal_course_mismatch",
+        "That class runs a different course than this deal. Change the deal's course, or pick a class that runs it.",
+      );
     case "same_class":
       return apiError(
         422,

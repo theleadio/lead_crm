@@ -167,3 +167,32 @@ it("refuses the roles that may not write an enrolment", async () => {
     );
   assert.equal((await row(id)).status, "confirmed");
 });
+
+it("the deal follows its student to the new class (§9.6)", async () => {
+  const viewer = await newUser();
+  const courseId = await newCourse();
+  const from = await newClass({ courseId, priceMyr: "1800.00" });
+  const to = await newClass({ courseId, priceMyr: "1800.00" });
+  const personId = await newPerson("Transferring Student");
+  const id = await enrol(from, "confirmed", { personId });
+
+  // The enrolment was created from a deal, so the deal points at `from`.
+  const [deal] = await db()`
+    INSERT INTO deal (pipeline, stage, person_id, course_id, class_id)
+    VALUES ('individual', 'engaged', ${personId}, ${courseId}, ${from})
+    RETURNING id`;
+  await db()`UPDATE enrolment SET deal_id = ${deal.id} WHERE id = ${id}`;
+
+  const [before] =
+    await db()`SELECT version::int AS v FROM enrolment WHERE id = ${id}`;
+  const result = await transferEnrolment(
+    id,
+    { toClassId: to },
+    before.v,
+    viewer,
+  );
+  assert.equal(result.kind, "transferred");
+
+  const [after] = await db()`SELECT class_id FROM deal WHERE id = ${deal.id}`;
+  assert.equal(after.class_id, to, "the deal still names the class they left");
+});

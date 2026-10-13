@@ -37,6 +37,10 @@ export const enrolmentCreateSchema = z.object({
   payerType: z.enum(["self", "company"], { message: "Pick who is paying" }),
   // The HR officer who registered them (§5); absent for a self-booking.
   bookerPersonId: uuid.nullable().optional(),
+  // §9.6 "Create enrolment": the deal this enrolment closes. Absent from the
+  // §9.10 roster's own Add control — a walk-in has no deal, and §5 keeps
+  // `deal_id` nullable for exactly that.
+  dealId: uuid.nullable().optional(),
 });
 
 export type EnrolmentCreate = z.infer<typeof enrolmentCreateSchema>;

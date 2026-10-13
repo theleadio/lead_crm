@@ -195,6 +195,9 @@ export type EnrolmentWriteResult =
   | { kind: "no_seats"; classCode: string }
   // §5 unique index: the person already holds a live enrolment in that class.
   | { kind: "duplicate"; classCode: string; enrolmentId: string | null }
+  // §9.6: the class runs a different course than the deal is for. Linking
+  // them anyway would book the money against the wrong course.
+  | { kind: "deal_course_mismatch" }
   // §12.4: transfer is offered on a confirmed enrolment only.
   | { kind: "not_transferable"; status: string }
   | { kind: "same_class" };
@@ -360,6 +363,34 @@ export async function changeEnrolmentStatus(
   }
 }
 
+// §9.6: the deal's Class row reports where its student actually sits, so it
+// follows the enrolment that carries the deal — set when one is created from
+// the deal, moved when that enrolment transfers. Writing it here rather than
+// leaving it to a hand edit keeps the two from disagreeing; the row is
+// read-only on the 9.6 screen for the same reason. The 005 trigger bumps the
+// deal's version, so an open deal form can conflict — expected per §7.
+async function pointDealAtClass(
+  dealId: string,
+  classId: string,
+  viewer: Viewer,
+): Promise<void> {
+  const sql = db();
+  const [deal] = await sql`
+    SELECT class_id FROM deal WHERE id = ${dealId} FOR UPDATE`;
+  // Already there, or gone: nothing to write and nothing to audit.
+  if (!deal || deal.class_id === classId) return;
+
+  await sql`UPDATE deal SET class_id = ${classId} WHERE id = ${dealId}`;
+  await writeAudit({
+    userId: viewer.id,
+    action: "update",
+    entity: "deal",
+    entityId: dealId,
+    before: { classId: deal.class_id },
+    after: { classId, setBy: "enrolment" },
+  });
+}
+
 // POST /api/enrolments — §9.11, §7.1. The Add control on the §9.10 Roster. One
 // transaction under the class row lock: the seat check, the insert and one
 // EnrolmentCreated (§11.1). The price comes from the class on the server —
@@ -389,6 +420,22 @@ export async function createEnrolment(
       )
         return { kind: "no_seats", classCode: cls.code as string };
 
+      // §9.6: an enrolment created from a deal carries it, so the deal's
+      // Enrolments panel and its class both fill. Checked rather than
+      // trusted: the deal has to be live and about this person, and a class
+      // running a different course than the deal would silently mis-link
+      // revenue to the wrong course.
+      if (body.dealId) {
+        const [deal] = await sql`
+          SELECT d.id, d.course_id, c.course_id AS class_course_id
+          FROM deal d, class c
+          WHERE d.id = ${body.dealId} AND c.id = ${body.classId}
+            AND d.deleted_at IS NULL AND d.person_id = ${body.personId}`;
+        if (!deal) return { kind: "not_found" };
+        if (deal.course_id && deal.course_id !== deal.class_course_id)
+          return { kind: "deal_course_mismatch" };
+      }
+
       // §5: one live enrolment per person per class, checked under the lock so
       // the message can name the enrolment that already exists (design 5).
       const existing = await liveEnrolmentId(body.personId, body.classId);
@@ -400,12 +447,15 @@ export async function createEnrolment(
         };
 
       const [created] = await sql`
-        INSERT INTO enrolment (person_id, class_id, booker_person_id, status,
-                               payer_type, price_paid_myr, created_by)
-        VALUES (${body.personId}, ${body.classId},
+        INSERT INTO enrolment (person_id, class_id, deal_id, booker_person_id,
+                               status, payer_type, price_paid_myr, created_by)
+        VALUES (${body.personId}, ${body.classId}, ${body.dealId ?? null},
                 ${body.bookerPersonId ?? null}, ${body.status},
                 ${body.payerType}, ${cls.price_myr}, ${viewer.id})
         RETURNING id, version`;
+
+      if (body.dealId)
+        await pointDealAtClass(body.dealId, body.classId, viewer);
 
       await sql`
         INSERT INTO event_outbox (type, aggregate_type, aggregate_id, payload,
@@ -509,6 +559,9 @@ export async function transferEnrolment(
                 ${before.booker_person_id}, 'confirmed', ${before.payer_type},
                 ${before.price_paid_myr}, ${viewer.id})
         RETURNING id`;
+
+      if (before.deal_id)
+        await pointDealAtClass(before.deal_id as string, toClassId, viewer);
 
       // §5 CHECK: a `transferred` row must name where it went, so both land in
       // the one statement.

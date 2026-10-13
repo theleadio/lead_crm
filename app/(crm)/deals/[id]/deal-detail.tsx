@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { LostReasonDialog } from "../lost-reason-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CompanySelect } from "./company-select";
+import { CreateEnrolment } from "./create-enrolment";
 import {
   BackLink,
   DetailError,
@@ -198,7 +199,12 @@ export function DealDetailView({
           </>
         }
         actions={
-          <DealActions deal={d} canWrite={canWrite} onNotice={setToast} />
+          <DealActions
+            deal={d}
+            canWrite={canWrite}
+            onNotice={setToast}
+            onReload={reload}
+          />
         }
       />
 
@@ -274,8 +280,8 @@ export function DealDetailView({
           {/* §9.6: a won deal with no enrolment should get one. */}
           {d.stage === "won" && !d.enrolments.length && (
             <p className="text-ink-muted text-sm">
-              This deal is won with no enrolment yet. Create one so the student
-              has a seat — available with the Enrolments screen (9.11).
+              This deal is won with no enrolment yet. Use Create enrolment above
+              so the student has a seat.
             </p>
           )}
 
@@ -303,36 +309,35 @@ export function DealDetailView({
   );
 }
 
-// Send checkout link, Create enrolment and Add task wait on routes that
-// aren't built (proposal: Shawn's, 9.11, 9.14). Disabled and labelled, so
-// the screen says "coming" rather than "not in the product".
+// Send checkout link and Add task still wait on routes that aren't built
+// (Shawn's checkout, 9.14). Disabled and labelled, so the screen says
+// "coming" rather than "not in the product". Create enrolment is live: §9.11
+// landed, and this is the only screen that knows the deal (§9.6).
 function DealActions({
   deal,
   canWrite,
   onNotice,
+  onReload,
 }: {
   deal: DealDetail;
   canWrite: boolean;
   onNotice: (message: React.ReactNode) => void;
+  onReload: () => void;
 }) {
   if (!canWrite) return null;
   return (
     <>
-      <Button
-        variant="outline"
-        disabled
-        title="Waiting on the Stripe checkout route (Shawn)"
-      >
+      <Button variant="outline" disabled title="Not available yet">
         Send checkout link
       </Button>
-      <Button
-        variant="outline"
-        disabled
-        title="Waiting on the Enrolments screen (9.11)"
-      >
-        Create enrolment
-      </Button>
-      <Button variant="outline" disabled title="Waiting on Tasks (9.14)">
+      <CreateEnrolment
+        dealId={deal.id}
+        personId={deal.person.id}
+        personName={deal.person.name}
+        courseId={deal.course?.id ?? null}
+        onCreated={onReload}
+      />
+      <Button variant="outline" disabled title="Not available yet">
         Add task
       </Button>
       {deal.checkoutUrl && (
@@ -681,7 +686,9 @@ function EditForm({
       <ReadOnlyRow
         label="Class"
         value={deal.class?.name ?? null}
-        hint="Set with the Classes screen (9.8)"
+        // §9.6: the enrolment owns it — created from this deal, or moved by a
+        // §9.11 transfer. Nothing to edit here.
+        hint="Follows the enrolment below"
       />
 
       <Field id="headcount" label="Headcount" error={fieldErrors.headcount}>
