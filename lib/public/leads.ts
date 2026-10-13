@@ -41,6 +41,10 @@ export function cleanUrl(raw: string | null | undefined): string | null {
   }
 }
 
+// Prefix of touchpoint.external_ref on the synthetic first touch made from a
+// first-touch cookie. Contains a space, which no idempotencyKey may.
+export const COOKIE_TOUCH_REF = "cookie first touch of";
+
 const isUniqueViolation = (err: unknown, constraint?: string) =>
   typeof err === "object" &&
   err !== null &&
@@ -173,8 +177,11 @@ async function insertLead(
       ftAt.getTime() >= Date.now() - 400 * 86_400_000
         ? ftAt
         : null;
+    // Only believed with a usable time: without one the earlier visit cannot be
+    // placed before this submission, so this submission stays the first touch.
     const cookieFirst =
       priorTouches === 0 &&
+      ftTime !== null &&
       !!(ft?.utmSource || ft?.utmCampaign) &&
       (ft?.utmSource !== a?.utmSource || ft?.utmCampaign !== a?.utmCampaign);
 
@@ -192,12 +199,18 @@ async function insertLead(
       RETURNING id`;
     let firstId: string | null = priorTouches === 0 ? tp.id : null;
     if (cookieFirst) {
+      // Never later than the submission's own touch (LEAST with the database
+      // clock, which the form touch's default also uses). external_ref marks it
+      // as the cookie's visit, not a submission: phoneLimited skips it. A
+      // client key cannot start with this text (no spaces allowed in a key).
       const [f] = await sql`
         INSERT INTO touchpoint (person_id, channel, occurred_at, utm_source,
-                                utm_medium, utm_campaign, is_first_touch)
-        VALUES (${personId}, 'web_form', ${ftTime ?? new Date()},
+                                utm_medium, utm_campaign, is_first_touch,
+                                external_ref)
+        VALUES (${personId}, 'web_form', LEAST(${ftTime}::timestamptz, now()),
                 ${ft?.utmSource ?? null}, ${ft?.utmMedium ?? null},
-                ${ft?.utmCampaign ?? null}, true)
+                ${ft?.utmCampaign ?? null}, true,
+                ${`${COOKIE_TOUCH_REF} ${tp.id}`})
         RETURNING id`;
       firstId = f.id;
     }

@@ -879,6 +879,68 @@ it("attribution: a first-touch cookie from earlier becomes the first touch; this
   assert.equal(f.sane, true);
 });
 
+it("attribution: a first-touch cookie without a usable time makes no synthetic touch; this submission stays the first touch", async () => {
+  const cookie = (occurredAt?: string) =>
+    form({
+      attribution: {
+        utmSource: "facebook",
+        utmCampaign: "paid",
+        firstTouch: {
+          utmSource: "youtube",
+          utmCampaign: "organic",
+          occurredAt,
+        },
+      },
+    });
+  for (const at of [
+    undefined,
+    "garbage",
+    new Date(Date.now() + 9 * 86_400_000).toISOString(),
+  ]) {
+    const r = await ok(await lead(cookie(at)));
+    const rows = await db()`
+      SELECT id, utm_source, is_first_touch FROM touchpoint WHERE person_id = ${r.personId}`;
+    assert.equal(rows.length, 1, String(at));
+    assert.equal(rows[0].utm_source, "facebook");
+    assert.equal(rows[0].is_first_touch, true);
+    const [p] =
+      await db()`SELECT first_touchpoint_id FROM person WHERE id = ${r.personId}`;
+    assert.equal(p.first_touchpoint_id, rows[0].id);
+  }
+});
+
+it("attribution: the cookie's touch is never later than the submission and does not count toward 3 per phone per hour", async () => {
+  const phone = uniquePhone();
+  const withCookie = (at: Date) =>
+    form({
+      phone,
+      attribution: {
+        utmSource: "facebook",
+        utmCampaign: "paid",
+        firstTouch: {
+          utmSource: "youtube",
+          utmCampaign: "organic",
+          occurredAt: at.toISOString(),
+        },
+      },
+    });
+  // 30 s "in the future" is tolerated (clock skew) but must not sort after
+  // the submission itself.
+  const first = await ok(await lead(withCookie(new Date(Date.now() + 30_000))));
+  const rows = await db()`
+    SELECT utm_source, is_first_touch, occurred_at FROM touchpoint
+    WHERE person_id = ${first.personId} ORDER BY is_first_touch DESC`;
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].utm_source, "youtube");
+  assert.ok(rows[0].occurred_at <= rows[1].occurred_at);
+  // Two more submissions inside the hour are still the 2nd and 3rd; only the
+  // 4th is refused. (The cookie's visit, 10 minutes ago, is not a submission.)
+  const recent = new Date(Date.now() - 10 * 60_000);
+  await ok(await lead(withCookie(recent)));
+  await ok(await lead(withCookie(recent)));
+  assert.equal((await lead(withCookie(recent))).status, 429);
+});
+
 // ---- Idempotency -----------------------------------------------------------
 
 it("idempotency: a repeat key returns the same ids and changes nothing — one person, touchpoint, deal, consent, LeadCaptured", async () => {

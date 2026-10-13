@@ -2,6 +2,7 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { clientIp } from "../audit.ts";
 import { apiError } from "../api/errors.ts";
 import { db } from "../sql.ts";
+import { COOKIE_TOUCH_REF } from "./leads.ts";
 
 // Spec §8: the trust boundary of the public API — API key, CORS allow-list,
 // CAPTCHA, rate limit. Nothing here logs a request body, a phone, an email or
@@ -107,8 +108,9 @@ export async function ipLimited(env: Env, ip: string | null): Promise<boolean> {
   return r.hits > 10;
 }
 
-// 3/phone/hour (§8.2): accepted web-form touchpoints of the person who owns
-// this number in the last hour (touchpoint_person_time_idx). No table.
+// 3/phone/hour (§8.2): accepted web-form submissions of the person who owns
+// this number in the last hour (touchpoint_person_time_idx). No table. The
+// synthetic first touch made from a cookie is a visit, not a submission.
 export async function phoneLimited(phoneE164: string | null): Promise<boolean> {
   if (!phoneE164) return false;
   const [r] = await db()`
@@ -116,7 +118,8 @@ export async function phoneLimited(phoneE164: string | null): Promise<boolean> {
     FROM touchpoint t
     JOIN person p ON p.id = t.person_id
     WHERE p.phone_e164 = ${phoneE164} AND t.channel = 'web_form'
-      AND t.occurred_at > now() - interval '1 hour'`;
+      AND t.occurred_at > now() - interval '1 hour'
+      AND (t.external_ref IS NULL OR t.external_ref NOT LIKE ${COOKIE_TOUCH_REF + "%"})`;
   return r.n >= 3;
 }
 
