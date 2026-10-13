@@ -26,6 +26,7 @@ import { formatMoneyMyr } from "@/lib/format/money";
 import type { OwnerOption } from "@/lib/people/types";
 import { DealCard } from "./deal-card";
 import { LostReasonDialog } from "./lost-reason-dialog";
+import { NewDeal } from "./new-deal";
 
 const FUNDING: [string, string][] = [
   ["self", "Self"],
@@ -335,7 +336,9 @@ export function DealsBoard({
 
   return (
     <div className="space-y-4">
-      <ListHeader title="Deals" />
+      <ListHeader title="Deals">
+        {canWrite && <NewDeal pipeline={filters.pipeline} />}
+      </ListHeader>
 
       <div
         role="tablist"

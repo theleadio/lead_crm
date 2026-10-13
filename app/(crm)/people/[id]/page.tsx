@@ -2,6 +2,7 @@ import { getCurrentUser } from "@/lib/auth/current-user";
 import {
   canReviewFlagged,
   canWriteCompany,
+  canWriteDeal,
   permissionFor,
 } from "@/lib/auth/permissions";
 import { PersonDetailView } from "./person-detail";
@@ -24,6 +25,7 @@ export default async function PersonPage(props: PageProps<"/people/[id]">) {
       canEditCompany={user ? canWriteCompany(user) : false}
       canMerge={user?.role === "super_admin"}
       canReview={user ? canReviewFlagged(user) : false}
+      canCreateDeal={user ? canWriteDeal(user) : false}
     />
   );
 }

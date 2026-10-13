@@ -7,6 +7,7 @@ import {
 } from "../auth/permissions.ts";
 import { isUuid } from "../people/service.ts";
 import { db, withTransaction } from "../sql.ts";
+import type { DealCreateBody } from "../validation/deal.ts";
 import { syncHrdcDeadlineTask } from "./hrdc-task.ts";
 import {
   CORPORATE_GATED_STAGES,
@@ -349,4 +350,71 @@ async function checkLostReason(
       message: "Pick an active lost reason.",
     };
   return null;
+}
+
+export type CreateResult =
+  | { kind: "created"; deal: DealDetail }
+  | { kind: "forbidden" }
+  // The person is gone, merged away or never existed.
+  | { kind: "not_found" }
+  | { kind: "invalid"; fields: Record<string, string> };
+
+// POST /api/deals (§7) — the New deal control on §9.5 and §9.2. Two fields
+// the form cannot set: `stage`, because every deal starts in `new` and moves
+// only through POST /api/deals/:id/stage, which owns the history row and
+// DealStageChanged (§12.5); and `classId`, which the enrolment sets (§9.6).
+// §12.5's corporate gate is not checked here — it bites on the way out of
+// `discovery`, and a corporate deal is often opened before the company,
+// headcount and funding type are known.
+export async function createDeal(
+  body: DealCreateBody,
+  viewer: Viewer,
+): Promise<CreateResult> {
+  if (!canWriteDeal(viewer)) return { kind: "forbidden" };
+
+  return withTransaction(async (): Promise<CreateResult> => {
+    const sql = db();
+    const [person] = await sql`
+      SELECT id FROM person
+      WHERE id = ${body.personId} AND deleted_at IS NULL
+        AND merged_into_id IS NULL`;
+    if (!person) return { kind: "not_found" };
+
+    const invalid = await checkReferences(body);
+    if (invalid) return { kind: "invalid", fields: invalid };
+
+    // Unowned is a choice the form can make (null), so only an absent
+    // ownerId falls back to the person creating it.
+    const row: Record<string, unknown> = {
+      pipeline: body.pipeline,
+      stage: "new",
+      person_id: body.personId,
+      owner_user_id: body.ownerId === undefined ? viewer.id : body.ownerId,
+      created_by: viewer.id,
+    };
+    for (const [key, column] of Object.entries(COLUMNS)) {
+      if (key === "ownerId" || key === "lostReasonId") continue;
+      const value = body[key as keyof DealCreateBody];
+      if (value !== undefined) row[column] = value;
+    }
+
+    const [created] = await sql`INSERT INTO deal ${sql(row)} RETURNING id`;
+
+    // No DealStageChanged: §11.1 raises that on a move, and a deal opening in
+    // `new` has not moved. No deal_stage_history row either — the panel reads
+    // moves, and `created_at` already says when `new` began.
+    await writeAudit({
+      userId: viewer.id,
+      action: "create",
+      entity: "deal",
+      entityId: created.id as string,
+      before: null,
+      after: row,
+    });
+
+    const result = await getDealDetail(created.id as string, viewer);
+    return result.kind === "ok"
+      ? { kind: "created", deal: result.deal }
+      : { kind: "not_found" };
+  });
 }

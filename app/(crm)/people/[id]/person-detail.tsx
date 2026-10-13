@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { formatDate, formatLastActivity, formatTime } from "@/lib/format/date";
 import { formatMoneyMyr } from "@/lib/format/money";
 import { displayName } from "@/lib/people/types";
+import { NewDeal } from "../../deals/new-deal";
 import type {
   ConsentState,
   ListResponse,
@@ -71,6 +72,7 @@ export function PersonDetailView({
   canEditCompany,
   canMerge,
   canReview,
+  canCreateDeal,
 }: {
   id: string;
   canWrite: boolean;
@@ -80,6 +82,8 @@ export function PersonDetailView({
   canMerge: boolean;
   // §12.2: may clear a flag that was a false positive.
   canReview: boolean;
+  // §9.2 quick action: the §6 deal row, not the person row.
+  canCreateDeal: boolean;
 }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
@@ -192,6 +196,12 @@ export function PersonDetailView({
         }
         actions={
           <>
+            {canCreateDeal && (
+              <NewDeal
+                pipeline="individual"
+                person={{ id: p.id, fullName: name }}
+              />
+            )}
             {p.email && !p.email.includes("•") && (
               <Button variant="outline" asChild>
                 <a href={`mailto:${p.email}`}>Email</a>
