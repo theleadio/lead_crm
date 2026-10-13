@@ -22,7 +22,8 @@ const block =
 
 it("migration 009 pre-check: passes with no legacy match_payment task; stops with the count and a hint when there is one", async () => {
   assert.ok(block?.includes("DO $$"), "pre-check block not found in 009");
-  await db().unsafe(block); // nothing wrong: no error
+  const sql = block ?? "";
+  await db().unsafe(sql); // nothing wrong: no error
 
   // Re-create the pre-009 situation: no CHECK, a task with no payment_id.
   await db()`ALTER TABLE task DROP CONSTRAINT task_match_payment_needs_payment`;
@@ -31,7 +32,7 @@ it("migration 009 pre-check: passes with no legacy match_payment task; stops wit
     INSERT INTO task (type, title, done_at)
     VALUES ('match_payment', 'legacy 2 (closed)', now())`;
   await assert.rejects(
-    db().unsafe(block),
+    db().unsafe(sql),
     (e: Error & { hint?: string }) =>
       /migration 009: 2 match_payment task\(s\) have no payment_id/.test(
         e.message,
