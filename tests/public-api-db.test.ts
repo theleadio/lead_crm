@@ -979,6 +979,27 @@ it("failure: an internal error is a generic 500 and the log holds no personal da
   }
 });
 
+it("failure: a database error before the capture (rate limit) is the same generic 500 with CORS and no-store headers", async () => {
+  const logged: unknown[][] = [];
+  const spy = mock.method(console, "error", (...a: unknown[]) => {
+    logged.push(a);
+  });
+  try {
+    // The first thing the route does with the database is the IP counter.
+    await db()`DROP FUNCTION rate_limit_take(text, integer)`; // rolled back
+    const email = uniqueEmail();
+    const res = await lead(form({ email }), { headers: { origin: ORIGIN } });
+    assert.equal(res.status, 500);
+    assert.equal((await res.json()).error.code, "server_error");
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    assert.equal(res.headers.get("access-control-allow-origin"), ORIGIN);
+    assert.ok(logged.length >= 1);
+    assert.ok(!JSON.stringify(logged).includes(email));
+  } finally {
+    spy.mock.restore();
+  }
+});
+
 // ---- Committed: two identical calls at once --------------------------------
 
 test(

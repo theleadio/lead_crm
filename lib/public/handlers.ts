@@ -98,14 +98,30 @@ export async function handleSchedule(request: Request, d: PublicDeps = live()) {
   );
 }
 
-// POST /api/public/leads (§8.2)
+// POST /api/public/leads (§8.2). Everything after the gate runs inside one
+// try/catch, so a database error in the rate limit, the replay lookup or the
+// phone count answers like any other failure: generic 500, CORS and no-store
+// headers, and a log line that names the error but holds no request data.
 export async function handleLead(request: Request, d: PublicDeps = live()) {
   const origin = request.headers.get("origin");
   const denied = gate(request, d);
   if (denied) return denied;
   if (!rateLimitSecret(d.env))
     return fail(d, origin, 503, "not_configured", "Not available.");
+  try {
+    return await leadFlow(request, d, origin);
+  } catch (err) {
+    const e = err as { name?: string; code?: string };
+    console.error("public lead failed", e.name, e.code);
+    return fail(d, origin, 500, "server_error", "Something went wrong.");
+  }
+}
 
+async function leadFlow(
+  request: Request,
+  d: PublicDeps,
+  origin: string | null,
+): Promise<Response> {
   // Step 1: rate limit per IP, before any parsing or CAPTCHA call.
   const ip = requestIp(request.headers);
   if (await ipLimited(d.env, ip)) {
@@ -168,16 +184,10 @@ export async function handleLead(request: Request, d: PublicDeps = live()) {
       ? bodyLanding
       : cleanUrl(request.headers.get("referer"));
 
-  try {
-    const result = await captureLead(input, {
+  return ok(
+    await captureLead(input, {
       landingUrl,
       referrer: cleanUrl(input.attribution?.referrer),
-    });
-    return ok(result);
-  } catch (err) {
-    // No body, no phone, no email in the log — the error name and code only.
-    const e = err as { name?: string; code?: string };
-    console.error("public lead failed", e.name, e.code);
-    return fail(d, origin, 500, "server_error", "Something went wrong.");
-  }
+    }),
+  );
 }
