@@ -639,6 +639,40 @@ it("lead: classCode sets class and course on the deal; an unknown code or course
   assert.equal(u.class_id, null);
 });
 
+it("lead: a classCode of a private, draft, cancelled or completed class attaches no class; the lead and the course interest are kept", async () => {
+  const courseId = await newCourse();
+  const [course] = await db()`SELECT code FROM course WHERE id = ${courseId}`;
+  const mk = async (status: string, isPublic: boolean) => {
+    const code = `X-${crypto.randomUUID().slice(0, 8)}`;
+    await db()`
+      INSERT INTO class (course_id, code, start_date, end_date, language, mode,
+        venue_name, venue_address, city, capacity, status, is_public)
+      VALUES (${courseId}, ${code}, current_date + 5, current_date + 5, 'en',
+        'in_person', 'V', 'A', 'KL', 10, ${status}, ${isPublic})`;
+    return code;
+  };
+  for (const [status, isPublic] of [
+    ["open", false],
+    ["draft", true],
+    ["cancelled", true],
+    ["completed", true],
+  ] as const) {
+    const code = await mk(status, isPublic);
+    const r = await ok(
+      await lead(form({ classCode: code, courseInterest: course.code })),
+    );
+    const [d] =
+      await db()`SELECT course_id, class_id FROM deal WHERE id = ${r.dealId}`;
+    assert.equal(d.class_id, null, `${status} public=${isPublic}`);
+    assert.equal(d.course_id, courseId);
+  }
+  // A public full class still takes a lead (a waiting-list enquiry).
+  const full = await mk("full", true);
+  const r = await ok(await lead(form({ classCode: full })));
+  const [d] = await db()`SELECT class_id FROM deal WHERE id = ${r.dealId}`;
+  assert.ok(d.class_id);
+});
+
 it("lead: the message is appended to the person's notes without overwriting them", async () => {
   const email = uniqueEmail();
   const a = await ok(

@@ -256,11 +256,14 @@ async function insertLead(
     }
 
     // 6. Deal in `new`, unless this person already has an open one for the
-    // same course. Class code wins over course interest; unknown codes are
-    // ignored (the lead is still worth capturing).
+    // same course. Class code wins over course interest; unknown codes, and
+    // classes the public schedule does not show (private, draft, cancelled,
+    // completed), are ignored: the lead is still worth capturing.
     const [cls] = input.classCode
       ? await sql`
-          SELECT id, course_id FROM class WHERE lower(code) = lower(${input.classCode})`
+          SELECT id, course_id FROM class
+          WHERE lower(code) = lower(${input.classCode})
+            AND is_public AND status IN ('open', 'few_seats', 'full')`
       : [];
     const [crs] =
       !cls && input.courseInterest
