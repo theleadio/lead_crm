@@ -1,4 +1,4 @@
-# LEAD CRM — Software Specification v1.15
+# LEAD CRM — Software Specification v1.16
 
 _Last updated 13 Oct 2026 · Owner: Shawn_
 
@@ -6,6 +6,7 @@ _Last updated 13 Oct 2026 · Owner: Shawn_
 
 | Version | Date | Changes |
 | --- | --- | --- |
+| v1.16 | 13 Oct 2026 | §5 gains the schema-change tables for migrations 009 (pre-freeze schema) and 010 (outbox backoff) that were missing since v1.13; the 012 table now lists its sweep index. Derived line by line from the SQL files. Nothing else changes. |
 | v1.15 | 13 Oct 2026 | Public intake API built: `GET /api/public/schedule` (§8.1) and `POST /api/public/leads` (§8.2) as specified, in `lib/public/`; migration 012 (rate-limit counter); what was decided where the spec was silent (§8.1, §8.2 "Built" notes); env variables for the public API (§2); `LeadCaptured` and `ConsentChanged` now raised by it (§11.1); a soft match on the public form raises the same §7.1 pair task as `POST /api/people` (§8.2); open items O39-O43, O38 reworded. `/register` (§8.3) is not built (O43). |
 | v1.14 | 13 Oct 2026 | Decisions on six rebase questions: enrolments cannot be deleted, only cancelled; enrolment history `changed_by` stays NULL (the actor is in `audit_log`); `class.cancelled_reason` stays unenforced; Zixuan's eight hand-written outbox inserts stay (§12.11 note). O35 gap list gains `enrolment_status_history.reason` (§15.3). First outbox handlers for `EnrolmentCancelled`, `ClassCancelled` and `ClassChanged` (§3, §11.1); migration 011 `task.source_key`; open items O36-O38. |
 | v1.13 | 13 Oct 2026 | S1 Shawn-side, rebased onto v1.12: event contract and outbox drain with backoff and dead letters (§2, §3, §7); pre-freeze schema migrations 009 and 010 (§12.11); nameless WhatsApp person convention (§11.2); open items O17-O19, O21, O23-O35 and O44 (§15.3; the checkout-link question was O16 until upstream took that number for part payments). O20 and O22 are closed: seats and expiry are the database's job since migrations 006 and 007. |
@@ -407,6 +408,34 @@ Only one `pending` notice per class at a time — a second edit while one is pen
 | --- | --- | --- |
 | payment | Unique index `payment_proof_key_uq` on `proof_file_key` where not null | One proof file belongs to one payment; a double-click or retry on 9.12 cannot save it twice. If the index fails to build, two existing payments share a file and a person decides which is real |
 
+**Schema changes 8 Oct, migration 009 (v1.13)** — pre-freeze review of 8 Oct, open items O23-O30, O32, O33 (§15.3)
+
+| Table | Change | Why |
+| --- | --- | --- |
+| task | CHECK `task_done_by_needs_done_at`: `done_by` set needs `done_at` set, not the other way round (replaces 001's `(done_at IS NULL) = (done_by IS NULL)`) | O33 — a worker (system actor, no user) can close a task; who closed it stays in `audit_log` |
+| task | add `payment_id uuid → payment`; CHECK `task_match_payment_needs_payment`; unique index `task_match_payment_open_uq` on `payment_id` where `type = 'match_payment'` and `done_at IS NULL` | O23 — the match route finds the task it must close; a second webhook cannot open a second task for one payment |
+| task | add `is_cancelled boolean NOT NULL DEFAULT false`; CHECK `task_cancelled_is_closed` (`is_cancelled` implies `done_at`) | O32 — a withdrawn task is closed and flagged, so the timeline says "withdrawn"; `done_at IS NULL` still means open everywhere |
+| payment | add `refunded_at timestamptz`; CHECKs `payment_paid_at_when_paid` (succeeded, partially_refunded, refunded need `paid_at`), `payment_refund_matches_status` (status agrees with `refunded_amount_myr`), `payment_refunded_at_when_refunded` (`refunded_at` set exactly when something was refunded); unique index `payment_stripe_session_uq` on `stripe_checkout_session_id` where not null | O25 — a payment cannot contradict itself; the webhook looks the payment up by session |
+| view `payment_net` | new: payments in succeeded, partially_refunded or refunded, with `net_myr` = amount − refunded | O25 — the one revenue definition (§12.7); lifecycle, company totals and BI read it |
+| new `enrolment_status_history` | `enrolment_id`, `from_status` (NULL on insert), `to_status`, `reason`, `changed_by` (always NULL, v1.14), `changed_at` (`clock_timestamp()`); index on `(enrolment_id, changed_at)`; append-only (`forbid_change()`); function `enrolment_log_status()` and AFTER triggers `enrolment_log_status_insert` and `enrolment_log_status_update` (status changes only) on `enrolment`; one backfill row per existing enrolment | O26 — written by the database, so the status screen, the Stripe webhook, imports, `expire_reservations()` and a class cancel are all covered. The 24th table. The enrolment foreign key means an enrolment can no longer be deleted (§12.11) |
+| class | add `notes`, `cancelled_reason`, `cancelled_at`; function and trigger `class_stamp_cancelled` stamp `cancelled_at` when status is cancelled; CHECK `class_cancelled_at_recorded` | O27 — `notes` is internal (the public feed never selects it); `cancelClass()` writes the reason; no CHECK on the reason (v1.14) |
+| deal | add `hrdc_document_key text`; add `source_touchpoint_id uuid → touchpoint` | O27 (HRDC document), O30 (attribution; set by public intake, n8n and WATI) |
+| enrolment | partial index `enrolment_reservation_expiry_idx` on `seat_reserved_until` where `status = 'reserved'` | O28 — the scan of `expire_reservations()`; the hold CHECK itself is 007 |
+| touchpoint | add `external_ref text`; unique index `touchpoint_external_ref_uq` on `(channel, external_ref)` where not null | O29 (O31) — `<batch>:<row>`, `leadgen_id`, the WATI message id or the form's `idempotencyKey`; insert with `ON CONFLICT DO NOTHING`. The new column is frozen like the rest (`forbid_change()` covers it) |
+
+Backfills in 009: `payment.paid_at` = `created_at` where missing on paid rows; `payment.refunded_at` = `updated_at` where something was refunded; one history row per enrolment (reason "migration 009 backfill"); cancelled classes get reason "migration 009 backfill" and `cancelled_at` = `updated_at`. The migration stops with a count, and repairs nothing, if a payment's status and refunded amount disagree or two payments share a Checkout session id.
+
+**Schema changes 9 Oct, migration 010 (v1.13)** — open item O34
+
+| Table | Change | Why |
+| --- | --- | --- |
+| event_outbox | add `next_attempt_at timestamptz NOT NULL DEFAULT now()`; add `dead_at timestamptz`; CHECK `event_outbox_dead_is_pending` (a row cannot be dead and processed) | A failed row waits until `next_attempt_at` instead of burning all 5 attempts in milliseconds; "dead" is a column, not a constant in the code. A dead row stays pending and visible; retry clears `dead_at` |
+| event_outbox | add `seq bigint GENERATED ALWAYS AS IDENTITY`; existing rows numbered in `(created_at, id)` order | `created_at` ties inside one transaction; claim order is `(next_attempt_at, seq)` |
+| event_outbox | index `event_outbox_pending_idx` replaced by `event_outbox_due_idx` on `(next_attempt_at, seq)` where `processed_at IS NULL AND dead_at IS NULL` | The drain scans live pending rows only |
+| integration_event | add `attempts integer NOT NULL DEFAULT 0` and `next_attempt_at`; index `integration_event_due_idx` on `next_attempt_at` where `status IN ('received', 'failed')` | The same retry columns for webhook staging (nothing uses them yet) |
+
+Backfill in 010: pending rows with `attempts >= 5` get `dead_at = now()`; nothing is deleted or reset.
+
 **Schema changes 13 Oct, migration 011 (v1.14)**
 
 | Table | Change | Why |
@@ -417,7 +446,7 @@ Only one `pending` notice per class at a time — a second edit while one is pen
 
 | Table | Change | Why |
 | --- | --- | --- |
-| new `rate_limit_hit` (unlogged) | `(bucket, window_start)` primary key, `hits`; function `rate_limit_take(bucket, window_seconds)` counts one hit and returns the total; rows older than an hour are swept by the next call; EXECUTE revoked from PUBLIC/`anon`/`authenticated` | 10 requests per IP per minute on the public API (§8.2) needs a counter that works on serverless. The bucket is a keyed hash of the IP, never the address. Not a business table; not counted in the 24 |
+| new `rate_limit_hit` (unlogged) | `(bucket, window_start)` primary key, `hits`; function `rate_limit_take(bucket, window_seconds)` counts one hit and returns the total; index `rate_limit_hit_window_idx` on `window_start`; rows older than an hour are swept by the next call; EXECUTE revoked from PUBLIC/`anon`/`authenticated` | 10 requests per IP per minute on the public API (§8.2) needs a counter that works on serverless. The bucket is a keyed hash of the IP, never the address. Not a business table; not counted in the 24 |
 
 **Onboarding templates have no table, deliberately.** WhatsApp templates must be Meta-approved and live in WATI; email templates live in the ESP. Settings links out to both.
 
