@@ -252,8 +252,8 @@ export default async function EnrolmentDetailPage(
         {canWrite && (
           <Panel title="Change this enrolment">
             <p className="text-ink-muted mb-3 text-sm">
-              Only the statuses §12.4 allows from {enumLabel(enrolment.status)}{" "}
-              are offered. Refunds are handled in Stripe, not here.
+              Only the statuses allowed from {enumLabel(enrolment.status)} are
+              offered. Refunds are handled in Stripe, not here.
             </p>
             <div className="flex flex-wrap items-start gap-2">
               <StatusControl
