@@ -653,6 +653,49 @@ it("consent: ticked grants email and WhatsApp marketing once, with a ConsentChan
   );
 });
 
+it("consent: a withdrawn purpose is not granted again from the public form; the lead is still captured (O45)", async () => {
+  const email = uniqueEmail();
+  const first = await ok(await lead(form({ email, consentMarketing: true })));
+  // The person withdraws email marketing later (appended, never edited).
+  await db()`
+    INSERT INTO consent (person_id, purpose, is_granted, source, recorded_at)
+    VALUES (${first.personId}, 'marketing_email', false, 'staff',
+            now() + interval '1 hour')`;
+  const events = () =>
+    count(
+      "event_outbox",
+      "type = 'ConsentChanged' AND aggregate_id = $1",
+      first.personId,
+    );
+  const rowsBefore = await count("consent", "person_id = $1", first.personId);
+  const eventsBefore = await events();
+
+  const again = await ok(await lead(form({ email, consentMarketing: true })));
+  assert.equal(again.personId, first.personId);
+  // Lead captured: new touchpoint and a LeadCaptured for it.
+  assert.equal(await count("touchpoint", "person_id = $1", first.personId), 2);
+  assert.equal(
+    await count(
+      "event_outbox",
+      "type = 'LeadCaptured' AND aggregate_id = $1",
+      first.personId,
+    ),
+    2,
+  );
+  // But no new consent row and no ConsentChanged; WhatsApp (still granted) is
+  // unchanged too.
+  assert.equal(
+    await count("consent", "person_id = $1", first.personId),
+    rowsBefore,
+  );
+  assert.equal(await events(), eventsBefore);
+  const [latest] = await db()`
+    SELECT is_granted FROM consent
+    WHERE person_id = ${first.personId} AND purpose = 'marketing_email'
+    ORDER BY recorded_at DESC LIMIT 1`;
+  assert.equal(latest.is_granted, false);
+});
+
 // ---- Company, attribution --------------------------------------------------
 
 it("company: stored as typed, linked only to one existing match, never created", async () => {

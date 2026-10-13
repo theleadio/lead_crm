@@ -219,13 +219,16 @@ async function insertLead(
     // 5. Consent. A ticked box grants email and WhatsApp marketing (the form's
     // wording, §10.3). An unticked box records nothing: it is the default, not
     // a withdrawal, and "no consent row" already means "no consent" (§14).
+    // A purpose whose latest row is a WITHDRAWAL is never granted again from
+    // the public form (PDPA; O45: needs a double opt-in decision). Nothing is
+    // recorded for it, but the lead itself is still captured.
     if (input.consentMarketing) {
       for (const purpose of ["marketing_email", "marketing_whatsapp"]) {
         const [latest] = await sql`
           SELECT is_granted FROM consent
           WHERE person_id = ${personId} AND purpose = ${purpose}
           ORDER BY recorded_at DESC, created_at DESC LIMIT 1`;
-        if (latest?.is_granted) continue;
+        if (latest) continue; // granted already, or withdrawn (O45)
         await sql`
           INSERT INTO consent (person_id, purpose, is_granted, source)
           VALUES (${personId}, ${purpose}, true, 'web_form')`;
