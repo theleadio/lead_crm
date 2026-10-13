@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatDate } from "@/lib/format/date";
 import { formatMoneyMyr } from "@/lib/format/money";
-import { agingTone, daysInStage } from "@/lib/deals/format";
+import { agingTone, daysInStage, suggestDealValue } from "@/lib/deals/format";
 import {
   FUNDING_TYPES,
   STAGES,
@@ -502,7 +502,9 @@ function EditForm({
     });
   }
   const [owners, setOwners] = useState<OwnerOption[]>([]);
-  const [courses, setCourses] = useState<Ref[]>([]);
+  const [courses, setCourses] = useState<
+    (Ref & { listPriceMyr: string | null })[]
+  >([]);
   const [reasons, setReasons] = useState<{ id: string; labelEn: string }[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<{
@@ -523,9 +525,16 @@ function EditForm({
       .then((r) => (r.ok ? r.json() : { data: [] }))
       .then((b) =>
         setCourses(
-          (b.data as { id: string; nameEn: string }[]).map((c) => ({
+          (
+            b.data as {
+              id: string;
+              nameEn: string;
+              listPriceMyr: string | null;
+            }[]
+          ).map((c) => ({
             id: c.id,
             name: c.nameEn,
+            listPriceMyr: c.listPriceMyr,
           })),
         ),
       )
@@ -546,6 +555,14 @@ function EditForm({
   );
   const set = (key: keyof Form) => (value: string) =>
     setForm((f) => ({ ...f, [key]: value }));
+
+  // A starting number for an empty Value field (§12.7).
+  const suggestedValue = form.amountMyr.trim()
+    ? null
+    : suggestDealValue(
+        courses.find((c) => c.id === form.courseId)?.listPriceMyr,
+        form.headcount,
+      );
 
   // §9 cross-screen: warn before losing typed input.
   useEffect(() => {
@@ -710,6 +727,26 @@ function EditForm({
           value={form.amountMyr}
           onChange={(e) => set("amountMyr")(e.target.value)}
         />
+        {/* §12.7: the value is sales' own forecast and revenue never comes
+            from it, so this only offers a number to start from — the course
+            list price, times the headcount on a corporate deal. Shown while
+            the field is empty; it never overwrites a typed figure and never
+            follows a later price change. */}
+        {suggestedValue && (
+          <p className="text-ink-muted text-xs">
+            <button
+              type="button"
+              className="text-blue-ink underline"
+              onClick={() => set("amountMyr")(suggestedValue.amount)}
+            >
+              Use {formatMoneyMyr(suggestedValue.amount)}
+            </button>{" "}
+            —{" "}
+            {suggestedValue.seats > 1
+              ? `list price × ${suggestedValue.seats} seats`
+              : "the course list price, before any discount"}
+          </p>
+        )}
       </Field>
 
       <Field

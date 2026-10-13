@@ -39,3 +39,21 @@ export function initials(fullName: string): string {
     parts[0][0] + (parts.length > 1 ? parts.at(-1)![0] : "")
   ).toUpperCase();
 }
+
+// A number to start the §9.6 Value field from: the course list price, times
+// the headcount on a corporate deal. The value is sales' own forecast and
+// revenue never reads it (§12.7), so this is a suggestion and nothing else —
+// null whenever there is nothing honest to suggest. Whole sen, like addMyr.
+export function suggestDealValue(
+  listPriceMyr: string | null | undefined,
+  headcount: string,
+): { amount: string; seats: number } | null {
+  const price = Number(listPriceMyr);
+  if (!listPriceMyr || !Number.isFinite(price) || price <= 0) return null;
+  const asked = Math.trunc(Number(headcount));
+  const seats = Number.isFinite(asked) && asked > 1 ? asked : 1;
+  return {
+    amount: ((Math.round(price * 100) * seats) / 100).toFixed(2),
+    seats,
+  };
+}

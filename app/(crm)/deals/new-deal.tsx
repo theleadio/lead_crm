@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import type { CourseListItem } from "@/lib/courses/service";
+import { suggestDealValue } from "@/lib/deals/format";
+import { formatMoneyMyr } from "@/lib/format/money";
 import type { ListResponse, PersonListItem } from "@/lib/people/types";
 
 // §9.5 / §9.2 "New deal". The deal opens in `new` and the stage moves only on
@@ -78,6 +80,15 @@ export function NewDeal({
       clearTimeout(t);
     };
   }, [open, chosen, q]);
+
+  // §12.7: a number to start from, not the money. The same offer the §9.6
+  // Value field makes.
+  const suggested = amount.trim()
+    ? null
+    : suggestDealValue(
+        courses.find((c) => c.id === courseId)?.listPriceMyr,
+        headcount,
+      );
 
   async function save() {
     if (!chosen) return;
@@ -224,6 +235,21 @@ export function NewDeal({
               onChange={(e) => setAmount(e.target.value)}
               placeholder="4500.00"
             />
+            {suggested && (
+              <p className="text-ink-muted mt-1 text-xs">
+                <button
+                  type="button"
+                  className="text-blue-ink underline"
+                  onClick={() => setAmount(suggested.amount)}
+                >
+                  Use {formatMoneyMyr(suggested.amount)}
+                </button>{" "}
+                —{" "}
+                {suggested.seats > 1
+                  ? `list price × ${suggested.seats} seats`
+                  : "the course list price, before any discount"}
+              </p>
+            )}
           </label>
 
           {error && (
