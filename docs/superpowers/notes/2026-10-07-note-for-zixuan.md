@@ -1,6 +1,6 @@
 # Note for Zixuan: S1 Shawn-side changes (rewritten 9 Oct 2026 on top of spec v1.10)
 
-Draft for Shawn to send. Spec is now v1.13 (v1.12 is upstream's decisions on O2, O11 and O13). Seats, class status and reservation expiry are the database's job (your migrations 006 and 007); nothing here changes them.
+Sent by Shawn to Zixuan on 13 Oct 2026; the content below is as of spec v1.17 (v1.12 was upstream's decisions on O2, O11 and O13). Changes since are at the end. Seats, class status and reservation expiry are the database's job (your migrations 006 and 007); nothing here changes them.
 
 - **Events:** `raiseEvent(type, aggregateId, payload, actorId)` in `lib/events/raise.ts` writes an outbox row inside your open transaction. Types and payloads are in `lib/events/types.ts`. Your class and enrolment services insert the same columns by hand today; that works, converting is optional.
 - **Enrolment status history (migration 009):** a database trigger writes `enrolment_status_history` on every insert and status change. Do not insert into it. Because of its foreign key, an enrolment can no longer be DELETEd once it exists: cancel it instead (tests that clean up with `DELETE FROM enrolment` need `tests/support/purge.ts`).
@@ -28,3 +28,14 @@ Added 13 Oct 2026 (spec v1.16, after the public API and the rebase onto your lat
 - **Public API (new, mine):** `GET /api/public/schedule` and `POST /api/public/leads` (spec §8.1, §8.2) in `lib/public/` and `app/api/public/`. `/register` is not built (no Stripe keys, O43). The leads route raises `LeadCaptured` and `ConsentChanged`.
 - **Migrations 009 to 012 in one line each:** 009 is the pre-freeze schema (payment CHECKs and the `payment_net` view, `enrolment_status_history`, `class.cancelled_reason` and `cancelled_at`, task `payment_id` and `is_cancelled`, `touchpoint.external_ref`, `deal.source_touchpoint_id` and `hrdc_document_key`); 010 is outbox backoff, dead letters and `seq`; 011 is `task.source_key` (event handlers use it so a repeat run opens no second task); 012 is the rate-limit counter table for the public API. Full tables are in spec §5.
 - **What to remember:** `cancelClass()` writes `class.cancelled_reason` (the database stamps `cancelled_at`); enrolments can no longer be DELETEd, cancel them instead; a database trigger writes `enrolment_status_history` on every insert and status change, so never insert into it yourself.
+
+## Changes since this note (v1.17-v1.18), to forward
+
+- **`RATE_LIMIT_SECRET` env variable (new, v1.17).** Server-only HMAC key for the per-IP rate limit on `POST /api/public/leads`; at least 16 characters; it must not be the public API key. Unset or short means that route answers 503. Needs setting on every environment you deploy (spec §2, O42).
+- **Handler tasks are assigned to the duty super_admin (v1.17).** The tasks the outbox handlers create (type `other`, one per cancellation, "tell the student", "refund needed") now go to the longest-serving active super_admin, so Home's "my tasks" shows them. Decided 13 Oct: they stay that way, type `other`; revisit after go-live. No schema change (O37, spec §11.1).
+- **Public form and consent (O45, decided 13 Oct).** A ticked marketing box never re-grants a purpose whose latest consent row is a withdrawal; the lead is still captured. Opt-in again only through Ops (a staff-recorded consent) or a future double opt-in, which is not built.
+- **Idempotency key (O46, decided 13 Oct).** Accepted as is: the key is not tied to the submitter.
+- **Supabase Data API (O47, decided 13 Oct).** Before go-live (Fri 27 Nov) the Data API is turned off for this schema and tested with the anon key. Nothing for you to build.
+- **Decisions that need nothing from you:** O3 reservations staff make hold 48 hours (Stripe path stays 24 h); O9 corporate Booker model is built as in spec 12.2; O41 the form's `message` stays in `person.notes`; O14 URLs are cut to the path plus `utm_*`, `gclid`, `fbclid` on every capture path.
+- **Hosting.** The outbox drain and the other workers will run as scheduled jobs on DigitalOcean; the drain is `npm run events:drain`. Where the database lives and what runs `expire_reservations()` every 15 minutes is still open (O48, Shawn, due Fri 16 Oct).
+- **Duplicate review (your commit 1758c22).** The spec wording is drafted in v1.18 (7.1, 12.2 rule 3, the new 7 row for `POST /api/people/:id/review/dismiss`, and 6) and is with Shawn to proofread; it describes what you built and changes no behaviour.
