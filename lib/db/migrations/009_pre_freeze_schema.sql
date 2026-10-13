@@ -50,7 +50,9 @@
 --     partially_refunded with 0 refunded (the old deals-db test fixture): no
 --     refund amount can be invented for it, and calling it succeeded would
 --     hide a refund that may have happened. Duplicate checkout session ids
---     also stop the migration, with the count.
+--     also stop the migration, with the count. So do match_payment tasks
+--     that exist before this migration: task.payment_id is new, so none of
+--     them can name its payment.
 --   * enrolment_status_history: one row per existing enrolment,
 --     NULL -> current status, changed_at = enrolment.created_at, reason
 --     'migration 009 backfill', changed_by NULL. It is the only history there
@@ -112,6 +114,22 @@ ALTER TABLE task
 --    payment fails on the index instead of opening a second task.
 -- -----------------------------------------------------------------------------
 ALTER TABLE task ADD COLUMN IF NOT EXISTS payment_id uuid REFERENCES payment(id);
+-- precheck:match_payment begin (tests/migration-009-precheck-db.test.ts runs this block)
+-- payment_id is new here, so every match_payment task that exists already
+-- lacks it, open or closed, and the CHECK below would refuse them all with a
+-- bare constraint error. Stop with the count instead; nothing can be guessed
+-- (a task names no payment).
+DO $$
+DECLARE n integer;
+BEGIN
+  SELECT count(*) INTO n FROM task WHERE type = 'match_payment' AND payment_id IS NULL;
+  IF n > 0 THEN
+    RAISE EXCEPTION 'migration 009: % match_payment task(s) have no payment_id', n
+      USING HINT = 'Set task.payment_id on each (the payment it asks Ops to match), or change its type, '
+                   'then re-run. Find them with: SELECT id, title FROM task WHERE type = ''match_payment'' AND payment_id IS NULL.';
+  END IF;
+END $$;
+-- precheck:match_payment end
 ALTER TABLE task
   DROP CONSTRAINT IF EXISTS task_match_payment_needs_payment,
   ADD CONSTRAINT task_match_payment_needs_payment
