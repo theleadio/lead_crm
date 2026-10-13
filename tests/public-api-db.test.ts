@@ -1172,6 +1172,34 @@ test(
   },
 );
 
+test(
+  "concurrency: simultaneous submissions (different keys) for one existing person and course open one deal (committed, cleaned up)",
+  { skip: !process.env.DATABASE_URL && "no DATABASE_URL" },
+  async () => {
+    const email = uniqueEmail();
+    try {
+      const first = await ok(await lead(form({ email })));
+      const results = await Promise.all(
+        [1, 2, 3, 4, 5, 6, 7, 8].map(() => lead(form({ email }))),
+      );
+      const bodies = await Promise.all(results.map((r) => r.json()));
+      assert.deepEqual(
+        results.map((r) => r.status),
+        [201, 201, 201, 201, 201, 201, 201, 201],
+        JSON.stringify(bodies),
+      );
+      for (const b of bodies) assert.equal(b.dealId, first.dealId);
+      assert.equal(await count("deal", "person_id = $1", first.personId), 1);
+      assert.equal(
+        await count("touchpoint", "person_id = $1", first.personId),
+        9,
+      );
+    } finally {
+      await purgeLead(email);
+    }
+  },
+);
+
 // ---- Schedule (§8.1) -------------------------------------------------------
 
 type Seed = {

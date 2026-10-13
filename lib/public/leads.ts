@@ -269,6 +269,11 @@ async function insertLead(
         : [];
     const courseId: string | null = cls?.course_id ?? crs?.id ?? null;
 
+    // Two submissions at once for one person must not both miss each other's
+    // new deal. They cannot: step 4's UPDATE of the person row holds its lock
+    // until commit, so the second waits there and then sees the first's deal.
+    // (tests/public-api-db.test.ts fails if that UPDATE is removed.) If that
+    // UPDATE ever moves after this lookup, lock the row here with FOR UPDATE.
     const [open] = await sql`
       SELECT id FROM deal
       WHERE person_id = ${personId} AND deleted_at IS NULL
