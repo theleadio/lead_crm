@@ -15,6 +15,7 @@ import {
   type Env,
 } from "./guard.ts";
 import { captureLead, cleanUrl, findReplay } from "./leads.ts";
+import { db, withTransaction } from "../sql.ts";
 import { normalizePhoneE164 } from "../format/phone.ts";
 import { listPublicSchedule } from "./schedule.ts";
 
@@ -148,8 +149,6 @@ async function leadFlow(
   }
   const input = parsed.data;
 
-  // Step 8 first, for a repeat: the CAPTCHA token of the first call is spent
-  // and a replay is not a new submission, so it skips both checks.
   const ok = (r: { personId: string; dealId: string }) =>
     withCors(
       d.env,
@@ -159,35 +158,47 @@ async function leadFlow(
         { status: 201, headers: NO_STORE },
       ),
     );
-  if (input.idempotencyKey) {
-    const replay = await findReplay(input.idempotencyKey);
-    if (replay) return ok(replay);
-  }
+  const proceed = async () => {
+    // Step 1: CAPTCHA, then 3 per phone per hour.
+    const captcha = d.captcha ?? defaultCaptcha(d.env);
+    if (!(await captcha(input.captchaToken, ip)))
+      return fail(d, origin, 403, "captcha_failed", "Check failed. Try again.");
+    const phoneE164 = input.phone ? normalizePhoneE164(input.phone) : null;
+    if (await phoneLimited(phoneE164)) {
+      const res = rateLimited();
+      res.headers.set("Retry-After", "3600");
+      res.headers.set("Cache-Control", "no-store");
+      return withCors(d.env, origin, res);
+    }
 
-  // Step 1: CAPTCHA, then 3 per phone per hour.
-  const captcha = d.captcha ?? defaultCaptcha(d.env);
-  if (!(await captcha(input.captchaToken, ip)))
-    return fail(d, origin, 403, "captcha_failed", "Check failed. Try again.");
-  const phoneE164 = input.phone ? normalizePhoneE164(input.phone) : null;
-  if (await phoneLimited(phoneE164)) {
-    const res = rateLimited();
-    res.headers.set("Retry-After", "3600");
-    res.headers.set("Cache-Control", "no-store");
-    return withCors(d.env, origin, res);
-  }
+    // Attribution is informational (§8.2): the landing URL is the body's only
+    // when it is on one of our own origins, else the Referer header.
+    const bodyLanding = cleanUrl(input.attribution?.landingUrl);
+    const landingUrl =
+      bodyLanding && allowedOrigins(d.env).includes(new URL(bodyLanding).origin)
+        ? bodyLanding
+        : cleanUrl(request.headers.get("referer"));
 
-  // Attribution is informational (§8.2): the landing URL is the body's only
-  // when it is on one of our own origins, else the Referer header.
-  const bodyLanding = cleanUrl(input.attribution?.landingUrl);
-  const landingUrl =
-    bodyLanding && allowedOrigins(d.env).includes(new URL(bodyLanding).origin)
-      ? bodyLanding
-      : cleanUrl(request.headers.get("referer"));
+    return ok(
+      await captureLead(input, {
+        landingUrl,
+        referrer: cleanUrl(input.attribution?.referrer),
+      }),
+    );
+  };
 
-  return ok(
-    await captureLead(input, {
-      landingUrl,
-      referrer: cleanUrl(input.attribution?.referrer),
-    }),
-  );
+  const key = input.idempotencyKey;
+  if (!key) return proceed();
+  // Step 8, for a repeat: the first call's CAPTCHA token is spent and a replay
+  // is not a new submission, so it skips both checks. Two calls with one key
+  // at once would both miss the replay and the loser's token would fail
+  // (single-use) although the lead was saved, so they queue on a lock held to
+  // the end of the transaction: the loser then finds the winner's committed
+  // result. ponytail: one pooled connection is held while the CAPTCHA provider
+  // answers (5 s at most); a per-key row or an edge limiter if that ever bites.
+  return withTransaction(async () => {
+    await db()`SELECT pg_advisory_xact_lock(hashtextextended(${`lead:${key}`}, 0))`;
+    const replay = await findReplay(key);
+    return replay ? ok(replay) : proceed();
+  });
 }

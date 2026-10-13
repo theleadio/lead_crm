@@ -1000,7 +1000,24 @@ it("failure: a database error before the capture (rate limit) is the same generi
   }
 });
 
-// ---- Committed: two identical calls at once --------------------------------
+// ---- Committed: concurrent calls ---------------------------------------------
+
+// Removes what a committed test left behind (the append-only tables and their
+// foreign keys need the replica role, as purge.ts does).
+async function purgeLead(email: string) {
+  const [p] = await db()`SELECT id FROM person WHERE email_norm = ${email}`;
+  if (p) {
+    await db().begin(async (tx) => {
+      await tx`SET LOCAL session_replication_role = replica`;
+      await tx`DELETE FROM event_outbox WHERE aggregate_id = ${p.id}`;
+      await tx`DELETE FROM consent WHERE person_id = ${p.id}`;
+      await tx`DELETE FROM deal WHERE person_id = ${p.id}`;
+      await tx`DELETE FROM touchpoint WHERE person_id = ${p.id}`;
+      await tx`DELETE FROM person WHERE id = ${p.id}`;
+    });
+  }
+  await db()`DELETE FROM rate_limit_hit`;
+}
 
 test(
   "idempotency under concurrency: two simultaneous calls with one key give one result and one LeadCaptured (committed, cleaned up)",
@@ -1036,19 +1053,59 @@ test(
         1,
       );
     } finally {
-      const [p] = await db()`SELECT id FROM person WHERE email_norm = ${email}`;
-      if (p) {
-        await db().begin(async (tx) => {
-          // Append-only tables and their FKs: replica role, as purge.ts does.
-          await tx`SET LOCAL session_replication_role = replica`;
-          await tx`DELETE FROM event_outbox WHERE aggregate_id = ${p.id}`;
-          await tx`DELETE FROM consent WHERE person_id = ${p.id}`;
-          await tx`DELETE FROM deal WHERE person_id = ${p.id}`;
-          await tx`DELETE FROM touchpoint WHERE person_id = ${p.id}`;
-          await tx`DELETE FROM person WHERE id = ${p.id}`;
-        });
-      }
-      await db()`DELETE FROM rate_limit_hit`;
+      await purgeLead(email);
+    }
+  },
+);
+
+test(
+  "idempotency under concurrency: a CAPTCHA token that works once does not fail the loser of a same-key race (committed, cleaned up)",
+  { skip: !process.env.DATABASE_URL && "no DATABASE_URL" },
+  async () => {
+    // Like Turnstile: a token is good for one check only.
+    const spent = new Set<string>();
+    const once = async (token: string | null | undefined) => {
+      if (!token || spent.has(token)) return false;
+      spent.add(token);
+      await new Promise((r) => setTimeout(r, 30));
+      return true;
+    };
+    const email = uniqueEmail();
+    const body = form({
+      email,
+      idempotencyKey: crypto.randomUUID(),
+      captchaToken: "one-use-token",
+    });
+    const call = () =>
+      handleLead(
+        new Request("https://crm.test/api/public/leads", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-api-key": KEY,
+            "x-real-ip": nextIp(),
+          },
+          body: JSON.stringify(body),
+        }),
+        { env: ENV, captcha: once },
+      );
+    try {
+      const results = await Promise.all([call(), call(), call()]);
+      const bodies = await Promise.all(results.map((r) => r.json()));
+      assert.deepEqual(
+        results.map((r) => r.status),
+        [201, 201, 201],
+        JSON.stringify(bodies),
+      );
+      assert.equal(bodies[1].personId, bodies[0].personId);
+      assert.equal(bodies[2].dealId, bodies[0].dealId);
+      assert.equal(await count("person", "email_norm = $1", email), 1);
+      assert.equal(
+        await count("touchpoint", "person_id = $1", bodies[0].personId),
+        1,
+      );
+    } finally {
+      await purgeLead(email);
     }
   },
 );
