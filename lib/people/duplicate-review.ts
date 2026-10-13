@@ -20,7 +20,7 @@ export type DuplicatePair = { id: string; fullName: string };
 // Null only in a database with no active super_admin, which is a broken
 // install: the pair is still worth recording, so the task is raised
 // unassigned rather than not at all (design 4).
-async function dutySuperAdmin(): Promise<string | null> {
+export async function dutySuperAdmin(): Promise<string | null> {
   const [row] = await db()`
     SELECT id FROM app_user
     WHERE role_code = 'super_admin' AND is_active

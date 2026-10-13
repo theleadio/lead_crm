@@ -1,5 +1,6 @@
 import type postgres from "postgres";
 import { z } from "zod";
+import { dutySuperAdmin } from "../people/duplicate-review.ts";
 import { db } from "../sql.ts";
 import type { EventType } from "./types.ts";
 
@@ -42,10 +43,14 @@ async function opsTask(
   enrolment: postgres.Row,
   notes: string,
 ) {
+  // Assigned to the duty super_admin (O37): Home's "My tasks" lists only
+  // assigned tasks, so an unassigned one would be invisible. Same rule as the
+  // duplicate-review task; null only in a database with no active super_admin.
   await db()`
-    INSERT INTO task (type, title, person_id, enrolment_id, due_at, notes, source_key)
-    VALUES ('other', ${title}, ${enrolment.person_id}, ${enrolment.id}, now(),
-            ${notes}, ${key})
+    INSERT INTO task (type, title, person_id, enrolment_id, assigned_user_id,
+                      due_at, notes, source_key)
+    VALUES ('other', ${title}, ${enrolment.person_id}, ${enrolment.id},
+            ${await dutySuperAdmin()}, now(), ${notes}, ${key})
     ON CONFLICT (source_key) WHERE source_key IS NOT NULL DO NOTHING`;
 }
 

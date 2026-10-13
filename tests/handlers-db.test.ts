@@ -6,8 +6,9 @@ import assert from "node:assert/strict";
 import { drainOutbox } from "../lib/events/drain.ts";
 import { handlers, makeHandlers } from "../lib/events/handlers.ts";
 import { raiseEvent } from "../lib/events/raise.ts";
+import { myTasks } from "../lib/home/service.ts";
 import { closeDb, db } from "../lib/sql.ts";
-import { enrol, it, newClass, pay } from "./seed.ts";
+import { enrol, it, newClass, newUser, pay } from "./seed.ts";
 
 after(closeDb);
 
@@ -42,7 +43,11 @@ const parkOthers = () =>
 
 // ---- EnrolmentCancelled ----------------------------------------------------
 
-it("EnrolmentCancelled: an Ops task for the enrolment, assigned to nobody", async () => {
+it("EnrolmentCancelled: an Ops task for the enrolment, assigned to the duty super_admin and visible on their Home", async () => {
+  // O37: Home lists only assigned tasks. Make our admin the duty one.
+  const admin = await newUser("super_admin");
+  await db()`UPDATE app_user SET is_active = false
+              WHERE role_code = 'super_admin' AND id <> ${admin.id}`;
   const id = await enrol(await newClass(), "confirmed");
   await handlers.EnrolmentCancelled!(
     event("EnrolmentCancelled", { enrolmentId: id, reason: "student_request" }),
@@ -50,7 +55,8 @@ it("EnrolmentCancelled: an Ops task for the enrolment, assigned to nobody", asyn
   const t = await tasksOf([id]);
   assert.equal(t.length, 1);
   assert.equal(t[0].type, "other");
-  assert.equal(t[0].assigned_user_id, null);
+  assert.equal(t[0].assigned_user_id, admin.id);
+  assert.ok((await myTasks(admin)).tasks.some((x) => x.title === t[0].title));
   const [e] = await db()`SELECT person_id FROM enrolment WHERE id = ${id}`;
   assert.equal(t[0].person_id, e.person_id);
 });
@@ -154,6 +160,10 @@ it("ClassCancelled: a tell-once task each, a refund task only where money is hel
     [a],
   );
   assert.equal(t.length, 5);
+  assert.ok(
+    t.every((x) => x.assigned_user_id),
+    "every task has an assignee",
+  );
   assert.deepEqual(s.calls, ["cs_open"]);
 });
 
