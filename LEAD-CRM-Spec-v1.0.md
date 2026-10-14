@@ -67,7 +67,7 @@ One Next.js repo, one Postgres database, TypeScript everywhere.
 | Database       | PostgreSQL on DigitalOcean (decided 14 Oct, O48), Singapore region | Section 5                                              |
 | DB access      | Prisma or Drizzle — Shawn picks and owns the schema file            | Zixuan uses generated client, never raw SQL in screens |
 | Auth           | Platform auth (email+password or Google SSO) with MFA available     | Section 6                                              |
-| Jobs           | `drainOutbox()` in `lib/events/drain.ts`; run by a scheduled job on DigitalOcean (§3) | Shawn's side                                           |
+| Jobs           | `drainOutbox()` in `lib/events/drain.ts` and `expire_reservations()`; two scheduled jobs on DigitalOcean (§3): `npm run events:drain` and `npm run reservations:expire` (every 15 min) | Shawn's side                                           |
 | File storage   | S3-compatible bucket (receipts, HRDC documents)                     | Private bucket, signed URLs only                       |
 | Email          | Transactional ESP (Resend/Postmark class)                           | Shawn's side                                           |
 | Hosting        | Vercel or equivalent; database in Singapore                         |                                                        |
