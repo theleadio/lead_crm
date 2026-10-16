@@ -19,8 +19,9 @@ export type ScheduleClass = {
   language: string;
   startDate: string;
   endDate: string;
-  startTime: string;
-  endTime: string;
+  // null when the class has no time yet: §5 makes both optional.
+  startTime: string | null;
+  endTime: string | null;
   mode: string;
   venueName: string | null;
   city: string | null;

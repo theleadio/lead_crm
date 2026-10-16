@@ -1245,6 +1245,7 @@ type Seed = {
   mode?: string;
   price?: string | null;
   capacity?: number;
+  noTime?: boolean;
 };
 async function seedClass(courseId: string, city: string, s: Seed) {
   const [c] = await db()`
@@ -1255,7 +1256,7 @@ async function seedClass(courseId: string, city: string, s: Seed) {
     VALUES (${courseId}, ${s.code},
       ${db().unsafe(s.start ?? "(now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date + 10")},
       ${db().unsafe(s.start ?? "(now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date + 10")},
-      '09:00', '17:00', ${s.language ?? "en"}, ${s.mode ?? "in_person"},
+      ${s.noTime ? null : "09:00"}, ${s.noTime ? null : "17:00"}, ${s.language ?? "en"}, ${s.mode ?? "in_person"},
       ${s.mode === "online" ? null : "AI365 Hub, Oval Damansara"},
       ${s.mode === "online" ? null : "1 Jalan Rahsia"}, ${city},
       ${s.mode === "in_person" || !s.mode ? null : "https://secret.example/zoom/ROOM-99"},
@@ -1345,6 +1346,18 @@ it("schedule: only public open/few_seats/full classes from today (Malaysia date)
     c.registerUrl,
     `https://thelead.io/register/${encodeURIComponent(c.code)}`,
   );
+});
+
+it("schedule: a class with no time is listed with startTime and endTime null, not dropped or blank", async () => {
+  const { course, city } = await scheduleFixture();
+  const code = `NOTIME-${crypto.randomUUID().slice(0, 6)}`;
+  await seedClass(course, city, { code, noTime: true });
+  const res = await schedule(`?city=${encodeURIComponent(city)}`);
+  assert.equal(res.status, 200);
+  const [c] = (await res.json()).classes;
+  assert.equal(c.code, code);
+  assert.equal(c.startTime, null);
+  assert.equal(c.endTime, null);
 });
 
 it("schedule leak check: the serialised body never carries online_url, trainers, internal notes or seat counts", async () => {
