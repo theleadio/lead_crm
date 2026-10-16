@@ -95,8 +95,8 @@ it("a payment with no proof is a 404, and nothing is audited", async () => {
   const sql = db();
   // A Stripe payment carries no proof file (§5, migration 008 allows many).
   const [stripe] = await sql`
-    INSERT INTO payment (enrolment_id, method, status, amount_myr)
-    VALUES (${enrolmentId}, 'stripe_card', 'succeeded', 100)
+    INSERT INTO payment (enrolment_id, method, status, amount_myr, paid_at)
+    VALUES (${enrolmentId}, 'stripe_card', 'succeeded', 100, now())
     RETURNING id`;
 
   assert.deepEqual(await readPaymentProof(stripe.id as string, viewer), {

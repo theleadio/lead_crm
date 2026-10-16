@@ -20,7 +20,7 @@ export type DuplicatePair = { id: string; fullName: string };
 // Null only in a database with no active super_admin, which is a broken
 // install: the pair is still worth recording, so the task is raised
 // unassigned rather than not at all (design 4).
-async function dutySuperAdmin(): Promise<string | null> {
+export async function dutySuperAdmin(): Promise<string | null> {
   const [row] = await db()`
     SELECT id FROM app_user
     WHERE role_code = 'super_admin' AND is_active
@@ -35,7 +35,9 @@ async function dutySuperAdmin(): Promise<string | null> {
 export async function raiseDuplicateTask(
   newPersonId: string,
   candidate: DuplicatePair,
-  viewer: Viewer,
+  // Null for the public form (§8.2): no signed-in user, `created_by` and the
+  // audit actor are NULL (§4, system actor).
+  viewer: Pick<Viewer, "id"> | null,
 ): Promise<void> {
   const sql = db();
   const assignee = await dutySuperAdmin();
@@ -45,10 +47,10 @@ export async function raiseDuplicateTask(
     VALUES ('review_duplicate',
             ${`Possible duplicate of ${candidate.fullName}`},
             ${newPersonId}, ${candidate.id}, ${assignee},
-            now(), ${viewer.id})
+            now(), ${viewer?.id ?? null})
     RETURNING id`;
   await writeAudit({
-    userId: viewer.id,
+    userId: viewer?.id ?? null,
     action: "create",
     entity: "task",
     entityId: task.id,

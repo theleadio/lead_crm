@@ -15,7 +15,11 @@ function root(): Sql {
     const url = process.env.DATABASE_URL;
     if (!url) throw new Error("DATABASE_URL is not set");
     // Cached on globalThis so dev hot-reload doesn't open a new pool each time.
-    globalForSql.__leadSql = postgres(url, { ssl: "require", max: 5 });
+    globalForSql.__leadSql = postgres(url, {
+      // Production stays on TLS; a local Postgres opts out with ?sslmode=disable.
+      ssl: url.includes("sslmode=disable") ? false : "require",
+      max: 5,
+    });
   }
   return globalForSql.__leadSql;
 }

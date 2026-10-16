@@ -17,7 +17,11 @@ if (!url) {
   console.error("DATABASE_URL is not set (run with --env-file=.env.local).");
   process.exit(1);
 }
-const sql = postgres(url, { ssl: "require", max: 1, onnotice: () => {} });
+const sql = postgres(url, {
+  ssl: url.includes("sslmode=disable") ? false : "require",
+  max: 1,
+  onnotice: () => {},
+});
 
 const NAMES = [
   "Tan Mei Ling",
@@ -47,7 +51,7 @@ async function reset() {
   // restoreReferenceData() puts the migration's rows back.
   await sql`
     TRUNCATE audit_log, message_log, consent, task, payment, enquiry,
-             deal_stage_history, enrolment, deal, class_notice, class, course,
+             deal_stage_history, enrolment_status_history, enrolment, deal, class_notice, class, course,
              person_tag, tag, touchpoint, company_membership, company,
              event_outbox, integration_event, person, app_user CASCADE`;
 }

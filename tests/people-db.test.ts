@@ -404,6 +404,26 @@ it("timeline: newest first, paginated; payments hidden from marketing", async ()
   );
 });
 
+it("timeline: a withdrawn HRDC task reads as withdrawn, a completed one as done (009, S-10)", async () => {
+  const sql = db();
+  const [p] = await sql`
+    INSERT INTO person (full_name) VALUES (${`TL ${crypto.randomUUID()}`}) RETURNING id`;
+  const [d] = await sql`
+    INSERT INTO deal (pipeline, stage, person_id) VALUES ('corporate', 'new', ${p.id})
+    RETURNING id`;
+  await sql`
+    INSERT INTO task (type, title, person_id, deal_id, done_at, done_by, is_cancelled) VALUES
+      ('hrdc_deadline', 'HRDC deadline', ${p.id}, ${d.id}, now() - interval '1 day', ${admin.id}, false),
+      ('hrdc_deadline', 'HRDC deadline', ${p.id}, ${d.id}, now(), ${admin.id}, true)`;
+  const r = await getPersonTimeline(p.id, admin, 1, 50);
+  assert.equal(r.kind, "ok");
+  if (r.kind !== "ok") return;
+  assert.deepEqual(
+    r.result.data.filter((t) => t.kind === "task").map((t) => t.text),
+    ["HRDC deadline withdrawn", "Task done: HRDC deadline"],
+  );
+});
+
 it("consent: marketing reads both purposes; part_time is forbidden", async () => {
   const [{ id }] = await db()`
     SELECT p.id FROM person p

@@ -396,9 +396,19 @@ it("edit: clearing the deadline closes the open task", async () => {
   assert.equal((await edit(id, { hrdcDeadlineDate: null })).kind, "ok");
   assert.equal((await openHrdcTask(id)).length, 0);
   const [closed] =
-    await db()`SELECT done_at, done_by FROM task WHERE id = ${open.id}`;
+    await db()`SELECT done_at, done_by, is_cancelled FROM task WHERE id = ${open.id}`;
   assert.notEqual(closed.done_at, null);
   assert.equal(closed.done_by, admin.id);
+  assert.equal(closed.is_cancelled, true); // withdrawn, not done (009, S-10)
+  const [audit] = await db()`
+    SELECT after FROM audit_log
+    WHERE entity = 'task' AND entity_id = ${open.id} AND after ? 'closed'`;
+  assert.deepEqual(audit.after, {
+    type: "hrdc_deadline",
+    dealId: id,
+    closed: "hrdc deadline withdrawn",
+    is_cancelled: true,
+  });
 });
 
 it("edit: funding type off hrdc clears the fields and closes the task", async () => {
@@ -425,6 +435,13 @@ it("edit: funding type off hrdc clears the fields and closes the task", async ()
     [null, null, null],
   );
   assert.equal((await openHrdcTask(id)).length, 0);
+  const closed = await db()`
+    SELECT done_at, done_by, is_cancelled FROM task
+    WHERE deal_id = ${id} AND type = 'hrdc_deadline'`;
+  assert.equal(closed.length, 1);
+  assert.notEqual(closed[0].done_at, null);
+  assert.equal(closed[0].done_by, admin.id);
+  assert.equal(closed[0].is_cancelled, true);
 });
 
 it("edit: a deadline before funding stores the date and raises no task", async () => {

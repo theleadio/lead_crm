@@ -105,19 +105,19 @@ SELECT pg_temp.expect_fail('stage history is append-only',
 
 -- Payments
 SELECT pg_temp.expect_fail('matched payment with no links rejected',
-  $q$INSERT INTO payment (method, status, amount_myr) VALUES ('stripe_card','succeeded', 3200)$q$);
+  $q$INSERT INTO payment (method, status, amount_myr, paid_at) VALUES ('stripe_card','succeeded', 3200, now())$q$);
 SELECT pg_temp.expect_ok  ('unmatched Stripe payment with no links accepted',
-  $q$INSERT INTO payment (method, status, amount_myr, match_status, stripe_payment_intent_id) VALUES ('stripe_card','succeeded', 3200, 'unmatched', 'pi_1')$q$);
+  $q$INSERT INTO payment (method, status, amount_myr, match_status, stripe_payment_intent_id, paid_at) VALUES ('stripe_card','succeeded', 3200, 'unmatched', 'pi_1', now())$q$);
 SELECT pg_temp.expect_fail('same Stripe intent twice rejected (webhook replay)',
-  $q$INSERT INTO payment (method, status, amount_myr, match_status, stripe_payment_intent_id) VALUES ('stripe_card','succeeded', 3200, 'unmatched', 'pi_1')$q$);
+  $q$INSERT INTO payment (method, status, amount_myr, match_status, stripe_payment_intent_id, paid_at) VALUES ('stripe_card','succeeded', 3200, 'unmatched', 'pi_1', now())$q$);
 SELECT pg_temp.expect_fail('unmatched bank transfer rejected',
-  $q$INSERT INTO payment (method, status, amount_myr, match_status, reference_no, proof_file_key) VALUES ('bank_transfer','succeeded', 3200, 'unmatched','r','k')$q$);
+  $q$INSERT INTO payment (method, status, amount_myr, match_status, reference_no, proof_file_key, paid_at) VALUES ('bank_transfer','succeeded', 3200, 'unmatched','r','k', now())$q$);
 SELECT pg_temp.expect_fail('manual payment without proof rejected',
-  $q$INSERT INTO payment (enrolment_id, method, status, amount_myr, reference_no) VALUES ('00000000-0000-0000-0000-0000000000e1','bank_transfer','succeeded', 3200, 'REF1')$q$);
+  $q$INSERT INTO payment (enrolment_id, method, status, amount_myr, reference_no, paid_at) VALUES ('00000000-0000-0000-0000-0000000000e1','bank_transfer','succeeded', 3200, 'REF1', now())$q$);
 SELECT pg_temp.expect_fail('refund larger than payment rejected',
-  $q$INSERT INTO payment (enrolment_id, method, status, amount_myr, refunded_amount_myr) VALUES ('00000000-0000-0000-0000-0000000000e1','stripe_card','refunded', 100, 150)$q$);
+  $q$INSERT INTO payment (enrolment_id, method, status, amount_myr, refunded_amount_myr, paid_at, refunded_at) VALUES ('00000000-0000-0000-0000-0000000000e1','stripe_card','refunded', 100, 150, now(), now())$q$);
 SELECT pg_temp.expect_fail('non-MYR currency rejected',
-  $q$INSERT INTO payment (enrolment_id, method, status, amount_myr, currency) VALUES ('00000000-0000-0000-0000-0000000000e1','stripe_card','succeeded', 100, 'USD')$q$);
+  $q$INSERT INTO payment (enrolment_id, method, status, amount_myr, currency, paid_at) VALUES ('00000000-0000-0000-0000-0000000000e1','stripe_card','succeeded', 100, 'USD', now())$q$);
 
 -- Class notices: one pending per class
 SELECT pg_temp.expect_ok  ('first pending notice',

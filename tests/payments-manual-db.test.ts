@@ -465,13 +465,14 @@ it("ten students share one invoice reference, each with its own proof", async ()
 
 it("a Stripe payment with no proof is untouched by the 008 rule", async () => {
   // Two payments with no proof key on one enrolment stay legal — the index is
-  // partial (migration 008), and Stripe payments carry no proof.
+  // partial (migration 008), and Stripe payments carry no proof. paid_at is set
+  // because migration 009 refuses a succeeded payment without it.
   const viewer = await newUser();
   const id = await enrol(await newClass({}), "confirmed");
   await db()`
-    INSERT INTO payment (enrolment_id, method, status, amount_myr)
-    VALUES (${id}, 'stripe_card', 'succeeded', 100),
-           (${id}, 'stripe_fpx', 'succeeded', 100)`;
+    INSERT INTO payment (enrolment_id, method, status, amount_myr, paid_at)
+    VALUES (${id}, 'stripe_card', 'succeeded', 100, now()),
+           (${id}, 'stripe_fpx', 'succeeded', 100, now())`;
 
   const result = await recordManualPayment(
     body(id),

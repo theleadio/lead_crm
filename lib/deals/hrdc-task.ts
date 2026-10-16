@@ -83,12 +83,12 @@ async function upsertTask(deal: DealForHrdcTask, viewer: Viewer) {
   });
 }
 
-// The deadline was withdrawn. `task` has no cancelled state (migration 001:
-// done_at + done_by only), so the reminder is closed rather than left
-// pointing at a date that no longer exists (proposal Q2, decided 29 Sep).
+// The deadline was withdrawn. The reminder is closed rather than left
+// pointing at a date that no longer exists (proposal Q2, decided 29 Sep),
+// and flagged is_cancelled (migration 009, S-10) so it doesn't read as done.
 async function closeOpenTask(deal: DealForHrdcTask, viewer: Viewer) {
   const [task] = await db()`
-    UPDATE task SET done_at = now(), done_by = ${viewer.id}
+    UPDATE task SET done_at = now(), done_by = ${viewer.id}, is_cancelled = true
     WHERE deal_id = ${deal.id} AND type = 'hrdc_deadline' AND done_at IS NULL
     RETURNING id, due_at`;
   if (!task) return;
@@ -102,6 +102,7 @@ async function closeOpenTask(deal: DealForHrdcTask, viewer: Viewer) {
       type: "hrdc_deadline",
       dealId: deal.id,
       closed: "hrdc deadline withdrawn",
+      is_cancelled: true,
     },
   });
 }

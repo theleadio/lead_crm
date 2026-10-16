@@ -297,7 +297,10 @@ export async function getPersonTimeline(
   if (task.allowed)
     branches.push(sql`
       SELECT coalesce(done_at, created_at), 'task', title,
-             CASE WHEN done_at IS NULL THEN 'created' ELSE 'done' END, NULL, id
+             CASE WHEN done_at IS NULL THEN 'created'
+                  WHEN is_cancelled AND type = 'hrdc_deadline' THEN 'hrdc_withdrawn'
+                  WHEN is_cancelled THEN 'withdrawn'
+                  ELSE 'done' END, NULL, id
       FROM task WHERE person_id = ${pid}
         ${task.assignedOnly ? sql`AND assigned_user_id = ${viewer.id}` : sql``}`);
   if (can(viewer, "enrolment").allowed)
@@ -331,7 +334,10 @@ export async function getPersonTimeline(
       case "stage_change":
         return `Deal for ${r.a} moved to ${words(r.b)}`;
       case "task":
-        return `Task ${r.b}: ${r.a}`;
+        // A withdrawn task is closed but was never done (migration 009, S-10).
+        return r.b === "hrdc_withdrawn"
+          ? "HRDC deadline withdrawn"
+          : `Task ${r.b}: ${r.a}`;
       case "enrolment_change":
         return `Enrolment in ${r.a} is ${words(r.b)}`;
       default:

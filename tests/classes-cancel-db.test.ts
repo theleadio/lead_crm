@@ -100,7 +100,11 @@ it("cancels the class, its seat-holders, its notice, and raises one event", asyn
   assert.equal(result.kind, "cancelled", JSON.stringify(result));
   assert.equal((result as { enrolmentCount: number }).enrolmentCount, 3);
 
-  assert.equal((await classRow(cls.id)).status, "cancelled");
+  const cancelledRow = await classRow(cls.id);
+  assert.equal(cancelledRow.status, "cancelled");
+  // Migration 009: the class records why, and the database stamps when.
+  assert.equal(cancelledRow.cancelled_reason, "Trainer unavailable");
+  assert.ok(cancelledRow.cancelled_at);
   for (const id of [confirmed, pending, reserved]) {
     const e = await enrolment(id);
     assert.equal(e.status, "cancelled");
