@@ -13,7 +13,7 @@ import { normalizePhoneE164 } from "../format/phone.ts";
 import { db, withTransaction } from "../sql.ts";
 import type { PersonUpdate } from "../validation/person.ts";
 import { findDuplicate } from "./dedupe.ts";
-import { openPairFor } from "./duplicate-review.ts";
+import { openPairFor, reasonProposesPair } from "./duplicate-review.ts";
 import { stageSql } from "./lifecycle.ts";
 import {
   dedupeCandidates,
@@ -124,6 +124,7 @@ function toDetailPerson(
     companyNameGiven: p.company_name_given,
     needsReview: p.needs_review,
     needsReviewReason: reviewReason(p),
+    needsReviewIsPair: reasonProposesPair(p.needs_review_reason),
     duplicateOf,
     lastActivityAt: p.last_activity_at?.toISOString() ?? null,
     createdAt: p.created_at.toISOString(),
@@ -418,7 +419,22 @@ export async function updatePerson(
     const set: Record<string, string | boolean | null> = {};
     const fields: Record<string, string> = {};
 
-    if (patch.fullName !== undefined) set.full_name = patch.fullName;
+    if (patch.fullName !== undefined) {
+      set.full_name = patch.fullName;
+      // §12.2 / §11.2 (O50): a real name is the fix for `no_name`, the way a
+      // normalising phone is the fix for `phone_unnormalised` below. Any
+      // human name edit counts — the intake may have stored a WhatsApp
+      // profile name or the phone number as the name. The phone branch runs
+      // after this one, so an unnormalisable phone in the same edit wins.
+      if (
+        p.needs_review_reason === "no_name" &&
+        patch.fullName.trim() !== "" &&
+        patch.fullName !== p.full_name
+      ) {
+        set.needs_review = false;
+        set.needs_review_reason = null;
+      }
+    }
     if (patch.preferredName !== undefined)
       set.preferred_name = blankToNull(patch.preferredName);
     if (patch.preferredLanguage !== undefined)
