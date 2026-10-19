@@ -66,7 +66,7 @@ export default async function SchedulePage() {
               Schedule last updated {formatDateTime(read.fetchedAt)}.
             </p>
           )}
-          <ScheduleList classes={read.classes} />
+          <ScheduleList classes={read.classes} enquireUrl={enquire} />
         </>
       )}
     </main>

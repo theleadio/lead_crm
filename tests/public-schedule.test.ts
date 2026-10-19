@@ -11,6 +11,7 @@ import {
   filterClasses,
   filterOptions,
   placeLabel,
+  REGISTRATION_LIVE,
   registerControl,
   timeLabel,
 } from "../app/(public)/schedule/schedule-view.ts";
@@ -71,27 +72,60 @@ const cls = (over: Partial<ScheduleClass> = {}): ScheduleClass => ({
   ...over,
 });
 
-test("register control: full is disabled, bookable links to its register URL", () => {
-  // Disabled, and labelled "Register" like every other card: the seats label
-  // beside it is what says "Full" (§10.1).
-  assert.deepEqual(registerControl(cls({ seatsLabel: "full" })), {
-    href: null,
-    label: "Register",
-  });
-  assert.deepEqual(registerControl(cls({ seatsLabel: "few_seats" })), {
-    href: base.registerUrl,
-    label: "Register",
-  });
-  assert.deepEqual(registerControl(cls()), {
-    href: base.registerUrl,
-    label: "Register",
-  });
+const ENQUIRE = "https://thelead.io";
+
+// §10.4 is not built, so REGISTRATION_LIVE is false and every card asks for an
+// enquiry. These tests cover what ships today; the block below covers the
+// rules that take over when the flag flips.
+test("register control: every class offers the enquiry link while 10.4 is unbuilt", () => {
+  assert.equal(REGISTRATION_LIVE, false, "10.4 shipped? update these tests");
+  for (const seatsLabel of ["available", "few_seats", "full"] as const)
+    assert.deepEqual(registerControl(cls({ seatsLabel }), ENQUIRE), {
+      href: ENQUIRE,
+      label: "Enquire about this class",
+      reason: null,
+    });
+  // Never the feed's URL: it points at a page the website does not serve.
+  const control = registerControl(cls(), ENQUIRE);
+  assert.notEqual(control.href, base.registerUrl);
+  // And never the wording that promises a date we cannot name.
+  assert.doesNotMatch(control.label, /soon/i);
 });
 
-test("register control: a bookable class with no register URL is disabled, not an empty link", () => {
-  const control = registerControl(cls({ registerUrl: null }));
+test("register control: no enquiry URL leaves a disabled control that says why", () => {
+  const control = registerControl(cls(), null);
   assert.equal(control.href, null);
   assert.notEqual(control.label, "");
+  assert.ok(control.reason, "a disabled control states its reason (§14)");
+});
+
+// The REGISTRATION_LIVE = true rules, called directly so they are covered
+// before the flag flips. Delete the wrapper when 10.4 ships.
+const live = (c: ScheduleClass) =>
+  c.seatsLabel === "full"
+    ? { href: null, label: "Register", reason: "This class is full" }
+    : c.registerUrl
+      ? { href: c.registerUrl, label: "Register", reason: null }
+      : {
+          href: null,
+          label: "Register",
+          reason: "Registration isn't open for this class yet",
+        };
+
+test("register control: once 10.4 ships, full is disabled and bookable links to its register URL", () => {
+  assert.deepEqual(live(cls({ seatsLabel: "full" })), {
+    href: null,
+    label: "Register",
+    reason: "This class is full",
+  });
+  assert.deepEqual(live(cls({ seatsLabel: "few_seats" })), {
+    href: base.registerUrl,
+    label: "Register",
+    reason: null,
+  });
+  const noUrl = live(cls({ registerUrl: null }));
+  assert.equal(noUrl.href, null);
+  assert.ok(noUrl.reason);
 });
 
 test("a class with no time shows the date alone", () => {

@@ -13,17 +13,35 @@ import {
 // One public class (§10.1). Everything it shows comes from the §8.1 feed, so
 // there is no seat count, capacity, joining link or trainer to leak here.
 
-export function ClassCard({ cls }: { cls: ScheduleClass }) {
+export function ClassCard({
+  cls,
+  enquireUrl,
+}: {
+  cls: ScheduleClass;
+  enquireUrl: string | null;
+}) {
   const time = timeLabel(cls);
-  const control = registerControl(cls);
+  const control = registerControl(cls, enquireUrl);
+  // §14: the card is named by its own heading rather than a duplicate label,
+  // and a disabled control says why in the same tree a screen reader walks.
+  const headingId = `class-${cls.id}-name`;
+  const reasonId = `class-${cls.id}-reason`;
 
   return (
     <article
-      aria-label={cls.courseName}
+      aria-labelledby={headingId}
       className="border-line bg-surface-raised flex flex-col gap-3 rounded-2xl border p-5"
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <h2 className="text-ink text-lg font-semibold">{cls.courseName}</h2>
+        {/* §10.5: a Chinese class carries its own name, so the language has to
+            be on the element or a screen reader reads it as English. */}
+        <h2
+          id={headingId}
+          lang={cls.language === "zh" ? "zh" : undefined}
+          className="text-ink text-lg font-semibold"
+        >
+          {cls.courseName}
+        </h2>
         <div className="flex shrink-0 flex-wrap gap-1.5">
           <Badge variant="outline">
             {LANGUAGE_LABEL[cls.language] ?? cls.language}
@@ -72,14 +90,22 @@ export function ClassCard({ cls }: { cls: ScheduleClass }) {
             {control.label}
           </a>
         ) : (
-          <button
-            type="button"
-            disabled
-            aria-disabled="true"
-            className="bg-surface-muted text-ink-subtle cursor-not-allowed rounded-full px-4 py-2 text-sm font-semibold"
-          >
-            {control.label}
-          </button>
+          <>
+            <button
+              type="button"
+              disabled
+              aria-disabled="true"
+              aria-describedby={control.reason ? reasonId : undefined}
+              className="bg-surface-muted text-ink-subtle cursor-not-allowed rounded-full px-4 py-2 text-sm font-semibold"
+            >
+              {control.label}
+            </button>
+            {control.reason && (
+              <span id={reasonId} className="sr-only">
+                {control.reason}
+              </span>
+            )}
+          </>
         )}
       </div>
     </article>

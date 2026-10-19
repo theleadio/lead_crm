@@ -64,15 +64,46 @@ export function timeLabel(c: ScheduleClass): string | null {
   return c.endTime ? `${c.startTime} – ${c.endTime}` : c.startTime;
 }
 
-export type RegisterControl =
-  { href: string; label: string } | { href: null; label: string };
+export type RegisterControl = {
+  href: string | null;
+  // Why the control leads nowhere, for the disabled state (§14). Null when it
+  // is a working link.
+  reason: string | null;
+  label: string;
+};
+
+// §10.4 is not built (O43, waiting on the Stripe keys), so every `registerUrl`
+// the feed gives points at a page the website does not serve. Until it ships
+// the card offers the enquiry link instead of a 404. Flip this one line when
+// 10.4 lands and the cards go back to the feed's URL.
+export const REGISTRATION_LIVE = false;
 
 // A full class cannot be registered for, and neither can one whose register
 // URL is missing — a disabled control beats a link that goes nowhere (§10.1).
-export function registerControl(c: ScheduleClass): RegisterControl {
+export function registerControl(
+  c: ScheduleClass,
+  enquireUrl: string | null,
+): RegisterControl {
+  // Registration is not open to anyone yet, so the card asks for an enquiry
+  // whatever the class's seats say: enquiring about a full class is a fair
+  // thing to want, and the seats label beside it already says "Full".
+  if (!REGISTRATION_LIVE)
+    return enquireUrl
+      ? { href: enquireUrl, label: "Enquire about this class", reason: null }
+      : {
+          href: null,
+          label: "Enquire about this class",
+          reason: "Enquiries aren't available right now",
+        };
   // The seats label beside it already says "Full", so the control keeps the
   // same word it has everywhere else rather than repeating the reason.
-  if (c.seatsLabel === "full") return { href: null, label: "Register" };
-  if (!c.registerUrl) return { href: null, label: "Registration opening soon" };
-  return { href: c.registerUrl, label: "Register" };
+  if (c.seatsLabel === "full")
+    return { href: null, label: "Register", reason: "This class is full" };
+  if (!c.registerUrl)
+    return {
+      href: null,
+      label: "Register",
+      reason: "Registration isn't open for this class yet",
+    };
+  return { href: c.registerUrl, label: "Register", reason: null };
 }
