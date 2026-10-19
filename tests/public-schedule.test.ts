@@ -180,3 +180,19 @@ test("filter options hold only values present in the fetched set", () => {
   assert.deepEqual(options.tracks, ["certification", "workshop"]);
   assert.deepEqual(options.cities, ["Kuala Lumpur"]);
 });
+
+// The feed options are invisible to the pure-function tests above and quietly
+// load-bearing: drop the tag and O38's purge stops reaching this page, drop the
+// revalidate and every visitor hits the database.
+test("the page's feed is cached five minutes under the tag O38 purges, and asks for §14's full 100", () => {
+  const src = readFileSync(
+    new URL("../app/(public)/schedule/feed.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(src, /revalidate:\s*300/);
+  assert.match(src, /tags:\s*\[\s*"public-schedule"\s*\]/);
+  assert.match(src, /limit:\s*100/);
+  // No HTTP hop and no key on this side: that is what lets the page prerender
+  // at build time, with no server listening.
+  assert.doesNotMatch(src, /fetch\(|APP_BASE_URL|PUBLIC_API_KEY/);
+});

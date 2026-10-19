@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import { formatDateTime } from "@/lib/format/date";
-import { readSchedule } from "@/lib/public/schedule-feed";
+import { getSchedule } from "./feed";
 import { enquiryUrl } from "../enquiry-link";
 import { ScheduleList } from "./schedule-list";
 
 // §10.1. Rendered on the server so the schedule is indexable and a slow phone
-// gets it without running JavaScript. Classes come from the §8.1 feed, never
-// from the database (§3 layering).
+// gets it without running JavaScript. Classes come from the §8.1 feed read in
+// process (lib/public/schedule.ts), which is the same query, allow-list and
+// validation the public route serves — no HTTP hop, so the page also builds
+// with no server running. A failure throws to error.tsx (§13).
 
 export const metadata: Metadata = {
   title: "Class schedule — LEAD",
@@ -15,7 +17,7 @@ export const metadata: Metadata = {
 };
 
 export default async function SchedulePage() {
-  const read = await readSchedule();
+  const { classes, generatedAt } = await getSchedule();
   const enquire = enquiryUrl();
 
   return (
@@ -27,23 +29,7 @@ export default async function SchedulePage() {
         Upcoming public classes. Dates and times are Malaysian time.
       </p>
 
-      {read.kind === "unavailable" ? (
-        // §13: an error state with a retry, never "nothing scheduled".
-        <div className="border-line bg-surface-raised rounded-2xl border p-6">
-          <h2 className="text-ink font-semibold">
-            The schedule isn&apos;t loading right now
-          </h2>
-          <p className="text-ink-muted mt-1 text-sm">
-            Please try again in a moment.
-          </p>
-          <a
-            href="/schedule"
-            className="text-ink mt-3 inline-block text-sm underline underline-offset-4"
-          >
-            Try again
-          </a>
-        </div>
-      ) : read.classes.length === 0 ? (
+      {classes.length === 0 ? (
         <div className="border-line bg-surface-raised rounded-2xl border p-6">
           <h2 className="text-ink font-semibold">
             No public classes scheduled right now
@@ -59,14 +45,12 @@ export default async function SchedulePage() {
         </div>
       ) : (
         <>
-          {read.kind === "stale" && (
-            // Say when, so an old date is never presented as current with no
-            // hint (§10.1).
-            <p className="text-ink-subtle mb-4 text-xs">
-              Schedule last updated {formatDateTime(read.fetchedAt)}.
-            </p>
-          )}
-          <ScheduleList classes={read.classes} enquireUrl={enquire} />
+          {/* When the data was true, not when this page read it: the cache
+              below means a visitor can be seeing a five-minute-old copy. */}
+          <p className="text-ink-subtle mb-4 text-xs">
+            Schedule last updated {formatDateTime(generatedAt)}.
+          </p>
+          <ScheduleList classes={classes} enquireUrl={enquire} />
         </>
       )}
     </main>
