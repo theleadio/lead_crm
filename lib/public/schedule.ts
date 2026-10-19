@@ -1,5 +1,9 @@
 import { db } from "../sql.ts";
-import type { ScheduleQuery } from "../validation/public.ts";
+import {
+  scheduleQuerySchema,
+  type ScheduleQuery,
+} from "../validation/public.ts";
+import type { Env } from "./guard.ts";
 
 // Spec §8.1. The website feed. The select list below is the whole allow-list
 // of what leaves the building: no online_url, no trainer_user_ids, no notes,
@@ -83,4 +87,21 @@ export async function listPublicSchedule(
         : null,
     })),
   };
+}
+
+// PUBLIC_WEBSITE_URL without trailing slashes, or null when unset (then every
+// registerUrl is null).
+export function websiteBase(env: Env): string | null {
+  return (env.PUBLIC_WEBSITE_URL ?? "").trim().replace(/\/+$/, "") || null;
+}
+
+// The feed as a function, for server code in this app (the §10.1 schedule
+// page). Same allow-list and rules as GET /api/public/schedule, with no HTTP
+// hop, no API key, no CORS and no CDN layer: the caller is our own server.
+// Throws on a bad filter, like the route answers 400. Not for browsers.
+export async function readSchedule(
+  env: Env,
+  query: Record<string, unknown> = {},
+) {
+  return listPublicSchedule(scheduleQuerySchema.parse(query), websiteBase(env));
 }
