@@ -18,7 +18,7 @@ import {
   handleSchedule,
 } from "../lib/public/handlers.ts";
 import { cleanUrl } from "../lib/public/leads.ts";
-import { readSchedule } from "../lib/public/schedule.ts";
+import { readSchedule, withStatementTimeout } from "../lib/public/schedule.ts";
 import { createHmac } from "node:crypto";
 import { normalizePhoneE164 } from "../lib/format/phone.ts";
 import {
@@ -1389,10 +1389,28 @@ it("readSchedule: the in-process feed gives exactly what the route gives, with n
   ])
     assert.ok(!raw.includes(needle), needle);
   // The route's validation still applies: a bad filter throws, not a page of junk.
-  await assert.rejects(() => readSchedule({}, { track: "bootcamp" }));
+  await assert.rejects(() => readSchedule({}, { track: "bootcamp" } as never));
   // No website URL configured: registerUrl is null, as in the route.
   const none = await readSchedule({}, { city });
   assert.ok(none.classes.every((c) => c.registerUrl === null));
+});
+
+it("withStatementTimeout cuts a slow query off with 57014, and the setting does not outlive the transaction", async () => {
+  const before = (await db()`SHOW statement_timeout`)[0].statement_timeout;
+  await assert.rejects(
+    () => withStatementTimeout(150, () => db()`SELECT pg_sleep(3)`),
+    (e: { code?: string }) => e.code === "57014",
+  );
+  // A call that finishes in time returns its value.
+  assert.equal(
+    await withStatementTimeout(
+      2000,
+      async () => (await db()`SELECT 1 AS n`)[0].n,
+    ),
+    1,
+  );
+  const after = (await db()`SHOW statement_timeout`)[0].statement_timeout;
+  assert.equal(after, before);
 });
 
 it("schedule leak check: the serialised body never carries online_url, trainers, internal notes or seat counts", async () => {
