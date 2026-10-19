@@ -17,7 +17,7 @@ import {
 import { captureLead, cleanUrl, findReplay } from "./leads.ts";
 import { db, withTransaction } from "../sql.ts";
 import { normalizePhoneE164 } from "../format/phone.ts";
-import { listPublicSchedule } from "./schedule.ts";
+import { listPublicSchedule, websiteBase } from "./schedule.ts";
 
 // Spec §8: the only routes reachable without a session. The route files are
 // one-liners over these, so tests can call them with a fake env and CAPTCHA.
@@ -86,8 +86,7 @@ export async function handleSchedule(request: Request, d: PublicDeps = live()) {
     return withCors(d.env, origin, res);
   }
 
-  const website = (d.env.PUBLIC_WEBSITE_URL ?? "").trim().replace(/\/+$/, "");
-  const body = await listPublicSchedule(parsed.data, website || null);
+  const body = await listPublicSchedule(parsed.data, websiteBase(d.env));
   // 5 minutes at the edge (§8.1). The feed is public by design, so a cached
   // copy may be served without the key; see O38.
   return withCors(

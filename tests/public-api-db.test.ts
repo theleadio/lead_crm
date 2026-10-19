@@ -18,6 +18,7 @@ import {
   handleSchedule,
 } from "../lib/public/handlers.ts";
 import { cleanUrl } from "../lib/public/leads.ts";
+import { readSchedule } from "../lib/public/schedule.ts";
 import { createHmac } from "node:crypto";
 import { normalizePhoneE164 } from "../lib/format/phone.ts";
 import {
@@ -1358,6 +1359,40 @@ it("schedule: a class with no time is listed with startTime and endTime null, no
   assert.equal(c.code, code);
   assert.equal(c.startTime, null);
   assert.equal(c.endTime, null);
+});
+
+it("readSchedule: the in-process feed gives exactly what the route gives, with no key, and the same leak-free fields", async () => {
+  const { course, city } = await scheduleFixture();
+  const sfx = crypto.randomUUID().slice(0, 6);
+  await seedClass(course, city, { code: `RS1-${sfx}`, mode: "online" });
+  await seedClass(course, city, { code: `RS2-${sfx}`, noTime: true });
+
+  const viaRoute = await (
+    await schedule(`?city=${encodeURIComponent(city)}`)
+  ).json();
+  // No PUBLIC_API_KEY in this env: the in-process call needs none.
+  const direct = await readSchedule(
+    { PUBLIC_WEBSITE_URL: ENV.PUBLIC_WEBSITE_URL },
+    { city },
+  );
+  assert.deepEqual(direct.classes, viaRoute.classes);
+  assert.equal(direct.classes.length, 2);
+  assert.ok(!Number.isNaN(Date.parse(direct.generatedAt)));
+  for (const c of direct.classes)
+    assert.match(c.registerUrl ?? "", /^https:\/\/thelead\.io\/register\//);
+  const raw = JSON.stringify(direct);
+  for (const needle of [
+    "secret.example",
+    "online_url",
+    "INTERNAL-NOTE",
+    "7919",
+  ])
+    assert.ok(!raw.includes(needle), needle);
+  // The route's validation still applies: a bad filter throws, not a page of junk.
+  await assert.rejects(() => readSchedule({}, { track: "bootcamp" }));
+  // No website URL configured: registerUrl is null, as in the route.
+  const none = await readSchedule({}, { city });
+  assert.ok(none.classes.every((c) => c.registerUrl === null));
 });
 
 it("schedule leak check: the serialised body never carries online_url, trainers, internal notes or seat counts", async () => {
