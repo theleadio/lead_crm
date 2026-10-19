@@ -564,6 +564,12 @@ it("merge: super_admin only; moves children, keeps chosen fields (§9.3)", async
     )[0].n;
   const before = await bothDeals();
   const [src] = await sql`SELECT full_name, email FROM person WHERE id = ${a}`;
+  const [tgt] = await sql`SELECT full_name, email FROM person WHERE id = ${b}`;
+  // The point of `fields: source` is that the kept record takes values it did
+  // not have. Two seed rows that happened to share a name would pass either
+  // way, so the test says what it relies on.
+  assert.notEqual(src.full_name, tgt.full_name);
+  assert.notEqual(src.email, tgt.email);
 
   assert.equal(
     (await mergePeople(a, { targetId: b, fields: {} }, sales)).kind,

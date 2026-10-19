@@ -315,6 +315,34 @@ it("the queue roles may dismiss; the others may not", async () => {
   }
 });
 
+// §12.2: a record flagged before pairs were kept, or one whose candidate has
+// since been merged away, has no task to close — the route needs only the
+// flag, so it stays dismissible.
+it("a pair reason with no open task is still dismissible", async () => {
+  const flagged = await seedPerson("No Task Source");
+  await db()`UPDATE person SET needs_review = true,
+             needs_review_reason = 'possible_duplicate_email'
+             WHERE id = ${flagged}`;
+  const [row] =
+    await db()`SELECT version::int AS v FROM person WHERE id = ${flagged}`;
+  assert.equal(await openPairFor(flagged), null, "no pair recorded");
+
+  const r = await clearReviewFlag(flagged, undefined, row.v, admin);
+  assert.equal(r.kind, "dismissed");
+  const [person] = await db()`
+    SELECT needs_review, needs_review_reason FROM person WHERE id = ${flagged}`;
+  assert.equal(person.needs_review, false);
+  assert.equal(person.needs_review_reason, null);
+
+  const [audit] = await db()`
+    SELECT before, after FROM audit_log
+    WHERE entity = 'person' AND entity_id = ${flagged} AND action = 'update'
+    ORDER BY at DESC LIMIT 1`;
+  assert.equal(audit.before.needsReviewReason, "possible_duplicate_email");
+  assert.equal(audit.before.duplicateOf, null);
+  assert.equal(audit.after.notADuplicate, true);
+});
+
 it("a stale version is refused and the flag stays", async () => {
   const { flagged, version } = await seedFlaggedPair();
   const r = await clearReviewFlag(flagged, undefined, version + 1, admin);
