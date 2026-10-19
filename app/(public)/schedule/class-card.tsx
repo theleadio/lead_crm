@@ -26,13 +26,20 @@ export function ClassCard({
   // and a disabled control says why in the same tree a screen reader walks.
   const headingId = `class-${cls.id}-name`;
   const reasonId = `class-${cls.id}-reason`;
+  // The visible label is short so the control stays one line in a card this
+  // narrow; the course name keeps the accessible name usable on its own, where
+  // a screen reader lists the links out of context.
+  const courseSuffix = <span className="sr-only"> — {cls.courseName}</span>;
 
   return (
+    // The card is three rows of the list's own grid (row-span-3 + subgrid), so
+    // the dates, the price and the control line up across every card in a row
+    // however many lines a course name takes.
     <article
       aria-labelledby={headingId}
-      className="border-line bg-surface-raised flex flex-col gap-3 rounded-2xl border p-5"
+      className="border-line bg-surface-raised row-span-3 grid grid-rows-subgrid gap-3 rounded-2xl border p-5"
     >
-      <div className="flex flex-wrap items-start justify-between gap-2">
+      <div className="flex flex-col items-start gap-2">
         {/* §10.5: a Chinese class carries its own name, so the language has to
             be on the element or a screen reader reads it as English. */}
         <h2
@@ -42,7 +49,7 @@ export function ClassCard({
         >
           {cls.courseName}
         </h2>
-        <div className="flex shrink-0 flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1.5">
           <Badge variant="outline">
             {LANGUAGE_LABEL[cls.language] ?? cls.language}
           </Badge>
@@ -85,9 +92,10 @@ export function ClassCard({
         {control.href ? (
           <a
             href={control.href}
-            className="bg-lead-yellow text-on-yellow focus-visible:ring-focus-ring rounded-full px-4 py-2 text-sm font-semibold focus-visible:ring-2 focus-visible:outline-none"
+            className="bg-lead-yellow text-on-yellow focus-visible:ring-focus-ring shrink-0 rounded-full px-4 py-2 text-sm font-semibold whitespace-nowrap focus-visible:ring-2 focus-visible:outline-none"
           >
             {control.label}
+            {courseSuffix}
           </a>
         ) : (
           <>
@@ -96,9 +104,10 @@ export function ClassCard({
               disabled
               aria-disabled="true"
               aria-describedby={control.reason ? reasonId : undefined}
-              className="bg-surface-muted text-ink-subtle cursor-not-allowed rounded-full px-4 py-2 text-sm font-semibold"
+              className="bg-surface-muted text-ink-subtle shrink-0 cursor-not-allowed rounded-full px-4 py-2 text-sm font-semibold whitespace-nowrap"
             >
               {control.label}
+              {courseSuffix}
             </button>
             {control.reason && (
               <span id={reasonId} className="sr-only">

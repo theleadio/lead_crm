@@ -82,7 +82,7 @@ test("register control: every class offers the enquiry link while 10.4 is unbuil
   for (const seatsLabel of ["available", "few_seats", "full"] as const)
     assert.deepEqual(registerControl(cls({ seatsLabel }), ENQUIRE), {
       href: ENQUIRE,
-      label: "Enquire about this class",
+      label: "Enquire",
       reason: null,
     });
   // Never the feed's URL: it points at a page the website does not serve.

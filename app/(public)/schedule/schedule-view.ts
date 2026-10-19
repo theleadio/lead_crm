@@ -89,10 +89,10 @@ export function registerControl(
   // thing to want, and the seats label beside it already says "Full".
   if (!REGISTRATION_LIVE)
     return enquireUrl
-      ? { href: enquireUrl, label: "Enquire about this class", reason: null }
+      ? { href: enquireUrl, label: "Enquire", reason: null }
       : {
           href: null,
-          label: "Enquire about this class",
+          label: "Enquire",
           reason: "Enquiries aren't available right now",
         };
   // The seats label beside it already says "Full", so the control keeps the
