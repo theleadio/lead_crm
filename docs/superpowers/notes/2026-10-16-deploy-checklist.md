@@ -12,11 +12,17 @@ There are **two** DigitalOcean databases, staging and production (spec §2, Envi
 - [ ] Restrict inbound connections to the app and job hosts only (spec O47, go-live check). **UNCHECKED:** Netlify's outbound addresses are not fixed, so a trusted-sources list may not be possible for the app. Decide how the app reaches the database (a connection pooler, a fixed-IP proxy, or an open port with TLS and a strong password) and write the choice into O47.
 - [ ] Require TLS. The app connects with `ssl: "require"` (`lib/sql.ts`), which encrypts but does **not** verify the server certificate. **UNCHECKED:** whether DigitalOcean's CA needs to be supplied to verify it.
 - [ ] Create a database user for the app, separate from the admin user. The app needs normal read/write on the tables and `EXECUTE` on the functions; it does not need to own them.
-- [ ] Apply migrations **001 to 012 in order**, with a client that uses UTF-8 (`PGCLIENTENCODING=UTF8`, because 003 has non-ASCII text). Use the admin user. Stop on the first error. 009 stops with a clear message if legacy data breaks one of its checks.
+- [ ] Apply migrations **001 to 012 in order**, with a client that uses UTF-8 (`PGCLIENTENCODING=UTF8`, because 003 has non-ASCII text). Use the admin user. Stop on the first error. 009 stops with a clear message if legacy data breaks one of its checks. They apply on a database with **no** Supabase `auth` schema (checked 20 Oct on a fresh database). From the repo root in PowerShell, with no psql needed (the string comes from DigitalOcean's connection details; it stays in this terminal session only):
+
+  ```powershell
+  $env:DATABASE_URL = "<the staging connection string>"
+  Get-ChildItem lib/db/migrations/*.sql | Sort-Object Name | ForEach-Object { Write-Host $_.Name; node scripts/run-sql.ts $_.FullName; if ($LASTEXITCODE -ne 0) { break } }
+  ```
+
 - [ ] Do **not** run the files in `lib/db/tests/` against this database. They need an empty database and roll themselves back; run them on a throwaway copy.
 - [ ] Back-up setting on, and do one restore test before go-live (spec §15.2).
 - [ ] Check the database's maximum connections. The app is serverless: each instance opens its own pool of 5 (`lib/sql.ts`). **UNCHECKED:** how many instances Netlify runs at once; if that can exceed the limit, add a pooler or lower `max`. Note the same-key lock in `POST /api/public/leads` holds one connection for up to 5 seconds during the CAPTCHA call, and has never been tested through a pooler.
-- [ ] Staging only: seed fake data with `npm run db:seed` (`scripts/seed-dev.ts`, it reads `DATABASE_URL` from `.env.local`), run once by you from your own machine with the staging string, then remove the string from that file. Never seed production, and never load production data into staging.
+- [ ] Staging only: seed fake data with `node scripts/seed-dev.ts`, run once by you from your own machine in the same PowerShell session (so `DATABASE_URL` is still set, and no string is left in a file). It adds 70 fake people and no real data. A DigitalOcean database has no Supabase `auth.users`, so to be able to sign in on staging also set `$env:SEED_LOGIN_AUTH_USER_ID` (your user id in the Supabase project) and `$env:SEED_LOGIN_EMAIL` first; they link that one login as `super_admin`. Without them the seed runs and links no login. It refuses to run with `NODE_ENV=production`. Never seed production, and never load production data into staging.
 - [ ] Put each connection string in the password manager and in the two places below (its own jobs and its own Netlify deploy). Never in the repo, and never give the staging or production string to a developer's local setup.
 
 ## 2. DigitalOcean: two scheduled jobs per database
