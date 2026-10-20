@@ -132,7 +132,9 @@ test("allowedOrigins: no wildcard, https only (http for localhost), junk dropped
 
 test("proxy matcher: /api/public/* skips the session proxy, CRM routes and other APIs do not", () => {
   const src = readFileSync(new URL("../proxy.ts", import.meta.url), "utf8");
-  const matcher = /matcher:\s*\["([^"]+)"\]/.exec(src)?.[1];
+  // The array wraps once it holds more than a couple of exclusions, so the
+  // reader cannot assume the string sits on the `matcher:` line.
+  const matcher = /matcher:\s*\[\s*"([^"]+)"/.exec(src)?.[1];
   assert.ok(matcher, "matcher not found in proxy.ts");
   const re = new RegExp(`^${matcher}$`);
   for (const p of ["/api/public/schedule", "/api/public/leads"])
