@@ -25,7 +25,7 @@ import {
   clearReviewFlag,
   openPairFor,
 } from "../lib/people/duplicate-review.ts";
-import { closeDb, db } from "../lib/sql.ts";
+import { closeDb, db, withTransaction } from "../lib/sql.ts";
 import { it, newCourse, newUser } from "./seed.ts";
 
 after(closeDb);
@@ -1389,7 +1389,10 @@ it("readSchedule: the in-process feed gives exactly what the route gives, with n
   ])
     assert.ok(!raw.includes(needle), needle);
   // The route's validation still applies: a bad filter throws, not a page of junk.
-  await assert.rejects(() => readSchedule({}, { track: "bootcamp" } as never));
+  await assert.rejects(() =>
+    // @ts-expect-error a bad filter must stay a type error, not just a throw
+    readSchedule({}, { track: "bootcamp" }),
+  );
   // No website URL configured: registerUrl is null, as in the route.
   const none = await readSchedule({}, { city });
   assert.ok(none.classes.every((c) => c.registerUrl === null));
@@ -1411,6 +1414,28 @@ it("withStatementTimeout cuts a slow query off with 57014, and the setting does 
   );
   const after = (await db()`SHOW statement_timeout`)[0].statement_timeout;
   assert.equal(after, before);
+});
+
+it("withStatementTimeout inside an outer transaction puts the outer's own setting back, not the default", async () => {
+  await withTransaction(async () => {
+    // A value that is not the pool default, so restoring "the default" would fail.
+    await db()`SELECT set_config('statement_timeout', '30s', true)`;
+    const outer = (await db()`SHOW statement_timeout`)[0].statement_timeout;
+    assert.equal(outer, "30s");
+    await withStatementTimeout(150, () => db()`SELECT 1`);
+    assert.equal(
+      (await db()`SHOW statement_timeout`)[0].statement_timeout,
+      outer,
+    );
+    // And an error inside rolls the setting back to the outer's value too.
+    await assert.rejects(() =>
+      withStatementTimeout(150, () => db()`SELECT pg_sleep(3)`),
+    );
+    assert.equal(
+      (await db()`SHOW statement_timeout`)[0].statement_timeout,
+      outer,
+    );
+  });
 });
 
 it("schedule leak check: the serialised body never carries online_url, trainers, internal notes or seat counts", async () => {
