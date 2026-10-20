@@ -76,6 +76,10 @@ export type PersonDetail = {
     companyNameGiven: string | null;
     needsReview: boolean;
     needsReviewReason: string | null;
+    // Whether the flag proposes a pair (§12.2 rule 3) rather than naming a
+    // defect in this record. False when not flagged. §9.2 offers "Not a
+    // duplicate" only for a pair; the reason code itself stays on the server.
+    needsReviewIsPair: boolean;
     // The record §12.2 matched them against, from the open §7.1
     // `review_duplicate` task. Null when no pair was recorded or the other
     // record is gone — the §9.2 banner then shows the reason alone.
