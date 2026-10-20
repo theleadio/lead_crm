@@ -16,7 +16,7 @@ There are **two** DigitalOcean databases, staging and production (spec §2, Envi
 
   ```powershell
   $env:DATABASE_URL = "<the staging connection string>"
-  Get-ChildItem lib/db/migrations/*.sql | Sort-Object Name | ForEach-Object { Write-Host $_.Name; node scripts/run-sql.ts $_.FullName; if ($LASTEXITCODE -ne 0) { break } }
+  foreach ($f in (Get-ChildItem lib/db/migrations/*.sql | Sort-Object Name)) { Write-Host $f.Name; node scripts/run-sql.ts $f.FullName; if ($LASTEXITCODE -ne 0) { break } }
   ```
 
 - [ ] Do **not** run the files in `lib/db/tests/` against this database. They need an empty database and roll themselves back; run them on a throwaway copy.
