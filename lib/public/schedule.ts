@@ -1,5 +1,10 @@
-import { db } from "../sql.ts";
-import type { ScheduleQuery } from "../validation/public.ts";
+import { db, withTransaction } from "../sql.ts";
+import {
+  scheduleQuerySchema,
+  type ScheduleQuery,
+} from "../validation/public.ts";
+import type { z } from "zod";
+import type { Env } from "./guard.ts";
 
 // Spec §8.1. The website feed. The select list below is the whole allow-list
 // of what leaves the building: no online_url, no trainer_user_ids, no notes,
@@ -83,4 +88,47 @@ export async function listPublicSchedule(
         : null,
     })),
   };
+}
+
+// PUBLIC_WEBSITE_URL without trailing slashes, or null when unset (then every
+// registerUrl is null).
+export function websiteBase(env: Env): string | null {
+  return (env.PUBLIC_WEBSITE_URL ?? "").trim().replace(/\/+$/, "") || null;
+}
+
+// Runs fn in a transaction whose statements are cut off after ms milliseconds
+// (transaction-local, so it never touches the shared pool or the job scripts
+// that use lib/sql.ts). A hung database then fails the call with SQLSTATE
+// 57014 instead of hanging the page. Called inside an open transaction it
+// joins it and puts the previous value back afterwards.
+export async function withStatementTimeout<T>(
+  ms: number,
+  fn: () => Promise<T>,
+): Promise<T> {
+  return withTransaction(async () => {
+    const sql = db();
+    const [{ statement_timeout: before }] = await sql`SHOW statement_timeout`;
+    await sql`SELECT set_config('statement_timeout', ${String(Math.trunc(ms))}, true)`;
+    const result = await fn();
+    await sql`SELECT set_config('statement_timeout', ${before}, true)`;
+    return result;
+  });
+}
+
+export const READ_SCHEDULE_TIMEOUT_MS = 5000;
+
+// The feed as a function, for server code in this app (the §10.1 schedule
+// page). Same allow-list and rules as GET /api/public/schedule, with no HTTP
+// hop, no API key, no CORS and no CDN layer: the caller is our own server.
+// A bad filter is a type error here and throws at run time, like the route's
+// 400; the query is cut off after 5 seconds. Not for browsers.
+// Pass limit explicitly: it defaults to 50, and 100 is the cap (§14).
+export async function readSchedule(
+  env: Env,
+  query: z.input<typeof scheduleQuerySchema> = {},
+) {
+  const q = scheduleQuerySchema.parse(query);
+  return withStatementTimeout(READ_SCHEDULE_TIMEOUT_MS, () =>
+    listPublicSchedule(q, websiteBase(env)),
+  );
 }

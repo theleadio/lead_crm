@@ -18,13 +18,14 @@ import {
   handleSchedule,
 } from "../lib/public/handlers.ts";
 import { cleanUrl } from "../lib/public/leads.ts";
+import { readSchedule, withStatementTimeout } from "../lib/public/schedule.ts";
 import { createHmac } from "node:crypto";
 import { normalizePhoneE164 } from "../lib/format/phone.ts";
 import {
   clearReviewFlag,
   openPairFor,
 } from "../lib/people/duplicate-review.ts";
-import { closeDb, db } from "../lib/sql.ts";
+import { closeDb, db, withTransaction } from "../lib/sql.ts";
 import { it, newCourse, newUser } from "./seed.ts";
 
 after(closeDb);
@@ -1358,6 +1359,83 @@ it("schedule: a class with no time is listed with startTime and endTime null, no
   assert.equal(c.code, code);
   assert.equal(c.startTime, null);
   assert.equal(c.endTime, null);
+});
+
+it("readSchedule: the in-process feed gives exactly what the route gives, with no key, and the same leak-free fields", async () => {
+  const { course, city } = await scheduleFixture();
+  const sfx = crypto.randomUUID().slice(0, 6);
+  await seedClass(course, city, { code: `RS1-${sfx}`, mode: "online" });
+  await seedClass(course, city, { code: `RS2-${sfx}`, noTime: true });
+
+  const viaRoute = await (
+    await schedule(`?city=${encodeURIComponent(city)}`)
+  ).json();
+  // No PUBLIC_API_KEY in this env: the in-process call needs none.
+  const direct = await readSchedule(
+    { PUBLIC_WEBSITE_URL: ENV.PUBLIC_WEBSITE_URL },
+    { city },
+  );
+  assert.deepEqual(direct.classes, viaRoute.classes);
+  assert.equal(direct.classes.length, 2);
+  assert.ok(!Number.isNaN(Date.parse(direct.generatedAt)));
+  for (const c of direct.classes)
+    assert.match(c.registerUrl ?? "", /^https:\/\/thelead\.io\/register\//);
+  const raw = JSON.stringify(direct);
+  for (const needle of [
+    "secret.example",
+    "online_url",
+    "INTERNAL-NOTE",
+    "7919",
+  ])
+    assert.ok(!raw.includes(needle), needle);
+  // The route's validation still applies: a bad filter throws, not a page of junk.
+  await assert.rejects(() =>
+    // @ts-expect-error a bad filter must stay a type error, not just a throw
+    readSchedule({}, { track: "bootcamp" }),
+  );
+  // No website URL configured: registerUrl is null, as in the route.
+  const none = await readSchedule({}, { city });
+  assert.ok(none.classes.every((c) => c.registerUrl === null));
+});
+
+it("withStatementTimeout cuts a slow query off with 57014, and the setting does not outlive the transaction", async () => {
+  const before = (await db()`SHOW statement_timeout`)[0].statement_timeout;
+  await assert.rejects(
+    () => withStatementTimeout(150, () => db()`SELECT pg_sleep(3)`),
+    (e: { code?: string }) => e.code === "57014",
+  );
+  // A call that finishes in time returns its value.
+  assert.equal(
+    await withStatementTimeout(
+      2000,
+      async () => (await db()`SELECT 1 AS n`)[0].n,
+    ),
+    1,
+  );
+  const after = (await db()`SHOW statement_timeout`)[0].statement_timeout;
+  assert.equal(after, before);
+});
+
+it("withStatementTimeout inside an outer transaction puts the outer's own setting back, not the default", async () => {
+  await withTransaction(async () => {
+    // A value that is not the pool default, so restoring "the default" would fail.
+    await db()`SELECT set_config('statement_timeout', '30s', true)`;
+    const outer = (await db()`SHOW statement_timeout`)[0].statement_timeout;
+    assert.equal(outer, "30s");
+    await withStatementTimeout(150, () => db()`SELECT 1`);
+    assert.equal(
+      (await db()`SHOW statement_timeout`)[0].statement_timeout,
+      outer,
+    );
+    // And an error inside rolls the setting back to the outer's value too.
+    await assert.rejects(() =>
+      withStatementTimeout(150, () => db()`SELECT pg_sleep(3)`),
+    );
+    assert.equal(
+      (await db()`SHOW statement_timeout`)[0].statement_timeout,
+      outer,
+    );
+  });
 });
 
 it("schedule leak check: the serialised body never carries online_url, trainers, internal notes or seat counts", async () => {
