@@ -72,31 +72,33 @@ const cls = (over: Partial<ScheduleClass> = {}): ScheduleClass => ({
   ...over,
 });
 
-const ENQUIRE = "https://thelead.io";
-
 // §10.4 is not built, so REGISTRATION_LIVE is false and every card asks for an
 // enquiry. These tests cover what ships today; the block below covers the
 // rules that take over when the flag flips.
 test("register control: every class offers the enquiry link while 10.4 is unbuilt", () => {
   assert.equal(REGISTRATION_LIVE, false, "10.4 shipped? update these tests");
   for (const seatsLabel of ["available", "few_seats", "full"] as const)
-    assert.deepEqual(registerControl(cls({ seatsLabel }), ENQUIRE), {
-      href: ENQUIRE,
+    assert.deepEqual(registerControl(cls({ seatsLabel })), {
+      // §10.3: our own form, carrying the class code so the lead's deal is
+      // attached to this class.
+      href: "/enquiry?class=AIA-2610-EN",
       label: "Enquire",
       reason: null,
     });
   // Never the feed's URL: it points at a page the website does not serve.
-  const control = registerControl(cls(), ENQUIRE);
+  const control = registerControl(cls());
   assert.notEqual(control.href, base.registerUrl);
   // And never the wording that promises a date we cannot name.
   assert.doesNotMatch(control.label, /soon/i);
 });
 
-test("register control: no enquiry URL leaves a disabled control that says why", () => {
-  const control = registerControl(cls(), null);
-  assert.equal(control.href, null);
-  assert.notEqual(control.label, "");
-  assert.ok(control.reason, "a disabled control states its reason (§14)");
+test("register control: the enquiry destination always exists now", () => {
+  // The disabled "no enquiry URL" branch is gone: the form is a page this
+  // app serves, so there is no configuration under which the control leads
+  // nowhere. A class code is escaped rather than trusted into the URL.
+  const control = registerControl(cls({ code: "A&B 2611/EN" }));
+  assert.equal(control.href, "/enquiry?class=A%26B%202611%2FEN");
+  assert.equal(control.reason, null);
 });
 
 // The REGISTRATION_LIVE = true rules, called directly so they are covered

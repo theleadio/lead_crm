@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { formatDateTime } from "@/lib/format/date";
 import { getSchedule } from "./feed";
 import { enquiryUrl } from "../enquiry-link";
@@ -18,7 +19,6 @@ export const metadata: Metadata = {
 
 export default async function SchedulePage() {
   const { classes, generatedAt } = await getSchedule();
-  const enquire = enquiryUrl();
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6">
@@ -34,14 +34,12 @@ export default async function SchedulePage() {
           <h2 className="text-ink font-semibold">
             No public classes scheduled right now
           </h2>
-          {enquire && (
-            <a
-              href={enquire}
-              className="text-ink mt-3 inline-block text-sm underline underline-offset-4"
-            >
-              Tell us what you&apos;re looking for
-            </a>
-          )}
+          <Link
+            href={enquiryUrl()}
+            className="text-ink mt-3 inline-block text-sm underline underline-offset-4"
+          >
+            Tell us what you&apos;re looking for
+          </Link>
         </div>
       ) : (
         <>
@@ -50,7 +48,7 @@ export default async function SchedulePage() {
           <p className="text-ink-subtle mb-4 text-xs">
             Schedule last updated {formatDateTime(generatedAt)}.
           </p>
-          <ScheduleList classes={classes} enquireUrl={enquire} />
+          <ScheduleList classes={classes} />
         </>
       )}
     </main>

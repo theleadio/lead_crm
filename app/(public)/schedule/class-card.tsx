@@ -13,15 +13,9 @@ import {
 // One public class (§10.1). Everything it shows comes from the §8.1 feed, so
 // there is no seat count, capacity, joining link or trainer to leak here.
 
-export function ClassCard({
-  cls,
-  enquireUrl,
-}: {
-  cls: ScheduleClass;
-  enquireUrl: string | null;
-}) {
+export function ClassCard({ cls }: { cls: ScheduleClass }) {
   const time = timeLabel(cls);
-  const control = registerControl(cls, enquireUrl);
+  const control = registerControl(cls);
   // §14: the card is named by its own heading rather than a duplicate label,
   // and a disabled control says why in the same tree a screen reader walks.
   const headingId = `class-${cls.id}-name`;

@@ -1,4 +1,5 @@
 import type { ScheduleClass } from "@/lib/public/schedule";
+import { enquiryUrl } from "../enquiry-link.ts";
 
 // The 10.1 page's view rules, in a plain module so they can be tested without
 // React and imported from both the server page and the client list. Values
@@ -80,21 +81,14 @@ export const REGISTRATION_LIVE = false;
 
 // A full class cannot be registered for, and neither can one whose register
 // URL is missing — a disabled control beats a link that goes nowhere (§10.1).
-export function registerControl(
-  c: ScheduleClass,
-  enquireUrl: string | null,
-): RegisterControl {
+export function registerControl(c: ScheduleClass): RegisterControl {
   // Registration is not open to anyone yet, so the card asks for an enquiry
   // whatever the class's seats say: enquiring about a full class is a fair
   // thing to want, and the seats label beside it already says "Full".
+  // The enquiry form is our own page and carries this class's code, so there
+  // is no "no destination" case left to disable the control for.
   if (!REGISTRATION_LIVE)
-    return enquireUrl
-      ? { href: enquireUrl, label: "Enquire", reason: null }
-      : {
-          href: null,
-          label: "Enquire",
-          reason: "Enquiries aren't available right now",
-        };
+    return { href: enquiryUrl(c.code), label: "Enquire", reason: null };
   // The seats label beside it already says "Full", so the control keeps the
   // same word it has everywhere else rather than repeating the reason.
   if (c.seatsLabel === "full")
