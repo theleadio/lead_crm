@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import {
   FIRST_TOUCH_COOKIE,
   LAST_TOUCH_COOKIE,
@@ -51,21 +51,29 @@ function writeCookie(name: string, value: string) {
 }
 
 export function AttributionScript() {
-  // An in-app move between public pages is an arrival too, so the last touch
-  // refreshes on it. usePathname re-runs on navigation; useSearchParams is
-  // deliberately not used, because reading it would opt /schedule out of
-  // static rendering, and a campaign link always arrives as a fresh load
-  // where the query is read on mount anyway.
+  // The cookies are rewritten on every navigation, so a campaign picked up
+  // part-way through a visit is recorded too. usePathname re-runs on
+  // navigation; useSearchParams is deliberately not used, because reading it
+  // would opt /schedule out of static rendering, and a campaign link always
+  // arrives as a fresh load where the query is read on mount anyway.
   const pathname = usePathname();
+  // document.referrer belongs to the *document*, so across a Link navigation
+  // it still holds the ad site's URL and never becomes one of our own. Read
+  // on a soft move it makes that move look like a fresh arrival from outside
+  // and erases the last touch — the exact failure the refreshLast rule in
+  // ./attribution.ts exists to prevent. After the first run the referrer is
+  // the page we just left, which we remember ourselves.
+  const previous = useRef<string | null>(null);
 
   useEffect(() => {
     const { first, last } = nextTouches(
       readCookie(FIRST_TOUCH_COOKIE),
       location.href,
-      document.referrer || null,
+      previous.current ?? (document.referrer || null),
       new Date(),
       readCookie(LAST_TOUCH_COOKIE),
     );
+    previous.current = location.href;
     if (first) writeCookie(FIRST_TOUCH_COOKIE, serialiseTouch(first));
     if (last) writeCookie(LAST_TOUCH_COOKIE, serialiseTouch(last));
   }, [pathname]);

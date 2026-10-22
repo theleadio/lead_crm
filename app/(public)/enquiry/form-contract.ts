@@ -30,5 +30,22 @@ export function isHoneypotFilled(form: FormData): boolean {
 // the first result instead of creating a second lead. A UUID is letters,
 // digits and hyphens, which is what leadSchema's key pattern allows.
 export function newIdempotencyKey(): string {
-  return crypto.randomUUID();
+  if (crypto.randomUUID) return crypto.randomUUID();
+  // randomUUID exists only in a secure context, so over plain http — a phone
+  // on the LAN checking the form — it is undefined and this initialiser would
+  // throw during hydration and take the page with it. getRandomValues has no
+  // such restriction. Laid out as a v4 UUID because O46 calls the key a UUID,
+  // and §8.2 stores it in touchpoint.external_ref beside real ones.
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const hex = [...b].map((n) => n.toString(16).padStart(2, "0")).join("");
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20),
+  ].join("-");
 }

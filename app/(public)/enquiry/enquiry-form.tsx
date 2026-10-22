@@ -1,7 +1,7 @@
 "use client";
 
 import Script from "next/script";
-import { useActionState, useId, useState } from "react";
+import { useActionState, useEffect, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -10,6 +10,13 @@ import {
   newIdempotencyKey,
 } from "./form-contract";
 import { submitEnquiry } from "./submit";
+
+// As much of Turnstile's global as we use.
+declare global {
+  interface Window {
+    turnstile?: { reset: (el?: string | HTMLElement) => void };
+  }
+}
 
 // §10.3's form. Fields are controlled so a failed submission keeps every
 // value the visitor typed (§13) — React resets an uncontrolled form once its
@@ -62,6 +69,14 @@ export function EnquiryForm({
   const [idempotencyKey] = useState(newIdempotencyKey);
   const ids = useId();
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+
+  // A token is spent by the §8.2 check, and the widget does not remount when
+  // the action returns. Without this reset, any refusal after that check —
+  // the per-phone limit, a 500 — leaves the spent token in the form and every
+  // retry comes back captcha_failed until the visitor reloads the page.
+  useEffect(() => {
+    if (state.status === "error") window.turnstile?.reset();
+  }, [state]);
 
   const set = (k: keyof Values) => (e: { target: { value: string } }) =>
     setValues((v) => ({ ...v, [k]: e.target.value }));

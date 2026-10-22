@@ -87,6 +87,36 @@ test("an unreadable cookie value reads as absent rather than throwing", () => {
     assert.equal(parseTouch(raw), null, `should be null for ${raw}`);
 });
 
+// A cookie can be hand-edited, or set for the parent domain by another
+// subdomain. §8.2 refuses the whole lead over one bad attribution value, so
+// every field is rebuilt rather than trusted.
+test("a tampered cookie costs attribution, not the lead", () => {
+  const t = parseTouch(
+    encodeURIComponent(
+      JSON.stringify({
+        occurredAt: "2026-10-22T02:00:00.000Z",
+        utmSource: 7,
+        utmCampaign: "x".repeat(400),
+        fbclid: "f".repeat(900),
+        landingUrl: "javascript:alert(1)",
+        referrer: null,
+      }),
+    ),
+  );
+  assert.ok(t);
+  assert.equal(t.utmSource, null, "a non-string field reads as absent");
+  assert.equal(t.utmCampaign?.length, 200);
+  assert.equal(t.fbclid?.length, 500);
+  assert.equal(t.landingUrl, null, "a non-http URL reads as absent");
+  const payload = attributionPayload(null, t);
+  for (const [k, v] of Object.entries(payload!))
+    if (k !== "firstTouch")
+      assert.ok(
+        v === null || typeof v === "string",
+        `${k} must be a string or null`,
+      );
+});
+
 // §10.2 calls overwriting the first touch the mistake that breaks all
 // attribution reporting, so it gets its own test before it is wired up.
 
@@ -280,6 +310,31 @@ test("an idempotency key is one §8.2 will accept", () => {
   // COOKIE_TOUCH_REF marks a synthetic first touch and contains a space, so
   // a generated key can never collide with one.
   assert.ok(!key.includes(" "));
+});
+
+// crypto.randomUUID is secure-context-only, so the form is also opened over
+// plain http on the LAN, where only getRandomValues exists.
+test("an idempotency key is still generated outside a secure context", () => {
+  const real = globalThis.crypto;
+  Object.defineProperty(globalThis, "crypto", {
+    value: { getRandomValues: (b: Uint8Array) => real.getRandomValues(b) },
+    configurable: true,
+  });
+  try {
+    const key = newIdempotencyKey();
+    assert.match(key, /^[A-Za-z0-9_.:-]{8,100}$/);
+    // O46 calls the key a UUID, so the fallback is shaped like one too.
+    assert.match(
+      key,
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    assert.notEqual(key, newIdempotencyKey());
+  } finally {
+    Object.defineProperty(globalThis, "crypto", {
+      value: real,
+      configurable: true,
+    });
+  }
 });
 
 // Found by the end-to-end run: clicking from /schedule to /enquiry re-ran the

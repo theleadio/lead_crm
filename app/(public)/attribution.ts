@@ -98,7 +98,24 @@ export function parseTouch(raw: string | null | undefined): Touch | null {
     const o = JSON.parse(decodeURIComponent(raw));
     if (!o || typeof o !== "object") return null;
     if (typeof o.occurredAt !== "string") return null;
-    return o as Touch;
+    // Cookie text is untrusted — another subdomain can set one of these for
+    // the parent domain, and a wrong type or an over-long value would fail
+    // §8.2's schema and so refuse the whole lead. Rebuilt through the caps
+    // touchFrom applies, a bad cookie costs attribution and nothing else.
+    const s = (k: keyof Touch, max = 200) =>
+      typeof o[k] === "string" ? value(o[k], max) : null;
+    return {
+      utmSource: s("utmSource"),
+      utmMedium: s("utmMedium"),
+      utmCampaign: s("utmCampaign"),
+      utmContent: s("utmContent"),
+      utmTerm: s("utmTerm"),
+      gclid: s("gclid"),
+      fbclid: s("fbclid", 500),
+      landingUrl: trimUrl(s("landingUrl", 2000)),
+      referrer: trimUrl(s("referrer", 2000)),
+      occurredAt: o.occurredAt.slice(0, 40),
+    };
   } catch {
     return null;
   }

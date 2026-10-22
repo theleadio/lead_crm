@@ -23,8 +23,11 @@ function privacyUrl(env: NodeJS.ProcessEnv = process.env): string | null {
 
 export default async function EnquiryPage(props: PageProps<"/enquiry">) {
   const sp = await props.searchParams;
+  // Cut to the 50 characters §8.2 allows for either code: both ride along as
+  // hidden fields, so a longer one from a mistyped link would fail validation
+  // with no field on the page for the visitor to correct.
   const one = (v: string | string[] | undefined) =>
-    (Array.isArray(v) ? v[0] : v)?.trim() || null;
+    (Array.isArray(v) ? v[0] : v)?.trim().slice(0, 50) || null;
   const classCode = one(sp.class);
   const courseCode = one(sp.course);
 
@@ -33,10 +36,22 @@ export default async function EnquiryPage(props: PageProps<"/enquiry">) {
   // could have come from. A code that matches nothing — unknown, private,
   // cancelled or past — leaves the form generic rather than erroring: §8.2
   // ignores such a code too, and the enquiry is still worth capturing.
+  //
+  // The read can throw (no database, or the 5-second statement timeout) and
+  // nothing in (public) catches it, so a failure here would answer the main
+  // lead path with a 500 — every class card links here with ?class=.
   const cls = classCode
-    ? ((await getSchedule()).classes.find(
-        (c) => c.code.toLowerCase() === classCode.toLowerCase(),
-      ) ?? null)
+    ? await getSchedule()
+        .then(
+          (s) =>
+            s.classes.find(
+              (c) => c.code.toLowerCase() === classCode.toLowerCase(),
+            ) ?? null,
+        )
+        .catch((e: unknown) => {
+          console.error("enquiry class lookup failed", e);
+          return null;
+        })
     : null;
 
   return (
