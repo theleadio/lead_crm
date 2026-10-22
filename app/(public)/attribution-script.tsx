@@ -62,14 +62,18 @@ export function AttributionScript() {
   // on a soft move it makes that move look like a fresh arrival from outside
   // and erases the last touch — the exact failure the refreshLast rule in
   // ./attribution.ts exists to prevent. After the first run the referrer is
-  // the page we just left, which we remember ourselves.
+  // the page we just left, which we remember ourselves — unless it is this
+  // same page, which is Strict Mode running the effect twice on one mount and
+  // not a move at all.
   const previous = useRef<string | null>(null);
 
   useEffect(() => {
+    const moved =
+      previous.current !== null && previous.current !== location.href;
     const { first, last } = nextTouches(
       readCookie(FIRST_TOUCH_COOKIE),
       location.href,
-      previous.current ?? (document.referrer || null),
+      moved ? previous.current : document.referrer || null,
       new Date(),
       readCookie(LAST_TOUCH_COOKIE),
     );
