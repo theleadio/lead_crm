@@ -15,7 +15,12 @@ import {
   isHoneypotFilled,
   newIdempotencyKey,
 } from "../app/(public)/enquiry/form-contract.ts";
-import { buildRequest, wording } from "../app/(public)/enquiry/lead-request.ts";
+import {
+  buildRequest,
+  fieldWording,
+  wording,
+} from "../app/(public)/enquiry/lead-request.ts";
+import { readFileSync } from "node:fs";
 
 // §10.2. The attribution rules. The cookie-writing component and the server
 // action are covered further down; these first tests are the rules alone.
@@ -269,7 +274,7 @@ test("no message written for an API caller is shown to a visitor", () => {
     "something_new_we_have_not_seen",
   ];
   for (const c of codes) {
-    const w = wording(c);
+    const w = wording(c, "en");
     assert.ok(w.length > 0, `${c} has no wording`);
     assert.ok(!routeMessages.includes(w), `${c} leaks the route's message`);
   }
@@ -277,7 +282,7 @@ test("no message written for an API caller is shown to a visitor", () => {
 
 test("a missing key reads as our fault, not the visitor's", () => {
   for (const code of ["not_configured", "unauthorized"]) {
-    const w = wording(code);
+    const w = wording(code, "en");
     assert.match(w, /we can't take enquiries/i);
     // It must not name the cause: a visitor cannot fix a key, and an
     // attacker should not learn which one is missing.
@@ -290,7 +295,10 @@ test("the honeypot is refused the same way a failed check is", () => {
   filled.set(HONEYPOT_FIELD, "http://spam.example");
   assert.equal(isHoneypotFilled(filled), true);
   // Indistinguishable from a failed CAPTCHA, so a bot learns nothing.
-  assert.equal(wording("captcha_failed"), wording("captcha_failed"));
+  assert.equal(
+    wording("captcha_failed", "en"),
+    wording("captcha_failed", "en"),
+  );
 
   const empty = new FormData();
   assert.equal(isHoneypotFilled(empty), false);
@@ -397,4 +405,165 @@ test("hasCampaign is what tells an arrival from a navigation", () => {
     hasCampaign(touchFrom("https://lead.test/x?utm_term=ai", null)),
     true,
   );
+});
+
+// The locale's reach into the lead path (website-lead-capture). It may change
+// the words and the preferred-language default, and nothing else: the §8.2
+// request, its checks and the rate-limit bucket must be the same from either
+// locale.
+const readSrc = (p: string) =>
+  readFileSync(new URL(p, import.meta.url), "utf8");
+
+test("a refusal is worded in the locale, and never in the route's words", () => {
+  const routeMessages = [
+    "Check the highlighted fields.",
+    "Too many requests. Try again in a minute.",
+    "Something went wrong.",
+  ];
+  for (const code of [
+    "captcha_failed",
+    "rate_limited",
+    "payload_too_large",
+    "validation_failed",
+    "not_configured",
+    "server_error",
+  ]) {
+    const zh = wording(code, "zh");
+    assert.ok(zh.length > 0, `${code} has no Chinese wording`);
+    assert.notEqual(zh, wording(code, "en"), `${code} is not translated`);
+    assert.ok(!routeMessages.includes(zh), `${code} leaks the route's message`);
+    // Chinese, not English with a Chinese label.
+    assert.match(zh, /[\u4e00-\u9fff]/, `${code} has no Chinese in it`);
+  }
+});
+
+test("a field refusal keeps §8.2's field name and drops its message", () => {
+  // What §8.2 actually answers with: the field names, and zod's own English.
+  const fromRoute = {
+    fullName: "Full name is required",
+    email: "Enter an email or a phone number",
+    phone: "Too big: expected string to have <=40 characters",
+    somethingNew: "Invalid input",
+  };
+
+  for (const locale of ["en", "zh"] as const) {
+    const shown = fieldWording(fromRoute, locale);
+    // The same fields, so each message still lands against its own control.
+    assert.deepEqual(Object.keys(shown), Object.keys(fromRoute));
+    for (const [name, message] of Object.entries(shown)) {
+      assert.ok(message.length > 0, `${name} has no message`);
+      assert.notEqual(
+        message,
+        fromRoute[name as keyof typeof fromRoute],
+        `${name} shows the route's own wording`,
+      );
+    }
+    // A field with no message of its own still gets one.
+    assert.ok(shown.somethingNew);
+  }
+
+  // And the Chinese is Chinese.
+  const zh = fieldWording(fromRoute, "zh");
+  for (const message of Object.values(zh))
+    assert.match(message, /[\u4e00-\u9fff]/);
+  // An empty answer stays empty rather than inventing a refusal.
+  assert.deepEqual(fieldWording({}, "zh"), {});
+});
+
+test("the locale never reaches the §8.2 body, so both locales send the same request", () => {
+  const payload = {
+    formName: "website_enquiry",
+    fullName: "Tan Wei Ming",
+    phone: "012-345 6789",
+    preferredLanguage: "zh",
+    attribution: null,
+  };
+  const headers = new Headers({ "x-real-ip": "203.0.113.9" });
+  const a = buildRequest(payload, headers, { PUBLIC_API_KEY: "k".repeat(20) });
+  const b = buildRequest(payload, headers, { PUBLIC_API_KEY: "k".repeat(20) });
+  assert.equal(JSON.stringify(payload), JSON.stringify(payload));
+  assert.deepEqual([...a.headers], [...b.headers]);
+
+  // buildRequest takes no locale at all, and the action does not add one to
+  // the payload: the hidden field is read for its wording only.
+  const submit = readSrc("../app/(public)/enquiry/submit.ts");
+  const payloadBlock = /const payload = \{([\s\S]*?)\n  \};/.exec(submit)?.[1];
+  assert.ok(payloadBlock, "payload block not found in submit.ts");
+  assert.doesNotMatch(payloadBlock, /locale/);
+  // It is read, though — a refusal must come back in the right language.
+  assert.match(submit, /formLocale\(form\)/);
+});
+
+test("one rate-limit bucket, whichever locale the visitor is in", () => {
+  // The per-IP limit counts the visitor's address, which comes from the
+  // incoming headers — the same for both locales, because both go through
+  // this one path and neither sends an Origin.
+  const headers = new Headers({ "x-real-ip": "203.0.113.9" });
+  const req = buildRequest({ attribution: null }, headers, {
+    PUBLIC_API_KEY: "k".repeat(20),
+  });
+  assert.equal(req.headers.get("x-real-ip"), "203.0.113.9");
+  assert.equal(req.headers.get("origin"), null);
+  // There is only one submit path: no locale-specific action to drift from it.
+  assert.equal(
+    readSrc("../app/(public)/enquiry/submit.ts").match(/export async function/g)
+      ?.length,
+    1,
+  );
+});
+
+test("the page's locale is the preferred language's default, and stays a field", () => {
+  const form = readSrc("../app/(public)/enquiry/enquiry-form.tsx");
+  // The default is the locale, not a hardcoded "en".
+  assert.match(form, /preferredLanguage:\s*locale/);
+  assert.doesNotMatch(form, /preferredLanguage:\s*"en"/);
+  // Still a control the visitor can change, offering both values.
+  assert.match(form, /<option value="en">/);
+  assert.match(form, /<option value="zh">/);
+  // And what is submitted is the state, not the locale.
+  assert.match(
+    form,
+    /name="preferredLanguage"[\s\S]{0,120}values\.preferredLanguage/,
+  );
+});
+
+test("consent is unticked in both locales and never a condition of submitting", () => {
+  const form = readSrc("../app/(public)/enquiry/enquiry-form.tsx");
+  const consent =
+    /<input type="checkbox" name="consentMarketing"([^>]*)\/>/.exec(form)?.[1];
+  assert.ok(consent !== undefined, "consent checkbox not found");
+  // §10.3: unticked by default, in either locale — the markup is shared, so
+  // there is no locale in which it could be pre-ticked.
+  assert.doesNotMatch(consent, /checked|defaultChecked/);
+  // The submit control is disabled only while a submission is in flight.
+  assert.match(form, /disabled=\{pending\}/);
+  assert.doesNotMatch(form, /disabled=\{[^}]*consent/);
+});
+
+test("no secret reaches either locale's page", () => {
+  for (const p of [
+    "../app/(public)/enquiry/enquiry-form.tsx",
+    "../app/(public)/enquiry/enquiry-page.tsx",
+    "../app/(public)/(en)/enquiry/page.tsx",
+    "../app/(public)/zh/enquiry/page.tsx",
+    "../app/(public)/(en)/schedule/page.tsx",
+    "../app/(public)/zh/schedule/page.tsx",
+    "../app/(public)/public-chrome.tsx",
+    "../app/(public)/language-link.tsx",
+  ]) {
+    const src = readSrc(p);
+    for (const secret of [
+      "PUBLIC_API_KEY",
+      "RATE_LIMIT_SECRET",
+      "TURNSTILE_SECRET_KEY",
+      "SUPABASE_SERVICE_ROLE_KEY",
+      "DATABASE_URL",
+    ])
+      assert.doesNotMatch(src, new RegExp(secret), `${p} names ${secret}`);
+  }
+  // The one env the form may name is the CAPTCHA's public half, which is
+  // meant to be published (O39).
+  const form = readSrc("../app/(public)/enquiry/enquiry-form.tsx");
+  const envs = form.match(/process\.env\.[A-Z_]+/g) ?? [];
+  assert.deepEqual(envs, ["process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY"]);
 });
