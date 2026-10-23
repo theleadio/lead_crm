@@ -8,8 +8,9 @@ import {
   parseTouch,
 } from "../attribution";
 import { handleLead } from "../../../lib/public/handlers.ts";
+import { isLocale, type Locale } from "../locale";
 import { isHoneypotFilled, type EnquiryState } from "./form-contract";
-import { FORM_NAME, buildRequest, wording } from "./lead-request";
+import { FORM_NAME, buildRequest, fieldWording, wording } from "./lead-request";
 
 // §10.3. The enquiry form's submit path.
 //
@@ -33,6 +34,15 @@ const str = (f: FormData, k: string): string | null => {
 };
 const bool = (f: FormData, k: string): boolean => f.get(k) === "on";
 
+// Which language to answer in (§13). The form sends it as a hidden field; it
+// decides wording and nothing else, so an edited or absent value costs a
+// visitor the right language and cannot affect what is captured. It is never
+// part of the §8.2 payload (website-lead-capture).
+const formLocale = (f: FormData): Locale => {
+  const v = f.get("locale");
+  return typeof v === "string" && isLocale(v) ? v : "en";
+};
+
 export async function submitEnquiry(
   _prev: EnquiryState,
   form: FormData,
@@ -40,8 +50,14 @@ export async function submitEnquiry(
   // The honeypot, before anything else happens. A filled one is refused the
   // same way a failed check is, so a bot learns nothing from the difference,
   // and no lead is created.
+  const locale = formLocale(form);
+
   if (isHoneypotFilled(form))
-    return { status: "error", message: wording("captcha_failed"), fields: {} };
+    return {
+      status: "error",
+      message: wording("captcha_failed", locale),
+      fields: {},
+    };
 
   // The two cookies ride along with the action's own POST, so they are read
   // here rather than in the browser: the values never enter the DOM, and the
@@ -86,7 +102,9 @@ export async function submitEnquiry(
     console.error("enquiry submission refused", response.status, code);
   return {
     status: "error",
-    message: wording(code),
-    fields: body?.error?.fields ?? {},
+    message: wording(code, locale),
+    // §8.2's field names, never its messages: those are written for an API
+    // caller and are English whatever the visitor is reading.
+    fields: fieldWording(body?.error?.fields ?? {}, locale),
   };
 }

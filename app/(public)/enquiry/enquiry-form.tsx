@@ -4,6 +4,8 @@ import Script from "next/script";
 import { useActionState, useEffect, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type { Dict } from "../dictionaries";
+import type { Locale } from "../locale";
 import {
   EMPTY_STATE,
   HONEYPOT_FIELD,
@@ -21,6 +23,10 @@ declare global {
 // §10.3's form. Fields are controlled so a failed submission keeps every
 // value the visitor typed (§13) — React resets an uncontrolled form once its
 // action settles, which would make a retry mean retyping it all.
+//
+// Every word comes from the dictionary the server page read and handed down,
+// so only the active locale's strings reach the browser and this client
+// module imports no dictionary of its own (§10.5, website-localisation).
 
 const FIELD =
   "border-line-strong bg-surface-sunken text-ink focus-visible:outline-focus-ring w-full rounded-sm border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2";
@@ -35,30 +41,37 @@ type Values = {
   message: string;
 };
 
-const BLANK: Values = {
+// The page's locale is the preferred language's default: a visitor who chose
+// the Chinese site most likely wants Chinese follow-up (website-lead-capture,
+// proposal L4). It stays a field, so their own choice is what is submitted.
+const blank = (locale: Locale): Values => ({
   fullName: "",
   email: "",
   phone: "",
   companyName: "",
   jobTitle: "",
-  preferredLanguage: "en",
+  preferredLanguage: locale,
   message: "",
-};
+});
 
 export function EnquiryForm({
   classCode,
   courseCode,
   privacyUrl,
+  locale,
+  t,
 }: {
   classCode: string | null;
   courseCode: string | null;
   privacyUrl: string | null;
+  locale: Locale;
+  t: Dict;
 }) {
   const [state, formAction, pending] = useActionState(
     submitEnquiry,
     EMPTY_STATE,
   );
-  const [values, setValues] = useState<Values>(BLANK);
+  const [values, setValues] = useState<Values>(() => blank(locale));
   // Email-or-phone, checked before the action is dispatched (§10.3). The
   // server checks it too — this only saves a round trip.
   const [localError, setLocalError] = useState<string | null>(null);
@@ -92,15 +105,16 @@ export function EnquiryForm({
         role="status"
         className="border-line bg-surface-raised rounded-2xl border p-6"
       >
-        <h2 className="text-ink text-lg font-semibold">Thank you — got it.</h2>
-        <p className="text-ink-muted mt-2 text-sm">
-          One of our team will be in touch within one working day, on the email
-          or phone number you gave us.
-        </p>
+        <h2 className="text-ink text-lg font-semibold">
+          {t["form.thankYou.heading"]}
+        </h2>
+        <p className="text-ink-muted mt-2 text-sm">{t["form.thankYou.body"]}</p>
       </div>
     );
 
-  const errors = Object.values(state.fields);
+  // Keyed by field name, not by the message: two fields may now share a
+  // sentence, and React needs the keys to stay distinct.
+  const errors = Object.entries(state.fields);
   const showSummary = state.status === "error" && state.message;
 
   return (
@@ -109,7 +123,7 @@ export function EnquiryForm({
       onSubmit={(e) => {
         if (!values.email.trim() && !values.phone.trim()) {
           e.preventDefault();
-          setLocalError("Enter an email or a phone number");
+          setLocalError(t["form.contactRequired"]);
           return;
         }
         setLocalError(null);
@@ -124,8 +138,8 @@ export function EnquiryForm({
             <p>{state.message}</p>
             {errors.length > 0 && (
               <ul className="mt-1 list-disc ps-5">
-                {errors.map((m) => (
-                  <li key={m}>{m}</li>
+                {errors.map(([name, m]) => (
+                  <li key={name}>{m}</li>
                 ))}
               </ul>
             )}
@@ -135,8 +149,9 @@ export function EnquiryForm({
 
       <Field
         id={`${ids}-fullName`}
-        label="Full name"
+        label={t["form.fullName"]}
         required
+        requiredLabel={t["form.required"]}
         error={fieldError("fullName")}
       >
         {(p) => (
@@ -152,8 +167,8 @@ export function EnquiryForm({
 
       <Field
         id={`${ids}-email`}
-        label="Email"
-        hint="Give us an email or a phone number — either is enough."
+        label={t["form.email"]}
+        hint={t["form.email.hint"]}
         error={fieldError("email")}
       >
         {(p) => (
@@ -170,8 +185,8 @@ export function EnquiryForm({
 
       <Field
         id={`${ids}-phone`}
-        label="Phone"
-        hint="Malaysian mobile, for example +60 12-345 6789 or 012-345 6789."
+        label={t["form.phone"]}
+        hint={t["form.phone.hint"]}
         error={fieldError("phone")}
       >
         {(p) => (
@@ -190,7 +205,7 @@ export function EnquiryForm({
       <div className="grid gap-5 sm:grid-cols-2">
         <Field
           id={`${ids}-companyName`}
-          label="Company"
+          label={t["form.company"]}
           error={fieldError("companyName")}
         >
           {(p) => (
@@ -205,7 +220,7 @@ export function EnquiryForm({
         </Field>
         <Field
           id={`${ids}-jobTitle`}
-          label="Job title"
+          label={t["form.jobTitle"]}
           error={fieldError("jobTitle")}
         >
           {(p) => (
@@ -222,7 +237,7 @@ export function EnquiryForm({
 
       <Field
         id={`${ids}-preferredLanguage`}
-        label="Preferred language"
+        label={t["form.preferredLanguage"]}
         error={fieldError("preferredLanguage")}
       >
         {(p) => (
@@ -241,7 +256,7 @@ export function EnquiryForm({
 
       <Field
         id={`${ids}-message`}
-        label="What would you like to know?"
+        label={t["form.message"]}
         error={fieldError("message")}
       >
         {(p) => (
@@ -258,17 +273,14 @@ export function EnquiryForm({
 
       <label className="text-ink flex items-start gap-3 text-sm">
         <input type="checkbox" name="hrdcIntended" className="mt-0.5" />
-        <span>I&apos;d like to claim this under HRDC.</span>
+        <span>{t["form.hrdc"]}</span>
       </label>
 
       {/* §10.3: unticked by default, never a condition of submitting, and
           never pre-ticked or implied. */}
       <label className="text-ink flex items-start gap-3 text-sm">
         <input type="checkbox" name="consentMarketing" className="mt-0.5" />
-        <span>
-          Yes, send me news about LEAD&apos;s classes and offers by email and
-          WhatsApp. You can unsubscribe at any time.
-        </span>
+        <span>{t["form.consent"]}</span>
       </label>
 
       {/* What the visitor is asking about, from the link that opened the form
@@ -279,6 +291,11 @@ export function EnquiryForm({
         <input type="hidden" name="courseInterest" value={courseCode} />
       )}
       <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
+      {/* So the action can refuse in the language the visitor is reading
+          (§13). Read for its wording only: it is never part of the §8.2
+          payload, so both locales send the same body
+          (website-lead-capture). */}
+      <input type="hidden" name="locale" value={locale} />
 
       {/* The honeypot. Positioned off-screen rather than display:none, which
           some bots check for, out of the tab order and hidden from screen
@@ -287,7 +304,7 @@ export function EnquiryForm({
         aria-hidden="true"
         className="absolute -left-[9999px] w-px overflow-hidden"
       >
-        <label htmlFor={`${ids}-hp`}>Company website</label>
+        <label htmlFor={`${ids}-hp`}>{t["form.honeypot"]}</label>
         <input
           id={`${ids}-hp`}
           name={HONEYPOT_FIELD}
@@ -316,14 +333,14 @@ export function EnquiryForm({
 
       <div className="flex flex-wrap items-center gap-4 pt-1">
         <Button type="submit" disabled={pending}>
-          {pending ? "Sending…" : "Send enquiry"}
+          {pending ? t["form.submitting"] : t["form.submit"]}
         </Button>
         {privacyUrl && (
           <a
             href={privacyUrl}
             className="text-ink-muted hover:text-ink text-sm underline underline-offset-4"
           >
-            How we use your details
+            {t["form.privacy"]}
           </a>
         )}
       </div>
@@ -339,6 +356,7 @@ function Field({
   label,
   hint,
   required,
+  requiredLabel,
   error,
   children,
 }: {
@@ -346,6 +364,8 @@ function Field({
   label: string;
   hint?: string;
   required?: boolean;
+  // The locale's word for it, so the marker is not English beside Chinese.
+  requiredLabel?: string;
   error: string | null;
   children: (props: {
     id: string;
@@ -361,8 +381,8 @@ function Field({
     <div className="space-y-1.5">
       <label htmlFor={id} className="text-ink block text-sm font-medium">
         {label}
-        {required && (
-          <span className="text-ink-muted font-normal"> (required)</span>
+        {required && requiredLabel && (
+          <span className="text-ink-muted font-normal"> {requiredLabel}</span>
         )}
       </label>
       {children({
