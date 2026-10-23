@@ -78,12 +78,10 @@ function FilterChip({
 
 export function ScheduleList({
   classes,
-  enquireUrl,
 }: {
   classes: ScheduleClass[];
   // Read on the server (it comes from PUBLIC_WEBSITE_URL) and passed down, so
   // no env reaches the browser.
-  enquireUrl: string | null;
 }) {
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const options = filterOptions(classes);
@@ -133,7 +131,7 @@ export function ScheduleList({
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {shown.map((c) => (
-            <ClassCard key={c.id} cls={c} enquireUrl={enquireUrl} />
+            <ClassCard key={c.id} cls={c} />
           ))}
         </div>
       )}
