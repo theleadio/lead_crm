@@ -52,7 +52,9 @@ Each database gets both jobs (four in total). Each job runs the repo's scripts w
 
 - [ ] Give the website its `PUBLIC_API_KEY` through a separate channel from the repo and from any shared chat.
 - [ ] **Client IP for the rate limiter (UNCHECKED, go-live check, O40, spec §8.2):** the app reads `x-real-ip`, then the first hop of `x-forwarded-for`. That is only safe when the proxy in front overwrites them. Look up which header Netlify sets for the real client and whether it replaces a value the visitor sent. If it doesn't, the per-IP limit can be bypassed or turned against other visitors. Test it: send a request with a forged `x-forwarded-for` and see which value the app sees.
-- [ ] **Schedule cache (O38):** the schedule feed is cached 5 minutes by its `Cache-Control` header. If a class edit must show at once, find Netlify's cache-purge call. Not built.
+- [ ] **`DATABASE_URL` must be set for the build, not only at runtime:** `/schedule` is prerendered at build time and reads the database to do it, so a build with no database reachable fails outright rather than deploying a page that recovers later.
+- [ ] **Schedule cache (O38):** two layers, 5 minutes each. The API feed at `/api/public/schedule` is cached by its `Cache-Control` header, for the marketing site; that copy cannot be purged, so the site can show a class edit up to 5 minutes late. The `/schedule` page caches its own in-process read with `unstable_cache`, tagged `public-schedule`, which `revalidateTag("public-schedule")` purges. Neither purge is wired to a class edit yet.
+- [ ] **UNCHECKED, needed for the purge above:** whether Netlify keeps Next's cache across serverless instances. If each instance holds its own copy, `revalidateTag` only clears the instance that handles the call and the rest keep serving the old schedule for up to 5 minutes. Check on the first preview deploy.
 - [ ] After the first deploy, test with the real values:
   - `GET /api/public/schedule` with the key: 200; with a wrong key: 401.
   - `POST /api/public/leads` with the key and a real Turnstile token: 201; the same body again: same ids.
