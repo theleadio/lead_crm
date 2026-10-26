@@ -14,7 +14,7 @@ export type ReducedSession = {
   expires_at: number | null;
   payment_method_types: string[];
   metadata: Record<string, string>;
-  customer_details: { email: string | null; name: string | null };
+  customer_details: { email: string | null; name: string | null } | null;
 };
 
 export type ReducedEvent = {

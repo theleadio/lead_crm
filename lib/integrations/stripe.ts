@@ -45,44 +45,47 @@ export type StripeRunResult = {
   dead: number;
 };
 
-// Claims due received/failed rows (SKIP LOCKED, so two runners never share
-// one), runs each in a savepoint, and marks the outcome. A failure backs off
-// like the outbox (30 s, 2 min, 10 min, 1 h); the failure that reaches
-// MAX_ATTEMPTS leaves the row 'failed' with attempts at the cap, which the
-// claim query skips: that is the dead letter (integration_event has no
-// dead_at). `ids` limits the claim to given rows (the inline call).
+// Claims due received/failed rows one at a time (SKIP LOCKED, so two runners
+// never share one), each in its OWN transaction: its locks are held only while
+// that row runs, and a row that cannot even record its outcome rolls back
+// alone, never the rows already done. The handler itself runs in a savepoint,
+// and the outcome is marked after. A failure backs off like the outbox (30 s,
+// 2 min, 10 min, 1 h); the failure that reaches MAX_ATTEMPTS leaves the row
+// 'failed' with attempts at the cap, which the claim query skips: that is the
+// dead letter (integration_event has no dead_at), and it opens an Ops task.
+// `ids` limits the claim to given rows (the inline call).
 export async function processStripeEvents(
   opts: { batch?: number; ids?: string[] } = {},
 ): Promise<StripeRunResult> {
   const batch = opts.batch ?? 20;
   const ids = opts.ids ?? null;
-  return withTransaction(async () => {
-    const sql = db();
-    const rows = await sql`
-      SELECT id, payload, attempts FROM integration_event
-      WHERE source = ${SOURCE} AND status IN ('received', 'failed')
-        AND attempts < ${MAX_ATTEMPTS} AND next_attempt_at <= now()
-        AND (${ids}::uuid[] IS NULL OR id = ANY(${ids}::uuid[]))
-      ORDER BY next_attempt_at, received_at
-      LIMIT ${batch}
-      FOR UPDATE SKIP LOCKED`;
-    const out: StripeRunResult = {
-      claimed: rows.length,
-      processed: 0,
-      failed: 0,
-      dead: 0,
-    };
-    for (const r of rows) {
+  const out: StripeRunResult = { claimed: 0, processed: 0, failed: 0, dead: 0 };
+  for (let i = 0; i < batch; i++) {
+    const outcome = await withTransaction(async () => {
+      const sql = db();
+      const [r] = await sql`
+        SELECT id, payload, attempts FROM integration_event
+        WHERE source = ${SOURCE} AND status IN ('received', 'failed')
+          AND attempts < ${MAX_ATTEMPTS} AND next_attempt_at <= now()
+          AND (${ids}::uuid[] IS NULL OR id = ANY(${ids}::uuid[]))
+        ORDER BY next_attempt_at, received_at
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED`;
+      if (!r) return null;
+      const event = r.payload as ReducedEvent;
       try {
-        await withTransaction(() =>
-          handleStripeEvent(r.payload as ReducedEvent),
-        );
+        const keep = await withTransaction(() => handleStripeEvent(event));
+        // O35: customer name and email stay only where Ops need them, on an
+        // unmatched payment. Everywhere else they are blanked once handled.
         await sql`
           UPDATE integration_event
           SET status = 'processed', processed_at = now(),
-              attempts = attempts + 1, error = NULL
+              attempts = attempts + 1, error = NULL,
+              payload = CASE WHEN ${keep} OR payload->'session' IS NULL
+                             THEN payload
+                             ELSE jsonb_set(payload, '{session,customer_details}', 'null') END
           WHERE id = ${r.id}`;
-        out.processed++;
+        return "processed" as const;
       } catch (err) {
         const n = (r.attempts as number) + 1;
         const wait = BACKOFF_SECONDS[Math.min(n, BACKOFF_SECONDS.length) - 1];
@@ -91,12 +94,59 @@ export async function processStripeEvents(
           SET status = 'failed', attempts = ${n}, error = ${describe(err)},
               next_attempt_at = now() + make_interval(secs => ${wait})
           WHERE id = ${r.id}`;
-        out.failed++;
-        if (n >= MAX_ATTEMPTS) out.dead++;
+        // A payment the system will never record by itself: say so to Ops now,
+        // not after five retries (and not never, as with no payment row).
+        if (err instanceof NeedsOps)
+          await attentionTask(r.id, event, `${err.message}`, "attention");
+        if (n >= MAX_ATTEMPTS) {
+          await attentionTask(
+            r.id,
+            event,
+            `gave up after ${n} attempts: ${describe(err)}`,
+            "dead",
+          );
+          return "dead" as const;
+        }
+        return "failed" as const;
       }
+    });
+    if (!outcome) break;
+    out.claimed++;
+    if (outcome === "processed") out.processed++;
+    else {
+      out.failed++;
+      if (outcome === "dead") out.dead++;
     }
-    return out;
-  });
+  }
+  return out;
+}
+
+// A failure that needs a person and cannot be fixed by retrying.
+export class NeedsOps extends Error {}
+
+// One Ops task per event and kind (source_key), assigned to the duty
+// super_admin (O37). Carries what Ops need to find the money in Stripe: the
+// event id, the amount and currency, what failed. No customer details.
+async function attentionTask(
+  rowId: string,
+  event: ReducedEvent,
+  what: string,
+  kind: "attention" | "dead",
+): Promise<void> {
+  const s = event.session;
+  const notes = [
+    `What failed: ${what}`,
+    `Stripe event ${event.id} (${event.type}), session ${s?.id ?? "none in the stored payload"}`,
+    `Amount: ${s?.amount_total == null ? "unknown" : (s.amount_total / 100).toFixed(2)} ${(s?.currency ?? "unknown").toUpperCase()}`,
+    "No payment was recorded. Check the payment in Stripe and record it by hand.",
+  ].join("\n");
+  await db()`
+    INSERT INTO task (type, title, assigned_user_id, due_at, notes, source_key)
+    VALUES ('other',
+            ${kind === "dead" ? "Stripe event failed for good: check the payment" : "Stripe payment not recorded: check by hand"},
+            ${await dutySuperAdmin()}, now(), ${notes},
+            ${`stripe:${rowId}:${kind}`})
+    ON CONFLICT (source_key) WHERE source_key IS NOT NULL DO NOTHING`;
 }
 
 // Error text kept in `error`: a database error is reduced to its code, so no
@@ -108,12 +158,21 @@ function describe(err: unknown): string {
   return (err instanceof Error ? err.message : String(err)).slice(0, 200);
 }
 
-export async function handleStripeEvent(event: ReducedEvent): Promise<void> {
+// Returns true when the stored payload must keep the customer's name and email
+// (an unmatched payment, where Ops need them).
+export async function handleStripeEvent(event: ReducedEvent): Promise<boolean> {
   const s = event.session;
-  if (!s) throw new Error(`${event.type} event has no session object`);
-  if (event.type === "checkout.session.expired") return onExpired(s);
+  if (!s) {
+    if (HANDLED.has(event.type) && event.type !== "checkout.session.expired")
+      throw new NeedsOps("event has no session object");
+    throw new Error(`${event.type} event has no session object`);
+  }
+  if (event.type === "checkout.session.expired") {
+    await onExpired(s);
+    return false;
+  }
   // Delayed methods complete unpaid and settle later; only 'paid' is money.
-  if (s.payment_status !== "paid") return;
+  if (s.payment_status !== "paid") return false;
   return onPaid(event, s);
 }
 
@@ -155,7 +214,12 @@ async function onExpired(s: ReducedSession): Promise<void> {
 
 // ---- checkout.session.completed (paid) -------------------------------------
 
-type Matched = { ok: true; enrolmentId: string; dealId: string | null };
+type Matched = {
+  ok: true;
+  enrolmentId: string;
+  dealId: string | null;
+  priceMyr: string; // the price the match used, snapshotted on the enrolment
+};
 type Unmatched = { ok: false; reason: string; enrolmentId: string | null };
 
 // Decides whether a paid session belongs to an enrolment we can still honour.
@@ -169,8 +233,10 @@ async function decide(
   if (!isUuid(eid))
     return { ok: false, reason: "no_metadata", enrolmentId: null };
   const [e] = await sql`
-    SELECT e.id, e.status, e.class_id, e.deal_id, c.status AS class_status
+    SELECT e.id, e.status, e.class_id, e.deal_id, c.status AS class_status,
+           d.checkout_session_id AS deal_session
     FROM enrolment e JOIN class c ON c.id = e.class_id
+    LEFT JOIN deal d ON d.id = e.deal_id
     WHERE e.id = ${eid} FOR UPDATE OF e`;
   if (!e) return { ok: false, reason: "unknown_enrolment", enrolmentId: null };
   const no = (reason: string): Unmatched => ({
@@ -181,6 +247,9 @@ async function decide(
   if (s.metadata.class_id !== e.class_id) return no("class_mismatch");
   if ((s.metadata.deal_id ?? null) !== (e.deal_id ?? null))
     return no("deal_mismatch");
+  // The paying session must be the one on the deal. A superseded link that was
+  // still paid goes to Ops (O54).
+  if (e.deal_id && e.deal_session !== s.id) return no("session_mismatch");
   if (["cancelled", "completed"].includes(e.class_status as string))
     return no("class_" + e.class_status);
   // reserved/payment_pending move to confirmed; confirmed/onboarded keep their
@@ -199,15 +268,29 @@ async function decide(
   if (st.balanceMyr === null) return no("no_price");
   if (Number(st.balanceMyr) === 0) return no("already_paid");
   if (Number(st.balanceMyr) !== Number(amount)) return no("amount_mismatch");
-  return { ok: true, enrolmentId: eid, dealId: e.deal_id as string | null };
+  return {
+    ok: true,
+    enrolmentId: eid,
+    dealId: e.deal_id as string | null,
+    priceMyr: st.priceMyr as string,
+  };
 }
 
-async function onPaid(event: ReducedEvent, s: ReducedSession): Promise<void> {
-  if (s.amount_total === null || s.amount_total <= 0) return; // nothing charged
+// Returns true when an unmatched payment was recorded (keep the customer data).
+async function onPaid(
+  event: ReducedEvent,
+  s: ReducedSession,
+): Promise<boolean> {
+  if (s.amount_total === null || s.amount_total <= 0) return false; // nothing charged
   // The payment table is MYR only. A foreign-currency charge is not guessed
-  // at: the row fails, retries, dead-letters and shows in integration health.
-  if (s.currency !== "myr") throw new Error("unsupported currency");
+  // at: the row fails, retries, dead-letters, shows in integration health, and
+  // opens an Ops task at once (NeedsOps).
+  if (s.currency !== "myr") throw new NeedsOps("unsupported currency");
   const amount = (s.amount_total / 100).toFixed(2);
+  // Known gap (O59): FPX counts only when it is the sole method. A session
+  // offering card and FPX is always recorded as stripe_card, whichever the
+  // customer used; the exact method needs the payment intent, which this
+  // reduced payload does not carry. Checkout is not changed for this.
   const method =
     s.payment_method_types.length === 1 && s.payment_method_types[0] === "fpx"
       ? "stripe_fpx"
@@ -237,7 +320,7 @@ async function onPaid(event: ReducedEvent, s: ReducedSession): Promise<void> {
     WHERE stripe_checkout_session_id = ${s.id}
        OR (${s.payment_intent}::text IS NOT NULL
            AND stripe_payment_intent_id = ${s.payment_intent})`;
-  if (known.length) return;
+  if (known.length) return false;
 
   let m = await decide(s, amount);
   if (m.ok) {
@@ -249,6 +332,12 @@ async function onPaid(event: ReducedEvent, s: ReducedSession): Promise<void> {
       await withTransaction(async () => {
         const id = await insert(matched);
         if (!id) return;
+        // §12: price_paid_myr is a snapshot at purchase. A later change to the
+        // class price must not change what this student owes.
+        await db()`
+          UPDATE enrolment
+          SET price_paid_myr = coalesce(price_paid_myr, ${matched.priceMyr})
+          WHERE id = ${matched.enrolmentId}`;
         const r = await confirmWhenPaid(matched.enrolmentId);
         await writeAudit({
           userId: null,
@@ -266,21 +355,26 @@ async function onPaid(event: ReducedEvent, s: ReducedSession): Promise<void> {
           },
         });
       });
-      return;
+      return false;
     } catch (err) {
-      if (!String((err as Error).message).includes("no_seats")) throw err;
+      // Migration 006/007: RAISE EXCEPTION 'no_seats...' is SQLSTATE P0001.
+      const e = err as { code?: string; message?: string };
+      if (e.code !== "P0001" && !String(e.message).includes("no_seats"))
+        throw err;
       m = { ok: false, reason: "no_seats", enrolmentId: matched.enrolmentId };
     }
   }
   const unmatched = m as Unmatched;
   const id = await insert(unmatched);
   if (id) await matchPaymentTask(id, event, s, amount, unmatched);
+  return true;
 }
 
 // §11.3: one open match_payment task per unmatched payment, for the duty
 // super_admin (O37). Money is never dropped: the payment row exists, the task
 // holds what Ops need to place it. No personal data in the title; the notes
-// carry the customer's email and name (an O35 gap).
+// carry the customer's email and name, because Ops need them to place an
+// unmatched payment (an O35 gap). This task exists only for unmatched money.
 async function matchPaymentTask(
   paymentId: string,
   event: ReducedEvent,
@@ -296,8 +390,9 @@ async function matchPaymentTask(
     `Why: ${m.reason}`,
     `Amount: RM${amount}, paid ${new Date(event.created * 1000).toISOString()}`,
     `Stripe event ${event.id}, session ${s.id}, payment intent ${s.payment_intent ?? "none"}`,
-    `Metadata: ${JSON.stringify(s.metadata)}`,
-    `Customer: ${s.customer_details.name ?? "-"} <${s.customer_details.email ?? "-"}>`,
+    // Only the three ids, never the whole metadata object.
+    `Ids in the metadata: deal ${s.metadata.deal_id ?? "-"}, enrolment ${s.metadata.enrolment_id ?? "-"}, class ${s.metadata.class_id ?? "-"}`,
+    `Customer: ${s.customer_details?.name ?? "-"} <${s.customer_details?.email ?? "-"}>`,
   ].join("\n");
   await sql`
     INSERT INTO task (type, title, person_id, enrolment_id, payment_id,

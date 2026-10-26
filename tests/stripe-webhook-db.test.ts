@@ -12,9 +12,13 @@ import {
   handleStripeWebhook,
   type StripeWebhookDeps,
 } from "../lib/integrations/stripe-webhook.ts";
-import { processStripeEvents } from "../lib/integrations/stripe.ts";
+import {
+  processStripeEvents,
+  stageStripeEvent,
+} from "../lib/integrations/stripe.ts";
+import { reduceEvent } from "../lib/integrations/stripe-reduce.ts";
 import { verifyStripeSignature } from "../lib/integrations/stripe-signature.ts";
-import { confirmWhenPaid } from "../lib/integrations/confirm.ts";
+import { confirmWhenPaid, paidState } from "../lib/integrations/confirm.ts";
 import { closeDb, db } from "../lib/sql.ts";
 import { enrol, it, newClass, newPerson, newUser, pay } from "./seed.ts";
 import { purgeEnrolments } from "./support/purge.ts";
@@ -57,7 +61,7 @@ type Fix = {
 };
 // A reserved enrolment on a RM500 class with a Checkout session on its deal.
 async function fixture(
-  opts: { status?: string; price?: string; classStatus?: string } = {},
+  opts: { status?: string; price?: string | null; classStatus?: string } = {},
 ): Promise<Fix> {
   const classId = await newClass({
     priceMyr: "500.00",
@@ -66,7 +70,7 @@ async function fixture(
   const personId = await newPerson(`P ${randomBytes(4).toString("hex")}`);
   const enrolmentId = await enrol(classId, opts.status ?? "reserved", {
     personId,
-    pricePaid: opts.price ?? "500.00",
+    pricePaid: opts.price === null ? undefined : (opts.price ?? "500.00"),
   });
   const session = "cs_test_" + randomBytes(8).toString("hex");
   const [d] = await db()`
@@ -235,7 +239,8 @@ it("staging: reduced payload; unknown type stored ignored with 200; replay is a 
     "shipping",
   ])
     assert.ok(!text.includes(leak), `payload leaked ${leak}`);
-  assert.equal(row.payload.session.customer_details.email, "payer@example.com");
+  // N5: matched, so Ops need no customer details: they are blanked.
+  assert.equal(row.payload.session.customer_details, null);
   assert.equal(row.payload.session.amount_total, 50000);
 
   const other = {
@@ -410,6 +415,41 @@ it("unmatched: amount differs from the price; second full payment on a paid enro
   await assertUnmatched(g, event(g), "already_paid");
 });
 
+it("unmatched: a paid session that is not the deal's current link goes to Ops (N1)", async () => {
+  const f = await fixture();
+  const foreign = {
+    ...f,
+    session: "cs_test_old" + randomBytes(4).toString("hex"),
+  };
+  await assertUnmatched(foreign, event(foreign), "session_mismatch");
+  assert.equal((await statusOf(f.enrolmentId)).status, "reserved");
+  assert.equal(
+    (await db()`SELECT 1 FROM payment WHERE enrolment_id = ${f.enrolmentId}`)
+      .length,
+    0,
+  );
+});
+
+it("unmatched: a reserved row whose hold ran out on a full class is not confirmed, money kept (N2)", async () => {
+  const classId = await newClass({ priceMyr: "500.00", capacity: 1 });
+  await enrol(classId, "confirmed"); // takes the only seat
+  const personId = await newPerson("Late Payer");
+  const enrolmentId = await enrol(classId, "reserved", {
+    personId,
+    pricePaid: "500.00",
+    reservedOffset: "-1 hour", // hold ran out, not yet swept
+  });
+  const session = "cs_test_" + randomBytes(8).toString("hex");
+  const [d] = await db()`
+    INSERT INTO deal (pipeline, stage, person_id, checkout_session_id)
+    VALUES ('individual', 'checkout_sent', ${personId}, ${session})
+    RETURNING id`;
+  await db()`UPDATE enrolment SET deal_id = ${d.id} WHERE id = ${enrolmentId}`;
+  const f = { classId, enrolmentId, dealId: d.id, session, personId };
+  await assertUnmatched(f, event(f), "no_seats");
+  assert.equal((await statusOf(enrolmentId)).status, "reserved");
+});
+
 // ---- expired -----------------------------------------------------------------
 
 it("expired: a reserved enrolment is cancelled as checkout_expired, no Ops task, replay is a no-op", async () => {
@@ -529,6 +569,234 @@ test(
       await db()`DELETE FROM deal WHERE id = ${f.dealId}`;
       await db()`DELETE FROM person WHERE id = ${f.personId}`;
       await db()`DELETE FROM class WHERE id = ${f.classId}`;
+    }
+  },
+);
+
+// ---- review fixes ------------------------------------------------------------
+
+it("matched: price_paid_myr is snapshotted, so a later class price change does not move the balance (S2)", async () => {
+  await admin();
+  const f = await fixture({ price: null }); // price comes from the class
+  await send(event(f));
+  const [e] =
+    await db()`SELECT price_paid_myr, status FROM enrolment WHERE id = ${f.enrolmentId}`;
+  assert.equal(String(e.price_paid_myr), "500.00");
+  assert.equal(e.status, "confirmed");
+  await db()`UPDATE class SET price_myr = '800.00' WHERE id = ${f.classId}`;
+  assert.equal(Number((await paidState(f.enrolmentId)).balanceMyr), 0);
+});
+
+it("privacy: expired and matched events lose customer details; an unmatched payment keeps them, and its task names only the three ids (N5)", async () => {
+  await admin();
+  const g = await fixture();
+  const x = event(g, { type: "checkout.session.expired", status: "unpaid" });
+  await send(x);
+  const [xr] =
+    await db()`SELECT payload FROM integration_event WHERE external_event_id = ${x.id}`;
+  assert.equal(xr.payload.session.customer_details, null);
+
+  const f = await fixture();
+  const e = event(f, { amount: 49999 });
+  (e.data.object.metadata as Record<string, string>).secret_note = "leak-me";
+  await send(e);
+  const [row] =
+    await db()`SELECT payload FROM integration_event WHERE external_event_id = ${e.id}`;
+  assert.equal(row.payload.session.customer_details.email, "payer@example.com");
+  const [p] = await payments(f);
+  const [t] = await tasksFor(p.id);
+  assert.ok(t.notes.includes("payer@example.com"));
+  assert.ok(t.notes.includes(f.enrolmentId) && t.notes.includes(f.dealId));
+  assert.ok(!t.notes.includes("leak-me"), t.notes);
+  assert.ok(!t.notes.includes('{"'), t.notes);
+});
+
+const attentionTasks = (eventId: string) =>
+  db()`SELECT t.* FROM task t JOIN integration_event i
+        ON t.source_key LIKE 'stripe:' || i.id || ':%'
+       WHERE i.external_event_id = ${eventId} ORDER BY t.source_key`;
+
+it("a non-MYR payment opens one Ops task at the first failure, with event id, amount and currency; the dead letter adds one more (N3)", async () => {
+  await parkOthers();
+  const a = await admin();
+  await db()`UPDATE app_user SET is_active = false WHERE role_code = 'super_admin' AND id <> ${a.id}`;
+  const f = await fixture();
+  const e = event(f);
+  (e.data.object as { currency: string }).currency = "usd";
+  await send(e);
+  let t = await attentionTasks(e.id);
+  assert.equal(t.length, 1);
+  assert.equal(t[0].assigned_user_id, a.id);
+  assert.ok(t[0].notes.includes(e.id));
+  assert.ok(t[0].notes.includes("500.00 USD"), t[0].notes);
+  assert.ok(!t[0].notes.includes("payer@example.com"));
+  assert.equal((await payments(f)).length, 0);
+  for (let n = 2; n <= MAX_ATTEMPTS; n++) {
+    await db()`UPDATE integration_event SET next_attempt_at = now() WHERE external_event_id = ${e.id}`;
+    await processStripeEvents();
+  }
+  t = await attentionTasks(e.id);
+  assert.deepEqual(
+    t.map((x) => x.source_key.split(":")[2]),
+    ["attention", "dead"],
+  );
+});
+
+it("a paid event whose session is missing from the payload opens an Ops task (N3)", async () => {
+  await parkOthers();
+  await admin();
+  const e = {
+    id: "evt_nosession_" + randomBytes(4).toString("hex"),
+    type: "checkout.session.completed",
+    created: NOW - 5,
+    data: { object: {} },
+  };
+  assert.equal((await send(e)).status, 200);
+  const t = await attentionTasks(e.id);
+  assert.equal(t.length, 1);
+  assert.ok(t[0].notes.includes(e.id));
+});
+
+it("any other event that dies opens a dead-letter task (N3)", async () => {
+  await parkOthers();
+  await admin();
+  const f = await fixture();
+  // numeric(12,2) overflow: a database error, retried and finally dead.
+  const e = event(f, { amount: 9_000_000_000_000_000 });
+  await send(e);
+  for (let n = 2; n <= MAX_ATTEMPTS; n++) {
+    await db()`UPDATE integration_event SET next_attempt_at = now() WHERE external_event_id = ${e.id}`;
+    await processStripeEvents();
+  }
+  const t = await attentionTasks(e.id);
+  assert.deepEqual(
+    t.map((x) => x.source_key.split(":")[2]),
+    ["dead"],
+  );
+});
+
+it("a duplicate payment intent is absorbed, not failed", async () => {
+  await admin();
+  const f = await fixture();
+  const pi = "pi_" + randomBytes(8).toString("hex");
+  await send(event(f, { pi }));
+  const g = await fixture();
+  const e2 = event(g, { pi }); // same payment intent on another session
+  await send(e2);
+  assert.equal((await payments(g)).length, 0);
+  assert.equal(
+    (await db()`SELECT 1 FROM payment WHERE stripe_payment_intent_id = ${pi}`)
+      .length,
+    1,
+  );
+  const [r] =
+    await db()`SELECT status FROM integration_event WHERE external_event_id = ${e2.id}`;
+  assert.equal(r.status, "processed");
+});
+
+it("route: a declared Content-Length over the cap is 413; staging that cannot store is 500", async () => {
+  const body = JSON.stringify({ id: "evt_x", type: "ping" });
+  const res = await handleStripeWebhook(
+    new Request("http://x/api/webhooks/stripe", {
+      method: "POST",
+      body,
+      headers: {
+        "stripe-signature": sign(body),
+        "content-length": String(MAX_BODY_BYTES + 1),
+      },
+    }),
+    deps,
+  );
+  assert.equal(res.status, 413);
+
+  // A NUL character cannot be stored in jsonb: the insert fails.
+  const bad = JSON.stringify({
+    id: "evt_nul",
+    type: "checkout.session.completed",
+    created: NOW,
+    data: { object: { id: "cs_x", metadata: { a: "\u0000" } } },
+  });
+  const quiet = console.error;
+  console.error = () => {};
+  try {
+    assert.equal((await post(bad, sign(bad))).status, 500);
+  } finally {
+    console.error = quiet;
+  }
+});
+
+// ---- committed data: transactions per row, concurrent distinct events --------
+
+async function wipe(f: Fix, eventIds: string[]) {
+  await db()`DELETE FROM task WHERE payment_id IN (SELECT id FROM payment WHERE stripe_checkout_session_id = ${f.session})`;
+  await db()`DELETE FROM payment WHERE stripe_checkout_session_id = ${f.session}`;
+  await db()`DELETE FROM event_outbox WHERE aggregate_id = ${f.enrolmentId}`;
+  await db()`DELETE FROM integration_event WHERE external_event_id = ANY(${eventIds}::text[])`;
+  await purgeEnrolments([f.enrolmentId]);
+  await db()`DELETE FROM deal_stage_history WHERE deal_id = ${f.dealId}`;
+  await db()`DELETE FROM deal WHERE id = ${f.dealId}`;
+  await db()`DELETE FROM person WHERE id = ${f.personId}`;
+  await db()`DELETE FROM class WHERE id = ${f.classId}`;
+}
+
+test(
+  "concurrency: completed and async_payment_succeeded (two event ids) at once make one payment and one confirmation",
+  { skip },
+  async () => {
+    const f = await fixture();
+    const a = event(f);
+    const b = event(f, { type: "checkout.session.async_payment_succeeded" });
+    try {
+      const rs = await Promise.all([send(a), send(b), send(a)]);
+      assert.deepEqual(
+        rs.map((r) => r.status),
+        [200, 200, 200],
+      );
+      assert.equal((await payments(f)).length, 1);
+      assert.equal((await statusOf(f.enrolmentId)).status, "confirmed");
+      assert.equal(
+        (await outbox(f.enrolmentId, "EnrolmentConfirmed")).length,
+        1,
+      );
+    } finally {
+      await wipe(f, [a.id, b.id]);
+    }
+  },
+);
+
+test(
+  "batch: each claimed row commits on its own; a row that blows up does not roll back the one before it (N4)",
+  { skip },
+  async () => {
+    await admin();
+    const f = await fixture();
+    const g = await fixture();
+    const a = event(f);
+    const b = { ...event(g), id: "evt_boom_" + randomBytes(4).toString("hex") };
+    const ids: string[] = [];
+    try {
+      for (const e of [a, b]) {
+        const id = await stageStripeEvent(reduceEvent(e)!);
+        ids.push(id!);
+        // Fixed order: a first.
+        await db()`UPDATE integration_event SET next_attempt_at = now() - ${3 - ids.length} * interval '1 minute' WHERE id = ${id}`;
+      }
+      // Any update of b's row fails, outcome marking included.
+      await db()`CREATE FUNCTION test_boom() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'boom'; END $$`;
+      await db()`CREATE TRIGGER test_boom BEFORE UPDATE ON integration_event
+                 FOR EACH ROW WHEN (OLD.external_event_id LIKE 'evt_boom_%')
+                 EXECUTE FUNCTION test_boom()`;
+      await assert.rejects(processStripeEvents({ ids }), /boom/);
+      const [ra] =
+        await db()`SELECT status FROM integration_event WHERE id = ${ids[0]}`;
+      assert.equal(ra.status, "processed");
+      assert.equal((await payments(f)).length, 1);
+      assert.equal((await statusOf(f.enrolmentId)).status, "confirmed");
+    } finally {
+      await db()`DROP TRIGGER IF EXISTS test_boom ON integration_event`;
+      await db()`DROP FUNCTION IF EXISTS test_boom()`;
+      await wipe(f, [a.id, b.id]);
+      await wipe(g, []);
     }
   },
 );
