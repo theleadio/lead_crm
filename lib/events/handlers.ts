@@ -1,6 +1,7 @@
 import type postgres from "postgres";
 import { z } from "zod";
 import { dutySuperAdmin } from "../people/duplicate-review.ts";
+import { expireCheckoutSession } from "../integrations/stripe-api.ts";
 import { db } from "../sql.ts";
 import type { EventType } from "./types.ts";
 
@@ -12,10 +13,11 @@ export type EventHandler = (event: {
 }) => Promise<void>;
 
 // Outside calls a handler needs, injectable so tests (and a later real
-// implementation) can swap them. Default: do nothing.
+// implementation) can swap them. Default: the real Stripe call, which does
+// nothing while STRIPE_SECRET_KEY is unset (lib/integrations/stripe-api.ts).
 export type Ports = {
   // Expire an open Stripe Checkout session. The default is a no-op until
-  // Stripe test keys exist (spec O36); the real one must treat "already
+  // STRIPE_SECRET_KEY is set (spec O36); the real one treats "already
   // expired or completed" as success, because a handler can run twice.
   expireCheckoutSession: (sessionId: string) => Promise<void>;
 };
@@ -64,7 +66,9 @@ async function opsTask(
 }
 
 export function makeHandlers(
-  ports: Ports = { expireCheckoutSession: async () => {} },
+  ports: Ports = {
+    expireCheckoutSession: (id) => expireCheckoutSession(id),
+  },
 ): Partial<Record<EventType, EventHandler>> {
   return {
     // Ops are told, except for the two reasons that already have their own
