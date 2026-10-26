@@ -1,11 +1,12 @@
-# LEAD CRM — Software Specification v1.23
+# LEAD CRM — Software Specification v1.24
 
-_Last updated 19 Oct 2026 · Owner: Shawn_
+_Last updated 26 Oct 2026 · Owner: Shawn_
 
 ## Changelog
 
 | Version | Date | Changes |
 | --- | --- | --- |
+| v1.24 | 26 Oct 2026 | From Zixuan's §10.4 planning: Zixuan writes the Stripe Checkout call (`createCheckoutSession()` in `lib/payments/checkout.ts`, shared with `POST /api/deals/:id/checkout-link`) and Shawn reviews it and writes the webhook, against a session contract written into §8.3 (amount from the class record, MYR, `deal_id` / `enrolment_id` / `class_id` metadata, `expires_at` = `seat_reserved_until`, URLs from server configuration, one idempotency key per enrolment, timeout, no secrets in logs); `POST /api/public/register` takes an optional `locale` (`en` or `zh`, default `en`) used only for the success and cancel URLs; go-live gate: no live payment before the `checkout.session.completed` webhook exists (§15.2); O43 reworded. |
 | v1.23 | 19 Oct 2026 | From the review of Zixuan's PR #6 (public schedule page): server code in this app reads the §8.1 feed through `readSchedule(env, query)` (`lib/public/schedule.ts`), not over HTTP to its own site, with a 5-second statement timeout and a typed query (§8.1); O38 reworded: the page keeps its own 5-minute cache tagged `public-schedule`, so a class edit refreshes the page with `revalidateTag("public-schedule")` (Zixuan's note) instead of a host purge, while the API feed's edge cache is separate (§8.1, §11.1); new O52, the open pair task left behind when a defect flag is fixed (§7.1, §12.2). |
 | v1.22 | 17 Oct 2026 | O51 added at Zixuan's request: what to do with a `no_name` person who never gives a name (leave the flag, or a neutral "asked, no name given" dismiss with its own audit marker), decided once the WhatsApp intake has volume (§15). The S1 pull request (#3) is merged into `main`. |
 | v1.21 | 16 Oct 2026 | From Zixuan's review of the S1 pull request: `startTime` and `endTime` in the schedule feed are `null` when a class has no time (§8.1; the type and a test now say so); O50 decided: a name edit clears a `no_name` flag, and "Not a duplicate" is refused for `no_name` and `phone_unnormalised` with 422 `not_a_pair` and hidden on 9.2 (§7, §12.2; Zixuan builds it); Environments (§2): staging and production are separate DigitalOcean databases and a developer's own database is never either of them. |
@@ -544,7 +545,7 @@ REST under `/api`, JSON, session cookie auth. Shared zod schema validation (form
 | POST /api/deals                               | Create                           | Zixuan |                                                                                          |
 | PATCH /api/deals/:id                          | Update fields                    | Zixuan |                                                                                          |
 | POST /api/deals/:id/stage                     | Move stage                       | Zixuan | body `{toStage, lostReasonId?}`; writes history + outbox event; 422 if lost without an active reason |
-| POST /api/deals/:id/checkout-link             | Generate Stripe link             | Shawn  | Returns `{url}` and stores it on the deal (§7.1); Zixuan calls from deal screen; parked, see below |
+| POST /api/deals/:id/checkout-link             | Generate Stripe link             | Shawn  | Returns `{url}` and stores it on the deal (§7.1); Zixuan calls from deal screen; uses the shared `createCheckoutSession()` (§8.3, v1.24); parked, see below |
 | GET/POST/PATCH /api/courses[/:id]             | Course catalogue                 | Zixuan | GET readable by every role that reads deals (§6). Optional `?active=true` (v1.6). Used for the 9.5 course filter and the deal course picker — no separate options route |
 | GET /api/classes                              | List with seat counts            | Zixuan | Returns capacity, confirmedCount, reservedCount, seatsAvailable                          |
 | POST/PATCH /api/classes[/:id]                 | Create/edit                      | Zixuan | Takes optional `notice: 'prepare' \| 'skip'`; see §7.1 (409 `notice_decision_required`)   |
@@ -740,18 +741,32 @@ Never trust the client — attribution is informational; server records landingU
 
 ### 8.3 POST /api/public/register (added 24 Sep)
 
-`/register/<classCode>` (§10.4) needs a Stripe link without a session, so it calls this instead of the internal checkout route. Body: everything in 8.2, plus required `classCode` and `hrdcIntended`.
+`/register/<classCode>` (§10.4) needs a Stripe link without a session, so it calls this instead of the internal checkout route. Body: everything in 8.2, plus required `classCode` and `hrdcIntended`, and an optional `locale` (`en` or `zh`, default `en`; v1.24). `locale` is used only to pick the Stripe `success_url` and `cancel_url` (the English or the `/zh` thank-you page); it is not stored and is not passed to the lead capture. Any other value is 400 `validation_failed`.
 
 Server behaviour, in order:
 
 1. Everything 8.2 does (key, CAPTCHA, rate limit, dedupe, company link, touchpoint, consent, deal).
 2. Load the class by classCode. 409 `class_unavailable` if not public, status `draft`/`cancelled`/`completed`, or already started. Seats are **not** judged here — the stored status can lag up to 15 minutes after a reservation expires; step 4 decides.
 3. If `hrdcIntended`: no checkout; return `201 { next: 'hrdc_contact' }`.
-4. Otherwise create a `reserved` enrolment with `seat_reserved_until` = now + `stripe_reservation_hours` (seat check in the transaction; the database raises `no_seats` → 409 `no_seats` if full), create the Stripe Checkout session (Shawn's code) with `expires_at` set to the same time, store it on the deal, return `201 { next: 'checkout', checkoutUrl }`.
+4. Otherwise create a `reserved` enrolment with `seat_reserved_until` = now + `stripe_reservation_hours` (seat check in the transaction; the database raises `no_seats` → 409 `no_seats` if full), create the Stripe Checkout session (`createCheckoutSession()`, see the session contract below) with `expires_at` set to the same time, store it on the deal, return `201 { next: 'checkout', checkoutUrl }`.
 
-**Not built (v1.15).** This route needs a Stripe Checkout session and there are no Stripe keys yet (O43). Steps 1-2 are the same code as `/leads`.
+**Not built (v1.15); Zixuan starts it on 26 Oct (v1.24).** The route needs a Stripe Checkout session; she builds and tests it against a test key from her own Stripe account (O43). Steps 1-2 are the same code as `/leads`.
 
 **Price always comes from the class record on the server** — nothing in the request body can set an amount. The Stripe session carries `deal_id`, `enrolment_id`, `class_id` in metadata so the webhook can match it.
+
+**Who writes the Stripe call, and the session contract (v1.24, decided 26 Oct).** Zixuan builds `createCheckoutSession()` in `lib/payments/checkout.ts`: one function over Stripe's REST API with no new dependency, injected into the route the way the CAPTCHA verifier is, with a fake for the tests. The same function serves `POST /api/deals/:id/checkout-link` (§7). Shawn reviews it and writes the webhook (§11.3) against the metadata below; either side may replace the implementation later without changing the route. The function must:
+
+- take the amount from the class record on the server (`class.price_myr`, else `course.list_price_myr`), never from a request, and charge in MYR;
+- put `deal_id`, `enrolment_id` and `class_id` in the session metadata (the webhook reads exactly these names);
+- set `expires_at` to the enrolment's `seat_reserved_until`, which is within Stripe's 24-hour maximum (`stripe_reservation_hours`);
+- build `success_url` and `cancel_url` from server configuration (`APP_BASE_URL` plus the `locale` page), never from the request;
+- send one idempotency key per enrolment, so a retry never creates a second session;
+- time out (a few seconds) and fail the request, not hang it;
+- never log a key, a session secret or the customer's details.
+
+Keys: a test key from Zixuan's own Stripe account covers building and testing everything up to the redirect back. Shawn's keys (O43) are for the webhook and the end-to-end go-live test. No key is ever committed.
+
+**Limit until the webhook exists.** Without Shawn's `checkout.session.completed` webhook (§11.3), a paid enrolment stays `reserved` and expires after 24 hours, which frees its seat although the payment succeeded. That is acceptable on test keys and is a go-live gate (§15.2).
 
 ## 9. CRM Screens
 
@@ -1237,6 +1252,8 @@ No time for full coverage in 13 weeks — test things that lose money or data:
 
 Everything else: manual UAT with Wei Ping, Ops and Sales during Sprint 5 (30 Nov – 11 Dec).
 
+**Go-live gate (v1.24): no live payment before the `checkout.session.completed` webhook exists (§8.3, §11.3)**, or a paid enrolment expires and frees its seat.
+
 **Before go-live, all must pass:** full backup restore, concurrency test, Stripe test payment end-to-end from landing page, WATI message creating an enquiry, schedule feed serving live website. Also, from v1.18: the database accepts connections only from the app and job hosts, over TLS, and no table is exposed through any REST layer (O47, reworded 14 Oct, Fri 27 Nov); the client-IP header trust is verified behind DigitalOcean's proxy (O40); and a scheduled job on DigitalOcean runs `expire_reservations()` every 15 minutes (O48, decided 14 Oct).
 
 ### 15.3 Open items
@@ -1285,7 +1302,7 @@ Everything else: manual UAT with Wei Ping, Ops and Sales during Sprint 5 (30 Nov
 | O40 | _Decided 13 Oct (v1.18)._ Rate limiting at the app (migration 012) or at the edge? The app counter works anywhere and stays; an edge limiter (Cloudflare, a load balancer) is cheaper per request and stops floods before they reach the database, and is optional, later. The client IP is read from `x-real-ip` / `x-forwarded-for`, which is only right behind a proxy that overwrites them: with the workers moving to DigitalOcean, this must be verified behind its proxy or load balancer before go-live (§14, §15.2). It is not yet known to be safe. | POST /api/public/leads | Before go-live | Shawn |
 | O41 | What a public form does not save. `message` has no column and goes into `person.notes` (which `erase_person` clears, §12.10, and which is not the WATI message text that O2 says we do not store); a new email or phone from a person we already know is not added to them; `jobTitle` and `preferredLanguage` are used only when the person is new. A `message` column, or a row for the visitor's question, is a schema change. _Decided 13 Oct (v1.18): `message` stays in `person.notes`; no new column._ | Sales follow-up, §5 | Fri 16 Oct (schema freeze) | Shawn + Zixuan |
 | O42 | Public API settings and the cached schedule. Someone has to set `PUBLIC_API_KEY`, `PUBLIC_ALLOWED_ORIGINS`, `PUBLIC_WEBSITE_URL`, `TURNSTILE_SECRET_KEY` and `RATE_LIMIT_SECRET` on the host and give the website its key. A schedule response cached at the edge may be served without the key; the data is public by design. | Website (§10), O8 | Mon 2 Nov | Shawn + Zixuan |
-| O43 | `POST /api/public/register` (§8.3) is not built: it needs a Stripe Checkout session and there are no Stripe test keys (Shawn will supply them, 13 Oct; no date yet). | §8.3, §10.4 | Stripe test keys | Shawn |
+| O43 | `POST /api/public/register` (§8.3) is not built. Since v1.24 (26 Oct) Zixuan builds it, with `createCheckoutSession()` and a test key from her own Stripe account; Shawn's test keys (13 Oct, no date yet) are needed for the webhook and the end-to-end go-live test, not for her work. | §8.3, §10.4 | Stripe test keys | Shawn |
 | O44 | Does creating a checkout link move the deal to `checkout_sent`? Spec is silent. | Checkout link | TBD by Shawn | Shawn |
 | O45 | A website visitor ticks the marketing box but already withdrew that purpose (latest `consent` row is a withdrawal). The form no longer re-grants it: nothing is recorded, the lead is captured. _Decided 13 Oct (v1.18): the public form never re-grants a withdrawn consent; opt-in again only through Ops, or a future double opt-in feature (not built)._ The question was whether a withdrawn person should be able to opt back in through the form at all, and if so by double opt-in (a confirmation link or WhatsApp message) rather than a tick. Per purpose, so a person who withdrew email but never had WhatsApp still gets a WhatsApp grant from the ticked box. | POST /api/public/leads, §10.3, §14 | Mon 2 Nov | Shawn + privacy review |
 | O46 | The `idempotencyKey` is not tied to the visitor: a key reused by someone else, or with another body, returns the first call's `personId` and `dealId` (ids only, no personal data). Keys are client-generated (a UUID), 8 to 100 characters. _Accepted 13 Oct (v1.18): the key stays unattached to the submitter._ The question was whether to tie the key to the submitter (normalised email or phone of the stored person; 409 on a mismatch) or accept. A check has awkward cases: a person matched by phone while the email differs, a merged or erased person, an unnormalisable phone. | POST /api/public/leads | Mon 2 Nov | Shawn |
@@ -1337,7 +1354,7 @@ Everything else: manual UAT with Wei Ping, Ops and Sales during Sprint 5 (30 Nov
 | O40 Rate limit layer | Decided 13 Oct (v1.18) | Shawn | **Keep the app counter (012) and the per-phone count; an edge limiter is optional, later.** Drop `rate_limit_hit` only if an edge limiter is there and tested. Go-live check: verify the client-IP header trust behind DigitalOcean's proxy or load balancer (§14, §15.2). |
 | O41 What a form does not save | Fri 16 Oct | Shawn + Zixuan | **Decided 13 Oct (v1.18).** `message` appended to `person.notes`; known people are not updated from a form; staff see the touchpoint and notes on the person. |
 | O42 Public API settings | Mon 2 Nov | Shawn + Zixuan | The API stays closed (503) and the schedule feed shows the last cached copy on the website until the five variables are set. |
-| O43 /register | Stripe test keys | Shawn | Shawn will supply the test keys (13 Oct; no date). Not built. The website's register page uses the lead form and the checkout link sent from the deal (§7.1) until it is. |
+| O43 /register | Stripe test keys | Shawn | Zixuan builds `/register` and `createCheckoutSession()` on her own test key (v1.24). Shawn's keys (no date) are for the webhook and the go-live test. Until `/register` ships, the website's register page uses the lead form and the checkout link sent from the deal (§7.1). |
 | O45 Consent after a withdrawal | Mon 2 Nov | Shawn + privacy review | **Decided 13 Oct (v1.18): the form never re-grants a withdrawn purpose; the lead is still captured; opt-in again only through Ops (staff record a new consent by hand) or a future double opt-in feature (not built).** |
 | O46 Idempotency key and submitter | Mon 2 Nov | Shawn | **Accepted 13 Oct (v1.18):** the key is a client-generated UUID of at least 8 characters, and a collision returns another call's ids only. |
 | O47 Table access (was: from Supabase roles) | Fri 27 Nov | Shawn | **Decided 13 Oct (v1.18), reworded 14 Oct (v1.19): the Data API concern no longer applies, the database is on DigitalOcean (O48). Before go-live: the database is reachable only from the app and job hosts, TLS is required, and no table is exposed through any REST layer.** Keep 001's posture. Fri 27 Nov stays. Checklist lines in §14 and §15.2. |
