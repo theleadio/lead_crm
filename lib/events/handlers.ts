@@ -104,7 +104,7 @@ export function makeHandlers(
         throw new Error(
           "ClassCancelled lists an enrolment that does not exist",
         );
-      const sessions = new Set<string>();
+      const sessions = new Map<string, postgres.Row>();
       for (const r of rows) {
         await opsTask(
           `${e.id}:tell:${r.id}`,
@@ -119,9 +119,29 @@ export function makeHandlers(
             r,
             `Paid RM${r.net_myr} net. Refund in Stripe or the bank, then record it on the payment.`,
           );
-        else if (r.checkout_session_id) sessions.add(r.checkout_session_id);
+        else if (r.checkout_session_id) sessions.set(r.checkout_session_id, r);
       }
-      for (const s of sessions) await ports.expireCheckoutSession(s);
+      // The notice and refund tasks above never depend on Stripe: a failed
+      // expire call (rotated key, stale test id, outage) becomes an Ops task
+      // to expire the link by hand, not a rollback of everything. Log only the
+      // event id and the HTTP status.
+      for (const [s, r] of sessions) {
+        try {
+          await ports.expireCheckoutSession(s);
+        } catch (err) {
+          console.error(
+            "expire checkout session failed",
+            e.id,
+            (err as { status?: number }).status ?? "no-status",
+          );
+          await opsTask(
+            `${e.id}:expire:${s}`,
+            "Class cancelled: expire this Checkout link by hand",
+            r,
+            `Stripe would not expire Checkout session ${s}. Expire it in the Stripe dashboard so nobody can pay for a cancelled class.`,
+          );
+        }
+      }
     },
 
     // "Clears the schedule cache": no schedule cache exists yet (the public

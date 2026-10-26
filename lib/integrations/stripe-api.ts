@@ -2,6 +2,14 @@
 // Checkout session when its class is cancelled. Plain fetch, no SDK. With no
 // STRIPE_SECRET_KEY it does nothing, so a database without Stripe still works.
 
+export class StripeHttpError extends Error {
+  status: number;
+  constructor(status: number) {
+    super(`stripe expire failed: HTTP ${status}`);
+    this.status = status;
+  }
+}
+
 type Env = Record<string, string | undefined>;
 
 export async function expireCheckoutSession(
@@ -23,6 +31,9 @@ export async function expireCheckoutSession(
     },
   );
   if (res.ok) return;
+  // 404 resource_missing (a stale test id after switching to a live key): the
+  // session is not open either, so the goal is met.
+  if (res.status === 404) return;
   // A handler can run twice, and a customer may have paid meanwhile: Stripe
   // answers 400 "only sessions with status open can be expired". The goal
   // (no open link) is met, so that is success.
@@ -32,5 +43,5 @@ export async function expireCheckoutSession(
     } | null;
     if (/expired|complete|status/i.test(body?.error?.message ?? "")) return;
   }
-  throw new Error(`stripe expire failed: HTTP ${res.status}`);
+  throw new StripeHttpError(res.status);
 }

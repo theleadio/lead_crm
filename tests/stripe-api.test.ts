@@ -47,7 +47,10 @@ test("already expired or completed counts as success; other errors throw", async
       fake(400, { error: { message: "bad" } }).f,
     ),
   );
-  await assert.rejects(expireCheckoutSession("cs_test_1", key, fake(500).f));
+  await assert.rejects(
+    expireCheckoutSession("cs_test_1", key, fake(500).f),
+    (e: { status?: number }) => e.status === 500,
+  );
   await assert.rejects(expireCheckoutSession("cs_test_1", key, fake(401).f));
 });
 
@@ -55,4 +58,12 @@ test("a non-session id never reaches the URL", async () => {
   const { f, calls } = fake(200);
   await assert.rejects(expireCheckoutSession("../customers", key, f));
   assert.equal(calls.length, 0);
+});
+
+test("404 resource_missing (stale id, other account) counts as success", async () => {
+  await expireCheckoutSession(
+    "cs_test_1",
+    key,
+    fake(404, { error: { code: "resource_missing" } }).f,
+  );
 });

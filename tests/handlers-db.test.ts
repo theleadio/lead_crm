@@ -10,7 +10,14 @@ import { myTasks } from "../lib/home/service.ts";
 import { closeDb, db } from "../lib/sql.ts";
 import { enrol, it, newClass, newUser, pay } from "./seed.ts";
 
-after(closeDb);
+// Tests on the default registry must never reach the real Stripe port, even if
+// the developer's shell has a key: remove it for this file, restore after.
+const savedKey = process.env.STRIPE_SECRET_KEY;
+delete process.env.STRIPE_SECRET_KEY;
+after(() => {
+  if (savedKey !== undefined) process.env.STRIPE_SECRET_KEY = savedKey;
+  return closeDb();
+});
 
 const event = (type: string, payload: unknown, id = crypto.randomUUID()) => ({
   id,
@@ -199,20 +206,12 @@ it("ClassCancelled: an empty list does nothing; a repeated id counts once", asyn
   assert.equal((await tasksOf([a])).length, 2); // tell + refund
 });
 
-it("ClassCancelled: the default port is a no-op, a failing port fails the handler", async () => {
+it("ClassCancelled: the default port is a no-op without a key", async () => {
   const { cls, ids } = await cancelledClass();
-  const e1 = event("ClassCancelled", {
-    classId: cls,
-    reason: "x",
-    enrolmentIds: ids,
-  });
-  await handlers.ClassCancelled!(e1);
-  const boom = makeHandlers({
-    expireCheckoutSession: async () => {
-      throw new Error("stripe down");
-    },
-  });
-  await assert.rejects(boom.ClassCancelled!(e1), /stripe down/);
+  await handlers.ClassCancelled!(
+    event("ClassCancelled", { classId: cls, reason: "x", enrolmentIds: ids }),
+  );
+  assert.equal((await tasksOf(ids)).length, 5); // no manual-expire task
 });
 
 it("ClassCancelled: malformed payload or an unknown enrolment throws", async () => {
@@ -328,7 +327,36 @@ it("drain: ClassCancelled through the registry; a malformed event fails, keeps i
   assert.ok(row.last_error);
 });
 
-it("drain: a handler that fails after writing tasks has them rolled back (savepoint)", async () => {
+it("ClassCancelled: a failing expire call keeps every notice and refund task and adds one manual-expire task, once even on replay", async () => {
+  const admin = await newUser("super_admin");
+  await db()`UPDATE app_user SET is_active = false
+              WHERE role_code = 'super_admin' AND id <> ${admin.id}`;
+  const { cls, ids } = await cancelledClass();
+  const ev = event("ClassCancelled", {
+    classId: cls,
+    reason: "x",
+    enrolmentIds: ids,
+  });
+  // 500, 401 and a bare network failure: none may throw.
+  for (const status of [500, 401, undefined]) {
+    const h = makeHandlers({
+      expireCheckoutSession: async () => {
+        throw Object.assign(new Error("stripe down"), { status });
+      },
+    }).ClassCancelled!;
+    await h(ev);
+    await h(ev); // replay
+    const t = await tasksOf(ids);
+    assert.equal(t.length, 6); // 4 tell + 1 refund + 1 manual expire
+    const manual = t.filter((x) => x.title.includes("by hand"));
+    assert.equal(manual.length, 1);
+    assert.equal(manual[0].assigned_user_id, admin.id);
+    assert.ok(manual[0].source_key.includes("cs_open"));
+    await db()`DELETE FROM task WHERE enrolment_id = ANY(${ids}::uuid[])`;
+  }
+});
+
+it("drain: a failing expire call no longer fails the event; the tasks stay", async () => {
   await parkOthers();
   const { cls, ids } = await cancelledClass();
   await raiseEvent(
@@ -344,6 +372,7 @@ it("drain: a handler that fails after writing tasks has them rolled back (savepo
       },
     }),
   });
-  assert.equal(r.failed, 1);
-  assert.equal((await tasksOf(ids)).length, 0);
+  assert.equal(r.failed, 0);
+  assert.equal(r.processed, 1);
+  assert.equal((await tasksOf(ids)).length, 6);
 });

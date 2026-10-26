@@ -19,7 +19,14 @@ import { closeDb, db } from "../lib/sql.ts";
 import { enrol, it, newClass, newPerson, newUser, pay } from "./seed.ts";
 import { purgeEnrolments } from "./support/purge.ts";
 
-after(closeDb);
+// Default handlers must not reach the real Stripe port: drop any key from the
+// shell for this file, restore after.
+const savedKey = process.env.STRIPE_SECRET_KEY;
+delete process.env.STRIPE_SECRET_KEY;
+after(() => {
+  if (savedKey !== undefined) process.env.STRIPE_SECRET_KEY = savedKey;
+  return closeDb();
+});
 const skip = !process.env.DATABASE_URL && "no DATABASE_URL";
 
 const SECRET = "whsec_" + randomBytes(16).toString("hex");
