@@ -3,7 +3,7 @@ import { BACKOFF_SECONDS, MAX_ATTEMPTS } from "../events/drain.ts";
 import { raiseEvent } from "../events/raise.ts";
 import { dutySuperAdmin } from "../people/duplicate-review.ts";
 import { isUuid } from "../people/service.ts";
-import { confirmWhenPaid, paidState } from "../payments/confirm.ts";
+import { confirmWhenPaid, paidState } from "./confirm.ts";
 import { db, withTransaction } from "../sql.ts";
 import type { ReducedEvent, ReducedSession } from "./stripe-reduce.ts";
 

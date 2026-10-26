@@ -14,7 +14,7 @@ import {
 } from "../lib/integrations/stripe-webhook.ts";
 import { processStripeEvents } from "../lib/integrations/stripe.ts";
 import { verifyStripeSignature } from "../lib/integrations/stripe-signature.ts";
-import { confirmWhenPaid } from "../lib/payments/confirm.ts";
+import { confirmWhenPaid } from "../lib/integrations/confirm.ts";
 import { closeDb, db } from "../lib/sql.ts";
 import { enrol, it, newClass, newPerson, newUser, pay } from "./seed.ts";
 import { purgeEnrolments } from "./support/purge.ts";
