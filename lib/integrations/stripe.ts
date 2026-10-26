@@ -287,7 +287,7 @@ async function onPaid(
   // opens an Ops task at once (NeedsOps).
   if (s.currency !== "myr") throw new NeedsOps("unsupported currency");
   const amount = (s.amount_total / 100).toFixed(2);
-  // Known gap (O59): FPX counts only when it is the sole method. A session
+  // Known gap (O61): FPX counts only when it is the sole method. A session
   // offering card and FPX is always recorded as stripe_card, whichever the
   // customer used; the exact method needs the payment intent, which this
   // reduced payload does not carry. Checkout is not changed for this.
