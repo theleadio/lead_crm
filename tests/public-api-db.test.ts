@@ -1320,6 +1320,8 @@ it("schedule: only public open/few_seats/full classes from today (Malaysia date)
     "city",
     "code",
     "courseName",
+    "courseNameEn",
+    "courseNameZh",
     "endDate",
     "endTime",
     "hrdcClaimable",
@@ -1335,6 +1337,8 @@ it("schedule: only public open/few_seats/full classes from today (Malaysia date)
     "venueName",
   ]);
   assert.equal(c.courseName, "AI Agentic Automation");
+  assert.equal(c.courseNameEn, "AI Agentic Automation");
+  assert.equal(c.courseNameZh, "人工智能自动化");
   assert.equal(c.track, "certification");
   assert.equal(c.startTime, "09:00");
   assert.equal(c.endTime, "17:00");
@@ -1436,6 +1440,22 @@ it("withStatementTimeout inside an outer transaction puts the outer's own settin
       outer,
     );
   });
+});
+
+it("schedule: both course names are returned; a course with no Chinese name gives courseNameZh null and courseName stays the English one for a zh class", async () => {
+  const { city } = await scheduleFixture();
+  const [course] = await db()`
+    INSERT INTO course (code, name_en, name_zh, track, duration_days, list_price_myr, hrdc_claimable)
+    VALUES (${`NZ-${crypto.randomUUID().slice(0, 6)}`}, 'English Only Course', NULL,
+            'workshop', 1, 500, false) RETURNING id`;
+  const code = `NOZH-${crypto.randomUUID().slice(0, 6)}`;
+  await seedClass(course.id, city, { code, language: "zh" });
+  const [c] = (
+    await (await schedule(`?city=${encodeURIComponent(city)}`)).json()
+  ).classes;
+  assert.equal(c.courseNameEn, "English Only Course");
+  assert.equal(c.courseNameZh, null);
+  assert.equal(c.courseName, "English Only Course");
 });
 
 it("schedule leak check: the serialised body never carries online_url, trainers, internal notes or seat counts", async () => {
