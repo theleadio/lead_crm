@@ -23,6 +23,7 @@ import {
   listPeople,
 } from "../lib/people/service.ts";
 import { deletePerson, erasePerson } from "../lib/people/delete-service.ts";
+import { raiseDuplicateTask } from "../lib/people/duplicate-review.ts";
 import { peopleListQuerySchema } from "../lib/validation/people-query.ts";
 import { findDuplicate } from "../lib/people/dedupe.ts";
 import { mergePeople } from "../lib/people/merge-service.ts";
@@ -370,6 +371,101 @@ it("update: bad WhatsApp is a field error; bad phone flags, fixing it clears", a
   assert.equal(fixed.kind === "updated" && fixed.person.needsReview, false);
 });
 
+// §11.2 (O50): the WhatsApp intake that raises `no_name` is Shawn's and not
+// built, so these tests set the flag by hand, as the dismiss tests do.
+const flag = (id: string, reason: string) =>
+  db()`UPDATE person SET needs_review = true, needs_review_reason = ${reason}
+       WHERE id = ${id}`;
+const flagOf = async (id: string) =>
+  (
+    await db()`SELECT needs_review, needs_review_reason FROM person WHERE id = ${id}`
+  )[0];
+const versionOf = async (id: string) => {
+  const d = await getPersonDetail(id, admin);
+  if (d.kind !== "ok") throw new Error("setup");
+  return d.detail.person;
+};
+
+it("update: a real name clears a no_name flag (§11.2, O50)", async () => {
+  const id = await idOf("Wong Kar Wai");
+  await flag(id, "no_name");
+  const loaded = await versionOf(id);
+  // §9.2 offers no "Not a duplicate" for a flag that proposes no pair.
+  assert.equal(loaded.needsReviewIsPair, false);
+
+  const r = await updatePerson(
+    id,
+    { fullName: "Wong Kar Wai Junior" },
+    loaded.version,
+    admin,
+  );
+  assert.equal(r.kind === "updated" && r.person.needsReview, false);
+  assert.equal((await flagOf(id)).needs_review_reason, null);
+  // §9.16: this is an edit of the name, not a duplicate judgement.
+  assert.deepEqual((await lastAudit()).after, {
+    full_name: "Wong Kar Wai Junior",
+    needs_review: false,
+    needs_review_reason: null,
+  });
+});
+
+it("update: saving the stored name again is not a fix", async () => {
+  const id = await idOf("Siti Nurhaliza");
+  await flag(id, "no_name");
+  const loaded = await versionOf(id);
+  const r = await updatePerson(
+    id,
+    { fullName: loaded.fullName },
+    loaded.version,
+    admin,
+  );
+  assert.equal(r.kind === "updated" && r.person.needsReview, true);
+  assert.equal((await flagOf(id)).needs_review_reason, "no_name");
+});
+
+it("update: a name edit is not a duplicate judgement", async () => {
+  const id = await idOf("Kavitha Raman");
+  const candidate = await idOf("Rajesh Kumar");
+  await flag(id, "possible_duplicate_company");
+  await raiseDuplicateTask(
+    id,
+    { id: candidate, fullName: "Rajesh Kumar" },
+    admin,
+  );
+  const loaded = await versionOf(id);
+  assert.equal(loaded.needsReviewIsPair, true);
+
+  const r = await updatePerson(
+    id,
+    { fullName: "Kavitha Ramanathan" },
+    loaded.version,
+    admin,
+  );
+  assert.equal(r.kind === "updated" && r.person.needsReview, true);
+  assert.equal(
+    (await flagOf(id)).needs_review_reason,
+    "possible_duplicate_company",
+  );
+  const [task] = await db()`
+    SELECT done_at FROM task
+    WHERE type = 'review_duplicate' AND person_id = ${id}`;
+  assert.equal(task.done_at, null);
+});
+
+it("update: fixing the name while breaking the phone stays flagged", async () => {
+  const id = await idOf("Chong Wei Ming");
+  await flag(id, "no_name");
+  const loaded = await versionOf(id);
+  const r = await updatePerson(
+    id,
+    { fullName: "Chong Wei Ming Senior", phone: "999" },
+    loaded.version,
+    admin,
+  );
+  assert.equal(r.kind === "updated" && r.person.needsReview, true);
+  assert.equal((await flagOf(id)).needs_review_reason, "phone_unnormalised");
+});
+
 it("update: marketing can't edit", async () => {
   const id = await idOf("Kavitha Raman");
   assert.equal(
@@ -468,6 +564,12 @@ it("merge: super_admin only; moves children, keeps chosen fields (§9.3)", async
     )[0].n;
   const before = await bothDeals();
   const [src] = await sql`SELECT full_name, email FROM person WHERE id = ${a}`;
+  const [tgt] = await sql`SELECT full_name, email FROM person WHERE id = ${b}`;
+  // The point of `fields: source` is that the kept record takes values it did
+  // not have. Two seed rows that happened to share a name would pass either
+  // way, so the test says what it relies on.
+  assert.notEqual(src.full_name, tgt.full_name);
+  assert.notEqual(src.email, tgt.email);
 
   assert.equal(
     (await mergePeople(a, { targetId: b, fields: {} }, sales)).kind,
