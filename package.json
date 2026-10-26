@@ -12,6 +12,7 @@
     "prepare": "husky",
     "db:seed": "node --env-file=.env.local scripts/seed-dev.ts",
     "events:drain": "node --env-file-if-exists=.env.local scripts/drain-outbox.ts",
+    "integrations:process": "node --env-file-if-exists=.env.local scripts/process-integrations.ts",
     "reservations:expire": "node --env-file-if-exists=.env.local scripts/expire-reservations.ts"
   },
   "dependencies": {

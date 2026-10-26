@@ -20,6 +20,15 @@ export type Ports = {
   expireCheckoutSession: (sessionId: string) => Promise<void>;
 };
 
+// Cancellations the system makes itself, each with its own path or nothing to
+// follow up: a class cancel (ClassCancelled covers it), an expired hold, and
+// an expired Stripe Checkout link (the student simply did not pay).
+const AUTOMATIC_REASONS = [
+  "class_cancelled",
+  "reservation_expired",
+  "checkout_expired",
+];
+
 const uuid = z.uuid();
 const enrolmentCancelled = z.object({ enrolmentId: uuid, reason: z.string() });
 const classCancelled = z.object({
@@ -62,8 +71,7 @@ export function makeHandlers(
     // path. The student is never messaged.
     EnrolmentCancelled: async (e) => {
       const p = enrolmentCancelled.parse(e.payload);
-      if (p.reason === "class_cancelled" || p.reason === "reservation_expired")
-        return;
+      if (AUTOMATIC_REASONS.includes(p.reason)) return;
       const [enrolment] = await db()`
         SELECT id, person_id FROM enrolment WHERE id = ${p.enrolmentId}`;
       if (!enrolment) throw new Error(`enrolment ${p.enrolmentId} not found`);
