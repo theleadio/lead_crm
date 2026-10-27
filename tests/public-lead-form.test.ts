@@ -16,7 +16,11 @@ import {
   isHoneypotFilled,
   newIdempotencyKey,
 } from "../app/(public)/enquiry/form-contract.ts";
-import { buildRequest, wording } from "../app/(public)/enquiry/lead-request.ts";
+import {
+  FORM_NAME,
+  buildRequest,
+  wording,
+} from "../app/(public)/enquiry/lead-request.ts";
 
 // §10.2. The attribution rules. The cookie-writing component and the server
 // action are covered further down; these first tests are the rules alone.
@@ -274,9 +278,75 @@ test("a rotation list sends one of the keys, and an unset key sends none", () =>
     PUBLIC_API_KEY: "first-key-16-chars-x,second-key-16-chars",
   });
   assert.equal(two.headers.get("x-api-key"), "first-key-16-chars-x");
-  // Unset leaves it empty, which §8.2 answers 503 to: closed, not open.
+
+  // The guard ignores entries under 16 characters, so the first entry is not
+  // always the first usable key. Sending a short one would be refused as a
+  // bad key and read as a caller's fault rather than our misconfiguration.
+  const short = buildRequest({ attribution: null }, new Headers(), {
+    PUBLIC_API_KEY: "too-short, a-key-at-least-16-chars",
+  });
+  assert.equal(short.headers.get("x-api-key"), "a-key-at-least-16-chars");
+
+  // Unset, or nothing long enough to use, leaves it empty — which §8.2
+  // answers 503 to: closed, not open.
   const none = buildRequest({ attribution: null }, new Headers(), {});
   assert.equal(none.headers.get("x-api-key"), "");
+  const allShort = buildRequest({ attribution: null }, new Headers(), {
+    PUBLIC_API_KEY: "short,also-short",
+  });
+  assert.equal(allShort.headers.get("x-api-key"), "");
+});
+
+test("the touchpoint name follows the §8.2 convention", () => {
+  // Shawn fixed the shape on the review of #11: source number, brand, the
+  // language of the page, then the form. The Chinese page brings its own.
+  assert.equal(FORM_NAME, ".02 LEAD - EN - Website Enquiry");
+});
+
+test("the consent sentence is the spec's, and claims nothing more", () => {
+  const form = readFileSync(
+    new URL("../app/(public)/enquiry/enquiry-form.tsx", import.meta.url),
+    "utf8",
+  );
+  // §10.3 fixes the wording. "offers" widens what the visitor agreed to and
+  // an unsubscribe promise is one nothing in v1 keeps, so neither belongs on
+  // the page without the PDPA reviewer (spec v1.24). The label alone, so the
+  // comments around it — which name both words — are not the subject.
+  const after = form.slice(form.indexOf('name="consentMarketing"'));
+  const label = after.slice(0, after.indexOf("</label>"));
+  assert.match(
+    label,
+    /Send me updates about LEAD courses by email and WhatsApp\./,
+  );
+  assert.doesNotMatch(label, /offers|unsubscribe/i);
+});
+
+test("a settled submission takes the focus with it, and the message is capped", () => {
+  const form = readFileSync(
+    new URL("../app/(public)/enquiry/enquiry-form.tsx", import.meta.url),
+    "utf8",
+  );
+  // §14: aria-live announces the summary, it does not take anyone to it. On
+  // an error the focus goes to the summary or the first field the server
+  // named; on success to the heading that replaced the form.
+  assert.match(form, /successBox\.current\?\.focus\(\)/);
+  assert.match(form, /summaryBox\.current \?\?/);
+  assert.match(form, /ref=\{summaryBox\}[\s\S]{0,60}tabIndex=\{-1\}/);
+  assert.match(form, /ref=\{successBox\}[\s\S]{0,60}tabIndex=\{-1\}/);
+  // §8.2 refuses a message over 2000 characters, and the field says so
+  // before the visitor spends the typing.
+  assert.match(form, /maxLength=\{2000\}/);
+});
+
+test("the privacy link points at the page the marketing site serves", () => {
+  const page = readFileSync(
+    new URL("../app/(public)/enquiry/page.tsx", import.meta.url),
+    "utf8",
+  );
+  // thelead.io/terms/ is the notice. /privacy and /privacy-policy both 404,
+  // and a dead link beside a consent box is worse than no link.
+  assert.match(page, /\$\{base\}\/terms/);
+  assert.doesNotMatch(page, /\$\{base\}\/privacy/);
 });
 
 test("the landing URL is passed where §8.2 actually reads it from", () => {
@@ -347,8 +417,22 @@ test("the honeypot is refused the same way a failed check is", () => {
   const filled = new FormData();
   filled.set(HONEYPOT_FIELD, "http://spam.example");
   assert.equal(isHoneypotFilled(filled), true);
-  // Indistinguishable from a failed CAPTCHA, so a bot learns nothing.
-  assert.equal(wording("captcha_failed"), wording("captcha_failed"));
+
+  // Indistinguishable from a failed CAPTCHA, so a bot learns nothing from
+  // the difference. Comparing wording("captcha_failed") with itself said
+  // nothing; what matters is that the honeypot branch is the one that
+  // answers, and that it answers with that code and creates no lead.
+  const submit = readFileSync(
+    new URL("../app/(public)/enquiry/submit.ts", import.meta.url),
+    "utf8",
+  );
+  const guard = submit.slice(
+    submit.indexOf("export async function submitEnquiry"),
+    submit.indexOf("const jar"),
+  );
+  assert.match(guard, /isHoneypotFilled\(form\)/);
+  assert.match(guard, /wording\("captcha_failed"\)/);
+  assert.doesNotMatch(guard, /handleLead/, "refused before any lead is made");
 
   const empty = new FormData();
   assert.equal(isHoneypotFilled(empty), false);

@@ -91,6 +91,28 @@ export function EnquiryForm({
     (k: keyof typeof checks) => (e: { target: { checked: boolean } }) =>
       setChecks((c) => ({ ...c, [k]: e.target.checked }));
 
+  // §14: focus follows what changed. aria-live announces the summary but
+  // takes nobody to it, so without this the focus stays on a submit button
+  // that is no longer the point, and a keyboard or screen-reader visitor has
+  // to walk back up the form to learn what happened.
+  const summaryBox = useRef<HTMLDivElement | null>(null);
+  const successBox = useRef<HTMLHeadingElement | null>(null);
+
+  useEffect(() => {
+    if (state.status === "success") {
+      successBox.current?.focus();
+      return;
+    }
+    if (state.status !== "error") return;
+    // The summary when there is one, and the first field the server named
+    // when there is not — never the top of the page.
+    const firstBad = Object.keys(state.fields)[0];
+    (
+      summaryBox.current ??
+      (firstBad ? document.getElementById(`${ids}-${firstBad}`) : null)
+    )?.focus();
+  }, [state, ids]);
+
   const captchaBox = useRef<HTMLDivElement | null>(null);
   const widgetId = useRef<string | null>(null);
   const [captchaReady, setCaptchaReady] = useState(false);
@@ -142,7 +164,13 @@ export function EnquiryForm({
         role="status"
         className="border-line bg-surface-raised rounded-2xl border p-6"
       >
-        <h2 className="text-ink text-lg font-semibold">Thank you — got it.</h2>
+        <h2
+          ref={successBox}
+          tabIndex={-1}
+          className="text-ink text-lg font-semibold"
+        >
+          Thank you — got it.
+        </h2>
         <p className="text-ink-muted mt-2 text-sm">
           One of our team will be in touch within one working day, on the email
           or phone number you gave us.
@@ -160,6 +188,7 @@ export function EnquiryForm({
         if (!values.email.trim() && !values.phone.trim()) {
           e.preventDefault();
           setLocalError("Enter an email or a phone number");
+          document.getElementById(`${ids}-email`)?.focus();
           return;
         }
         setLocalError(null);
@@ -170,7 +199,11 @@ export function EnquiryForm({
       {/* §14: a failure is announced, not only shown. */}
       <div aria-live="polite">
         {showSummary && (
-          <div className="border-danger bg-danger-soft text-danger rounded-md border px-4 py-3 text-sm">
+          <div
+            ref={summaryBox}
+            tabIndex={-1}
+            className="border-danger bg-danger-soft text-danger rounded-md border px-4 py-3 text-sm"
+          >
             <p>{state.message}</p>
             {errors.length > 0 && (
               <ul className="mt-1 list-disc ps-5">
@@ -299,6 +332,7 @@ export function EnquiryForm({
             {...p}
             name="message"
             rows={4}
+            maxLength={2000}
             value={values.message}
             onChange={set("message")}
             className={FIELD}
@@ -318,7 +352,10 @@ export function EnquiryForm({
       </label>
 
       {/* §10.3: unticked by default, never a condition of submitting, and
-          never pre-ticked or implied. */}
+          never pre-ticked or implied. The sentence is the spec's, word for
+          word: "offers" and an unsubscribe promise were wider than what the
+          PDPA reviewer has signed off, and consent text is not ours to
+          broaden on the page (spec v1.24, #13). */}
       <label className="text-ink flex items-start gap-3 text-sm">
         <input
           type="checkbox"
@@ -327,10 +364,7 @@ export function EnquiryForm({
           onChange={check("consentMarketing")}
           className="mt-0.5"
         />
-        <span>
-          Yes, send me news about LEAD&apos;s classes and offers by email and
-          WhatsApp. You can unsubscribe at any time.
-        </span>
+        <span>Send me updates about LEAD courses by email and WhatsApp.</span>
       </label>
 
       {/* What the visitor is asking about, from the link that opened the form

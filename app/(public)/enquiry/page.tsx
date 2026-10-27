@@ -15,10 +15,14 @@ export const metadata: Metadata = {
 // §10.3 wants the privacy notice beside the submit control. This app has no
 // privacy page of its own, so the link points at the marketing site's, and is
 // left out entirely when PUBLIC_WEBSITE_URL is unset — a dead link next to a
-// consent box is worse than no link. Open question in the change proposal.
+// consent box is worse than no link.
+//
+// `/terms` and not `/privacy`: the notice lives at thelead.io/terms/, titled
+// "Privacy, Refund Policy & Terms and Conditions". `/privacy` and
+// `/privacy-policy` both 404 (Shawn checked the site, #11).
 function privacyUrl(env: NodeJS.ProcessEnv = process.env): string | null {
   const base = (env.PUBLIC_WEBSITE_URL ?? "").trim().replace(/\/+$/, "");
-  return base ? `${base}/privacy` : null;
+  return base ? `${base}/terms` : null;
 }
 
 export default async function EnquiryPage(props: PageProps<"/enquiry">) {

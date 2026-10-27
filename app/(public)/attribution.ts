@@ -2,10 +2,13 @@
 // so they can be tested without a browser and imported from both the client
 // component that writes the cookies and the server action that reads them.
 //
-// Nothing here identifies anybody: a touch holds the campaign fields, the
-// landing URL, the referrer and a time. That is what lets §10.2 call these
-// cookies functional rather than marketing storage (see the PDPA question in
-// the change proposal).
+// A touch holds no name, no email and no phone number — the campaign fields,
+// the landing URL, the referrer and a time. That is not the same as
+// identifying nobody: `gclid` and `fbclid` are ad-click identifiers the ad
+// network can tie back to a person, and a utm value is whatever the campaign
+// put in the link. So §10.2's reading, that these cookies are functional
+// rather than marketing storage, is the PDPA reviewer's to confirm and not
+// ours to assert (open question in the change proposal).
 
 export const FIRST_TOUCH_COOKIE = "lead_first_touch";
 export const LAST_TOUCH_COOKIE = "lead_last_touch";
