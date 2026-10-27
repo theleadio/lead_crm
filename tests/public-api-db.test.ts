@@ -137,7 +137,12 @@ test("proxy matcher: /api/public/* skips the session proxy, CRM routes and other
   const matcher = /matcher:\s*\[\s*"([^"]+)"/.exec(src)?.[1];
   assert.ok(matcher, "matcher not found in proxy.ts");
   const re = new RegExp(`^${matcher}$`);
-  for (const p of ["/api/public/schedule", "/api/public/leads"])
+  for (const p of [
+    "/api/public/schedule",
+    "/api/public/leads",
+    "/schedule",
+    "/enquiry",
+  ])
     assert.equal(re.test(p), false, `${p} should bypass the proxy`);
   for (const p of ["/people", "/deals", "/api/people", "/api/classes", "/"])
     assert.equal(re.test(p), true, `${p} should go through the proxy`);

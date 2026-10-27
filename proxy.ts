@@ -66,9 +66,10 @@ export async function proxy(request: NextRequest) {
 // page adds itself here — /register and the landing pages when 10.3 and 10.4
 // land. Hiding a path from the proxy is not a security decision: the CRM
 // screens keep their own check in app/(crm)/layout.tsx and every API route
-// authenticates itself.
+// authenticates itself. The enquiry form authenticates its own submission
+// with the public API key, server-side (§8.2).
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|api/public|schedule(?:/|$)).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/public|schedule(?:/|$)|enquiry(?:/|$)).*)",
   ],
 };
