@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import {
   dictionary,
   fill,
+  overlay,
   untranslatedKeys,
 } from "../app/(public)/dictionaries.ts";
 import { en } from "../app/(public)/dictionaries/en.ts";
@@ -37,13 +38,28 @@ test("the Chinese dictionary invents no key", () => {
 });
 
 test("an untranslated or empty key renders English", () => {
+  // Against the overlay directly, because zh translates every key today: a
+  // loop over untranslatedKeys("zh") runs zero times and proves nothing, so
+  // the two cases are built here instead.
+  const missing = overlay(en, { "schedule.heading": "课程时间表" });
+  assert.equal(missing["schedule.heading"], "课程时间表");
+  assert.equal(
+    missing["schedule.description"],
+    en["schedule.description"],
+    "a key the overlay never had renders English",
+  );
+
+  const blank = overlay(en, { "schedule.heading": "" });
+  assert.equal(
+    blank["schedule.heading"],
+    en["schedule.heading"],
+    "an empty string is not translated yet, not render nothing",
+  );
+
+  // And the real dictionary, for the day zh falls behind again.
   const dict = dictionary("zh");
-  // "LEAD" is a brand, not copy, so nothing in the dictionary needs to be
-  // identical across locales — but the fallback must be exercised with a key
-  // that is genuinely absent.
-  const absent = untranslatedKeys("zh");
-  for (const key of absent) assert.equal(dict[key], en[key]);
-  // And the translated ones are Chinese, not English.
+  for (const key of untranslatedKeys("zh")) assert.equal(dict[key], en[key]);
+  // The translated ones are Chinese, not English.
   assert.equal(dict["schedule.heading"], zh["schedule.heading"]);
   assert.notEqual(dict["schedule.heading"], en["schedule.heading"]);
 });

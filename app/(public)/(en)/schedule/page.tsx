@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { alternates } from "../../alternates";
 import { dictionary } from "../../dictionaries";
 import { SchedulePage } from "../../schedule/schedule-page";
 
@@ -10,10 +11,7 @@ const t = dictionary("en");
 export const metadata: Metadata = {
   title: t["schedule.title"],
   description: t["schedule.description"],
-  alternates: {
-    canonical: "/schedule",
-    languages: { en: "/schedule", zh: "/zh/schedule" },
-  },
+  alternates: alternates("en", "/schedule"),
 };
 
 export default function Page() {

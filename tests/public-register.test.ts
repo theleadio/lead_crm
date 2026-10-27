@@ -342,4 +342,16 @@ test("the thank-you page confirms and creates nothing", () => {
   assert.match(src, /session_id/);
   // An HRDC arrival never claims a payment, whatever else the URL carries.
   assert.match(src, /!hrdc && Boolean\(raw\?\.trim\(\)\)/);
+
+  // §13: the id is read to tell the two cases apart and never shown. Stripe's
+  // session id is a payment identifier in a URL a visitor may paste into a
+  // chat or a support ticket, so the markup must not repeat it back. The JSX
+  // half of the file only — above it, reading the id is the whole point.
+  const markup = src.slice(src.indexOf("return ("));
+  assert.ok(markup.length > 0, "the page should render something");
+  for (const leak of ["session_id", "raw", "searchParams", "sp."])
+    assert.ok(
+      !markup.includes(leak),
+      `the thank-you markup must not carry ${leak}`,
+    );
 });

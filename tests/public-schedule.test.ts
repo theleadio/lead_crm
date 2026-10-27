@@ -39,12 +39,22 @@ test("proxy matcher: the public page and the public API skip the proxy, the CRM 
   for (const p of [
     "/schedule",
     "/enquiry",
+    // §10.4's pages, including the one Stripe returns a payer to: a redirect
+    // to sign-in there would lose the payment's confirmation.
+    "/register",
+    "/register/AIA-2611-KL",
+    "/register/thank-you",
     // Both locales, or a Chinese page would cost a getUser() round trip and
     // depend on the sign-in provider being reachable (§10.5).
     "/zh/schedule",
     "/zh/enquiry",
+    "/zh/register/AIA-2611-KL",
+    "/zh/register/thank-you",
+    // The bare prefix too, which now redirects to /zh/schedule.
+    "/zh",
     "/api/public/schedule",
     "/api/public/leads",
+    "/api/public/register",
   ])
     assert.equal(re.test(p), false, `${p} should bypass the proxy`);
   // Every path app/(crm)/layout.tsx gates, plus the API the CRM screens call.
@@ -60,6 +70,12 @@ test("proxy matcher: the public page and the public API skip the proxy, the CRM 
     "/api/people",
     "/api/classes",
     "/",
+    // The prefix is a segment, not a string prefix: a CRM page whose path
+    // merely starts with the same letters must still be gated. Same for
+    // "register" and "schedule".
+    "/zhuhai",
+    "/registered-interest",
+    "/scheduler",
   ])
     assert.equal(re.test(p), true, `${p} should go through the proxy`);
 });
@@ -368,13 +384,12 @@ test("both locales' route files exist and name each other in their metadata", ()
   const zh = read("../app/(public)/zh/schedule/page.tsx");
 
   // Each is canonical for itself and points at the other, so a crawler does
-  // not read the pair as duplicates.
-  assert.match(en, /canonical:\s*"\/schedule"/);
-  assert.match(zh, /canonical:\s*"\/zh\/schedule"/);
-  for (const src of [en, zh]) {
-    assert.match(src, /en:\s*"\/schedule"/);
-    assert.match(src, /zh:\s*"\/zh\/schedule"/);
-  }
+  // not read the pair as duplicates. The block is alternates()' now, tested
+  // as a value in tests/public-locale-links.test.ts; what is left for a
+  // route file to get wrong is the locale it passes.
+  assert.ok(en.includes('alternates("en", "/schedule")'));
+  assert.ok(zh.includes('alternates("zh", "/schedule")'));
+
   // Neither holds a string of its own: the title and description are the
   // dictionary's.
   for (const src of [en, zh]) assert.match(src, /dictionary\("(en|zh)"\)/);

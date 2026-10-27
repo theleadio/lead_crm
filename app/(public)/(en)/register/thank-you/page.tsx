@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { alternates } from "../../../alternates";
 import { dictionary } from "../../../dictionaries";
 import { ThankYouPage } from "../../../register/thank-you-page";
 
@@ -9,13 +10,7 @@ const t = dictionary("en");
 export const metadata: Metadata = {
   title: t["thankYou.title"],
   description: t["thankYou.description"],
-  alternates: {
-    canonical: "/register/thank-you",
-    languages: {
-      en: "/register/thank-you",
-      zh: "/zh/register/thank-you",
-    },
-  },
+  alternates: alternates("en", "/register/thank-you"),
   // Nothing here is worth indexing, and the URL carries a session id.
   robots: { index: false, follow: true },
 };

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { alternates } from "../../alternates";
 import { dictionary } from "../../dictionaries";
 import { SchedulePage } from "../../schedule/schedule-page";
 
@@ -13,10 +14,7 @@ export const metadata: Metadata = {
   // Each locale names itself canonical and points at the other, so a crawler
   // serves a Chinese searcher this page and does not read the pair as
   // duplicates (website-localisation).
-  alternates: {
-    canonical: "/zh/schedule",
-    languages: { en: "/schedule", zh: "/zh/schedule" },
-  },
+  alternates: alternates("zh", "/schedule"),
 };
 
 export default function Page() {

@@ -1,29 +1,28 @@
+import type { Metadata } from "next";
 import { PublicChrome } from "../public-chrome";
-import { LOCALE_LANG } from "../locale";
+import { PublicRoot } from "../public-root";
+import { siteUrl } from "../site-url";
 
 // The Chinese public pages, served under /zh (§10.5).
 //
-// shortcut: each public page needs a thin route file here as well as under
-// (en)/, because English keeps the unprefixed path and a single `app/[lang]`
-// segment cannot serve a locale with no prefix. Upgrade to `app/[lang]` plus
-// a proxy rewrite when a third locale arrives, or when the public site grows
-// past roughly six pages — the duplication is cheaper than the rewrite only
-// while there are few pages.
+// A root layout of its own, so <html lang> is zh-Hans here and en on the
+// English pages. §14 requires WCAG 2.1 AA and 3.1.1 (Language of Page, Level
+// A) is met through the html element: a lang on an inner element leaves
+// Chrome's translate prompt and every crawler reading a Chinese page as
+// English. The language control is already a full <a> navigation, so moving
+// between the two roots costs nothing that was not already a page load, and
+// no URL changed. See ../public-root.tsx for the shell both roots share.
 //
-// shortcut: <html lang> stays "en" on these pages, so Chrome's translate
-// prompt and any crawler reading it see English on a Chinese page while the
-// same page's hreflang says zh. A screen reader resolves language from the
-// nearest ancestor, so the div below is enough for §14 and only the
-// top-level signal is wrong. Upgrade when the app moves under a dynamic
-// locale segment for some other reason - doing it for this alone would
-// restructure every CRM route too.
-//
-// Inter is loaded with subsets: ["latin"] (app/layout.tsx), so Chinese
-// already falls back to a system font; the stack names which one rather than
-// leaving it to the browser. A CJK webfont is hundreds of kilobytes at best,
-// against §10.5's 1MB page budget, for a few dozen short strings.
-const CJK_STACK =
-  '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", sans-serif';
+// shortcut: each public page still needs a thin route file here as well as
+// under (en)/, because English keeps the unprefixed path and a single
+// `app/[lang]` segment cannot serve a locale with no prefix. Upgrade to
+// `app/[lang]` plus a proxy rewrite when a third locale arrives, or when the
+// public site grows past roughly six pages — the duplication is cheaper than
+// the rewrite only while there are few pages.
+
+const base = siteUrl();
+
+export const metadata: Metadata = base ? { metadataBase: base } : {};
 
 export default function ChinesePublicLayout({
   children,
@@ -31,8 +30,8 @@ export default function ChinesePublicLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div lang={LOCALE_LANG.zh} style={{ fontFamily: CJK_STACK }}>
+    <PublicRoot locale="zh">
       <PublicChrome locale="zh">{children}</PublicChrome>
-    </div>
+    </PublicRoot>
   );
 }

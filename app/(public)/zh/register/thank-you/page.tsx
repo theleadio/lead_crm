@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { alternates } from "../../../alternates";
 import { dictionary } from "../../../dictionaries";
 import { ThankYouPage } from "../../../register/thank-you-page";
 
@@ -10,13 +11,7 @@ const t = dictionary("zh");
 export const metadata: Metadata = {
   title: t["thankYou.title"],
   description: t["thankYou.description"],
-  alternates: {
-    canonical: "/zh/register/thank-you",
-    languages: {
-      en: "/register/thank-you",
-      zh: "/zh/register/thank-you",
-    },
-  },
+  alternates: alternates("zh", "/register/thank-you"),
   robots: { index: false, follow: true },
 };
 

@@ -18,7 +18,11 @@ export const en = {
   "schedule.description":
     "Upcoming LEAD classes: dates, language, venue, price and HRDC claimability.",
   "schedule.heading": "Class schedule",
-  "schedule.standfirst": "Upcoming public classes",
+  // §4: the timezone belongs here, not only beside each date — every
+  // class LEAD runs is on Malaysian time and a visitor reading from
+  // Singapore or Jakarta cannot tell from a bare date.
+  "schedule.standfirst":
+    "Upcoming public classes. Dates and times are Malaysian time.",
   "schedule.lastUpdated": "Schedule last updated {when}.",
   "schedule.empty.heading": "No public classes scheduled right now",
   "schedule.empty.cta": "Tell us what you're looking for",
@@ -83,14 +87,20 @@ export const en = {
   "form.hrdc": "I'd like to claim this under HRDC.",
   // §10.3's wording. A translation may not narrow or widen it: the Chinese
   // must name the same two channels and the same use.
-  "form.consent":
-    "Yes, send me news about LEAD's classes and offers by email and WhatsApp. You can unsubscribe at any time.",
+  // §10.3's sentence, word for word (spec v1.24). "offers" widens what
+  // the visitor agreed to and an unsubscribe promise is one nothing in v1
+  // keeps, so neither belongs here without the PDPA sign-off.
+  "form.consent": "Send me updates about LEAD courses by email and WhatsApp.",
   "form.submit": "Send enquiry",
   "form.submitting": "Sending…",
   "form.privacy": "How we use your details",
   "form.honeypot": "Company website",
   "form.contactRequired": "Enter an email or a phone number",
   "form.thankYou.heading": "Thank you — got it.",
+  // shortcut: "within one working day" is not a promise the spec makes
+  // anywhere, and nothing in v1 measures it. It reads well and it is what
+  // the team does today, so it stays until Shawn either writes it into §10.3
+  // or replaces it; it is a sentence to change, not code.
   "form.thankYou.body":
     "One of our team will be in touch within one working day, on the email or phone number you gave us.",
 
@@ -112,6 +122,15 @@ export const en = {
     "You're already registered for this class. Check your email for the details, or ask us if nothing arrived.",
   // An unset key, an unset rate-limit secret or a key we got wrong is our
   // deployment's fault, not the visitor's.
+  // shortcut: this asks the visitor to email us and names no address. The
+  // spec names no public address anywhere and no open item covers one, so
+  // there is nothing to put here yet — raised with Shawn on #12. It is the
+  // only message that leaves the visitor with nothing to act on.
+  //
+  // The one confirmed way in is thelead.io/contact-us-lead/, a Contact Form 7
+  // page (Shawn checked the site, #11). Sending them there instead of asking
+  // for an email we cannot name would be the better fix, and needs his word
+  // on whether that form is the right place for a failed enquiry.
   "error.not_configured":
     "We can't take enquiries right now. Please email us and we'll pick it up.",
   "error.server_error": "Something went wrong at our end. Please try again.",

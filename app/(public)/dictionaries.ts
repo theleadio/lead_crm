@@ -19,13 +19,20 @@ export type DictKey = keyof Dict;
 
 const OVERLAYS: Record<Locale, Partial<Dict>> = { en: {}, zh };
 
-export function dictionary(locale: Locale): Dict {
-  const overlay = OVERLAYS[locale];
-  const out: Dict = { ...en };
-  for (const [key, value] of Object.entries(overlay))
+// English with a translation laid over it. Exported so the fallback can be
+// tested with a key that is genuinely missing: zh translates every key today,
+// so a test that loops over the untranslated ones runs zero times and proves
+// nothing.
+export function overlay(base: Dict, over: Partial<Dict>): Dict {
+  const out: Dict = { ...base };
+  for (const [key, value] of Object.entries(over))
     // An empty string is "not translated yet", not "render nothing".
     if (value) out[key as DictKey] = value;
   return out;
+}
+
+export function dictionary(locale: Locale): Dict {
+  return overlay(en, OVERLAYS[locale]);
 }
 
 // Fills {braces} in a dictionary string. One placeholder per value the

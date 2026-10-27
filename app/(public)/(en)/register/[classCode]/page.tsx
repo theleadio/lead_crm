@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { alternates } from "../../../alternates";
 import { dictionary } from "../../../dictionaries";
 import { RegisterPage } from "../../../register/register-page";
 
@@ -19,10 +20,7 @@ export async function generateMetadata({
   return {
     title: t["register.title"],
     description: t["register.description"],
-    alternates: {
-      canonical: path,
-      languages: { en: path, zh: `/zh${path}` },
-    },
+    alternates: alternates("en", path),
   };
 }
 

@@ -5,8 +5,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { alternates } from "../app/(public)/alternates.ts";
 import { enquiryUrl } from "../app/(public)/enquiry-link.ts";
-import { localePath, otherLocaleHref } from "../app/(public)/locale.ts";
+import {
+  LOCALE_LANG,
+  localePath,
+  otherLocaleHref,
+} from "../app/(public)/locale.ts";
+import { siteUrl } from "../app/(public)/site-url.ts";
 
 test("the enquiry link carries the locale", () => {
   assert.equal(enquiryUrl("en"), "/enquiry");
@@ -81,27 +87,145 @@ test("the language control keeps the class and the campaign on a register page",
   );
 });
 
-test("both locales serve both register pages, and each names the other", () => {
+test("every public route declares its alternates, with its own locale", () => {
   const read = (p: string) =>
     readFileSync(new URL(`../app/(public)/${p}`, import.meta.url), "utf8");
-  for (const [file, canonical] of [
-    ["(en)/register/[classCode]/page.tsx", "/register/"],
-    ["zh/register/[classCode]/page.tsx", "/zh/"],
-    ["(en)/register/thank-you/page.tsx", '"/register/thank-you"'],
-    ["zh/register/thank-you/page.tsx", '"/zh/register/thank-you"'],
-  ] as const) {
-    const src = read(file);
-    assert.match(src, /alternates/, `${file} declares its alternates`);
-    assert.ok(src.includes(canonical), `${file} names its own canonical`);
-    // Each page names both languages, so neither is a dead end for a crawler.
-    assert.match(src, /languages/);
-    assert.match(src, /zh:/);
-    assert.match(src, /en:/);
-  }
+  // What the alternates themselves say is checked against alternates() below.
+  // All a route file can get wrong is which locale and which path it passes —
+  // a Chinese page calling alternates("en", …) would claim the English URL as
+  // its own canonical and hand the pair to a crawler as duplicates.
+  for (const [file, call] of [
+    ["(en)/schedule/page.tsx", 'alternates("en", "/schedule")'],
+    ["zh/schedule/page.tsx", 'alternates("zh", "/schedule")'],
+    ["(en)/enquiry/page.tsx", 'alternates("en", "/enquiry")'],
+    ["zh/enquiry/page.tsx", 'alternates("zh", "/enquiry")'],
+    ["(en)/register/[classCode]/page.tsx", 'alternates("en", path)'],
+    ["zh/register/[classCode]/page.tsx", 'alternates("zh", path)'],
+    [
+      "(en)/register/thank-you/page.tsx",
+      'alternates("en", "/register/thank-you")',
+    ],
+    [
+      "zh/register/thank-you/page.tsx",
+      'alternates("zh", "/register/thank-you")',
+    ],
+  ] as const)
+    assert.ok(read(file).includes(call), `${file} should call ${call}`);
+
   // The thank-you page is not worth indexing and its URL carries a session id.
   for (const file of [
     "(en)/register/thank-you/page.tsx",
     "zh/register/thank-you/page.tsx",
   ])
     assert.match(read(file), /robots: \{ index: false/);
+});
+
+// ---- canonical, hreflang and <html lang> ----------------------------------
+
+test("each locale is its own canonical and names the other, plus x-default", () => {
+  // Written out per route file this was eight object literals and a regex over
+  // the source; a crossed or missing entry is the kind of mistake that only
+  // shows up in a crawler's index weeks later.
+  assert.deepEqual(alternates("en", "/schedule"), {
+    canonical: "/schedule",
+    languages: {
+      "x-default": "/schedule",
+      en: "/schedule",
+      zh: "/zh/schedule",
+    },
+  });
+  // The Chinese page claims its own URL and still points at both.
+  assert.deepEqual(alternates("zh", "/schedule"), {
+    canonical: "/zh/schedule",
+    languages: {
+      "x-default": "/schedule",
+      en: "/schedule",
+      zh: "/zh/schedule",
+    },
+  });
+  // x-default is the English path, which is the unprefixed canonical one and
+  // the page a searcher with neither language can read.
+  for (const locale of ["en", "zh"] as const) {
+    const a = alternates(locale, "/register/AIA-2611-KL");
+    assert.equal(a.languages["x-default"], "/register/AIA-2611-KL");
+    assert.equal(a.languages.en, a.languages["x-default"]);
+    assert.equal(a.languages.zh, "/zh/register/AIA-2611-KL");
+  }
+});
+
+test("<html lang> is the page's own language, set by a root layout per locale", () => {
+  const read = (p: string) =>
+    readFileSync(new URL(`../app/${p}`, import.meta.url), "utf8");
+
+  // §14 requires WCAG 2.1 AA and 3.1.1 (Language of Page, Level A) is met
+  // through the html element. The only way two trees can disagree about it is
+  // a root layout each, which means no app/layout.tsx above them.
+  assert.throws(
+    () => read("layout.tsx"),
+    /ENOENT/,
+    "app/layout.tsx would wrap both locales in one <html lang>",
+  );
+
+  // The shell writes it, and each locale's root layout chooses the locale.
+  const root = read("(public)/public-root.tsx");
+  assert.match(root, /<html\s[\s\S]*?lang=\{LOCALE_LANG\[locale\]\}/);
+  assert.match(root, /<body/, "a root layout owns <html> and <body>");
+  assert.match(read("(public)/(en)/layout.tsx"), /PublicRoot locale="en"/);
+  assert.match(read("(public)/zh/layout.tsx"), /PublicRoot locale="zh"/);
+
+  // zh-Hans rather than zh: a screen reader picks its voice from the script.
+  assert.equal(LOCALE_LANG.en, "en");
+  assert.equal(LOCALE_LANG.zh, "zh-Hans");
+
+  // The CRM keeps a root of its own, so its lang is a statement about its own
+  // screens rather than a default the public pages inherit.
+  assert.match(read("(app)/layout.tsx"), /<html\s[\s\S]*?lang="en"/);
+});
+
+test("/zh is a page, not a 404", () => {
+  // A visitor who shortens the URL by hand, or a crawler that trims the /zh
+  // hreflang, used to get a 404. There is no Chinese landing page, so this
+  // goes to the schedule.
+  const src = readFileSync(
+    new URL("../app/(public)/zh/page.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(src, /redirect\("\/zh\/schedule"\)/);
+  assert.match(src, /from "next\/navigation"/);
+});
+
+test("siteUrl reads APP_BASE_URL, and says so when it cannot be used", () => {
+  assert.equal(siteUrl({}), null, "unset leaves the links relative");
+  assert.equal(siteUrl({ APP_BASE_URL: "   " }), null);
+  assert.equal(siteUrl({ APP_BASE_URL: "not a url" }), null);
+  assert.equal(
+    siteUrl({ APP_BASE_URL: " https://crm.example/ " })?.origin,
+    "https://crm.example",
+  );
+
+  // A loopback base in production points every canonical and hreflang link at
+  // a machine no crawler can reach, and the pages still render, so nothing
+  // else would report it. The URL is still returned — the address is the
+  // deployment's mistake to fix, not ours to swallow.
+  const said: string[] = [];
+  const realError = console.error;
+  console.error = (m: unknown) => void said.push(String(m));
+  try {
+    for (const host of ["localhost:3000", "127.0.0.1:3000", "[::1]:3000"]) {
+      said.length = 0;
+      const url = siteUrl({
+        APP_BASE_URL: `http://${host}`,
+        NODE_ENV: "production",
+      });
+      assert.equal(url?.origin, `http://${host}`);
+      assert.equal(said.length, 1, `${host} should be reported`);
+      assert.match(said[0], /local address in production/);
+    }
+    // Not in development, where localhost is the whole point.
+    said.length = 0;
+    siteUrl({ APP_BASE_URL: "http://localhost:3000", NODE_ENV: "development" });
+    assert.deepEqual(said, []);
+  } finally {
+    console.error = realError;
+  }
 });
