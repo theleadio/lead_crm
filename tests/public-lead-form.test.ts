@@ -2,11 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import {
+  FIRST_TOUCH_COOKIE,
+  LAST_TOUCH_COOKIE,
+  TOUCH_MAX_AGE_DAYS,
   attributionPayload,
   hasCampaign,
   nextTouches,
   parseTouch,
   serialiseTouch,
+  touchCookie,
   touchFrom,
   trimUrl,
 } from "../app/(public)/attribution.ts";
@@ -162,6 +166,53 @@ test("Turnstile is rendered explicitly, and removed with the form", () => {
 // A cookie can be hand-edited, or set for the parent domain by another
 // subdomain. §8.2 refuses the whole lead over one bad attribution value, so
 // every field is rebuilt rather than trusted.
+test("the attribution cookie carries §10.2's lifetime and nothing looser", () => {
+  const plain = touchCookie(FIRST_TOUCH_COOKIE, "abc", false);
+  assert.equal(
+    plain,
+    "lead_first_touch=abc; Path=/; Max-Age=7776000; SameSite=Lax",
+  );
+  // §10.2's 90 days, spelled in seconds so a change to either is caught.
+  assert.equal(TOUCH_MAX_AGE_DAYS * 86400, 7776000);
+
+  // Secure wherever the page is https, and never on the plain http dev
+  // server, where the browser would drop the cookie outright.
+  assert.match(touchCookie(LAST_TOUCH_COOKIE, "x", true), /; Secure$/);
+  assert.doesNotMatch(plain, /Secure/);
+
+  // SameSite=Lax and no Domain: the cookie rides a top-level arrival from an
+  // ad or an email, never a cross-site subrequest, and never widens to a
+  // parent domain.
+  assert.doesNotMatch(plain, /SameSite=None|Domain=/i);
+});
+
+test("the browser half of §10.2 fails quietly and stays statically rendered", () => {
+  const script = readFileSync(
+    new URL("../app/(public)/attribution-script.tsx", import.meta.url),
+    "utf8",
+  );
+  // Blocked storage costs attribution, never the page or the submission:
+  // §10.2 treats attribution as informational and §8.2 accepts a lead
+  // without it. Both accesses are wrapped.
+  assert.equal(script.match(/try \{/g)?.length, 2);
+
+  // useSearchParams would opt /schedule out of static rendering, and a
+  // campaign link always arrives as a fresh load where the query is read on
+  // mount anyway. The imports, not the whole file: the comment that explains
+  // the choice names the hook too.
+  const imports = script.slice(0, script.indexOf("// §10.2"));
+  assert.doesNotMatch(imports, /useSearchParams/);
+  assert.match(imports, /usePathname/);
+  assert.match(script, /usePathname\(\)/);
+
+  // document.referrer is the document's, so after a soft move it still names
+  // the ad site and would make the move look like a fresh arrival — which
+  // erases the last touch. The page we came from is remembered instead, and
+  // the same href twice is Strict Mode re-running the effect, not a move.
+  assert.match(script, /previous\.current !== location\.href/);
+  assert.match(script, /moved \? previous\.current : document\.referrer/);
+});
+
 test("a tampered cookie costs attribution, not the lead", () => {
   const t = parseTouch(
     encodeURIComponent(

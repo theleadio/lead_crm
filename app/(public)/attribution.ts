@@ -17,6 +17,30 @@ export const LAST_TOUCH_COOKIE = "lead_last_touch";
 // every visit, so its expiry only has to outlive the first one.
 export const TOUCH_MAX_AGE_DAYS = 90;
 
+// The cookie line for a touch, as a plain function so the attributes that
+// matter are tested rather than read. `secure` is the caller's answer to
+// whether the page is served over https, which keeps the DOM out of here.
+//
+// Path=/ because every public page writes and the form reads. SameSite=Lax:
+// these travel with an ordinary top-level navigation from an ad or an email,
+// which is exactly how a campaign visitor arrives, and never on a cross-site
+// subrequest. No Domain, so nothing widens to a parent domain. Not HttpOnly
+// — the form reads them to put them in the submission (§10.2, §8.2).
+export function touchCookie(
+  name: string,
+  value: string,
+  secure: boolean,
+): string {
+  const parts = [
+    `${name}=${value}`,
+    "Path=/",
+    `Max-Age=${TOUCH_MAX_AGE_DAYS * 86400}`,
+    "SameSite=Lax",
+  ];
+  if (secure) parts.push("Secure");
+  return parts.join("; ");
+}
+
 export type Touch = {
   utmSource: string | null;
   utmMedium: string | null;
