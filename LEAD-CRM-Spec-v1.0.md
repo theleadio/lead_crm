@@ -758,7 +758,7 @@ Server behaviour, in order:
 
 - take the amount from the class record on the server (`class.price_myr`, else `course.list_price_myr`), never from a request, and charge in MYR;
 - put `deal_id`, `enrolment_id` and `class_id` in the session metadata (the webhook reads exactly these names);
-- set `expires_at` to the enrolment's `seat_reserved_until`, which is within Stripe's 24-hour maximum (`stripe_reservation_hours`);
+- set `expires_at` to the enrolment's `seat_reserved_until`, which is within Stripe's 24-hour maximum (`stripe_reservation_hours`). **Known edge (v1.24, 27 Oct):** Stripe refuses an expiry under 30 minutes ahead, so when a reused reservation has less than 30 minutes left, the code pushes the session out to 30 minutes, past the hold; a payer could then pay for a seat that is gone, and the retry sends the same idempotency key with a different `expires_at`, which Stripe may reject. Accepted for go-live (rare). The fix, if it matters: do not reuse a reservation with under 30 minutes left, refresh it instead;
 - build `success_url` and `cancel_url` from server configuration (`APP_BASE_URL` plus the `locale` page), never from the request;
 - send one idempotency key per enrolment, so a retry never creates a second session;
 - time out (a few seconds) and fail the request, not hang it;
