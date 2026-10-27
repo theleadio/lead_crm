@@ -86,15 +86,18 @@ export const zh: Partial<Dict> = {
   "form.honeypot": "公司网站",
   "form.contactRequired": "请填写电子邮箱或电话号码",
   "form.thankYou.heading": "已经收到，谢谢您。",
+  // Same {{TODO}} as English: no reply time has been agreed, so neither
+  // language promises one.
   "form.thankYou.body":
-    "我们的同事会在一个工作日内，通过您留下的电子邮箱或电话号码与您联系。",
+    "我们的同事会在 {{TODO: 回复时限 — 尚未确定}} 内，通过您留下的电子邮箱或电话号码与您联系。",
 
   "error.captcha_failed": "我们无法确认您是真人，请再试一次。",
   "error.rate_limited": "短时间内提交了多次咨询，请一分钟后再试。",
   "error.payload_too_large": "内容太长，请缩短后再提交。",
   "error.validation_failed": "请检查标示出来的栏位。",
+  // Same {{TODO}} as English: no public address exists to name.
   "error.not_configured":
-    "我们暂时无法接收咨询，请发电子邮件给我们，我们会跟进。",
+    "我们暂时无法接收咨询，请发电子邮件至 {{TODO: 联系邮箱 — 尚未确定}}，我们会跟进。",
   "error.server_error": "我们这边出了问题，请再试一次。",
 
   "field.fullName": "请填写您的姓名。",

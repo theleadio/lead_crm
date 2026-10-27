@@ -106,3 +106,39 @@ test("report what the L5 review still has to translate", () => {
   // blocking a deploy (design D8). This prints the checklist.
   assert.ok(absent.length <= Object.keys(en).length);
 });
+
+// The copy LEAD has not settled yet, kept visible rather than guessed at.
+// A marker renders as it is written, so it cannot be mistaken for finished
+// copy in a browser; this pins which keys carry one, so a new placeholder has
+// to be added here deliberately and a resolved one has to be removed here.
+const PLACEHOLDERS = {
+  // No reply time has been agreed. "within one working day" used to stand
+  // here and the spec promises nothing of the kind, so the page was making a
+  // commitment on the team's behalf that nothing keeps.
+  "form.thankYou.body": true,
+  // The spec names no public contact address and no open item covers one.
+  "error.not_configured": true,
+} as const;
+
+test("every unsettled string is marked, and only the ones we know about", () => {
+  const marked = (dict: Record<string, string>) =>
+    Object.entries(dict)
+      .filter(([, v]) => v.includes("{{TODO"))
+      .map(([k]) => k)
+      .sort();
+
+  const expected = Object.keys(PLACEHOLDERS).sort();
+  assert.deepEqual(
+    marked(en),
+    expected,
+    "an English placeholder was added or resolved without updating PLACEHOLDERS",
+  );
+  // Chinese carries the same two, so neither language quietly keeps a promise
+  // the other has dropped.
+  assert.deepEqual(marked(dictionary("zh")), expected);
+
+  // The marker survives fill(): its braces are doubled and the text inside is
+  // not a placeholder name, so a page that fills values leaves it alone.
+  const filled = fill(en["form.thankYou.body"], { when: "tomorrow" });
+  assert.ok(filled.includes("{{TODO"), "fill() must not eat the marker");
+});

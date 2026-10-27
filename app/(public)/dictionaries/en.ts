@@ -97,12 +97,13 @@ export const en = {
   "form.honeypot": "Company website",
   "form.contactRequired": "Enter an email or a phone number",
   "form.thankYou.heading": "Thank you — got it.",
-  // shortcut: "within one working day" is not a promise the spec makes
-  // anywhere, and nothing in v1 measures it. It reads well and it is what
-  // the team does today, so it stays until Shawn either writes it into §10.3
-  // or replaces it; it is a sentence to change, not code.
+  // {{TODO}}: a reply time nobody has committed to. "within one working day"
+  // was here, and the spec promises no such thing — nothing in v1 measures a
+  // reply, so the page was making a commitment on the team's behalf that
+  // nothing keeps. The marker stays visible until Shawn gives a time he will
+  // stand behind, or confirms we name none.
   "form.thankYou.body":
-    "One of our team will be in touch within one working day, on the email or phone number you gave us.",
+    "One of our team will be in touch {{TODO: how soon — no reply time agreed}}, on the email or phone number you gave us.",
 
   // §13 wording by §8.2 response code. Never the route's own message: those
   // are written for an API caller.
@@ -122,17 +123,16 @@ export const en = {
     "You're already registered for this class. Check your email for the details, or ask us if nothing arrived.",
   // An unset key, an unset rate-limit secret or a key we got wrong is our
   // deployment's fault, not the visitor's.
-  // shortcut: this asks the visitor to email us and names no address. The
-  // spec names no public address anywhere and no open item covers one, so
-  // there is nothing to put here yet — raised with Shawn on #12. It is the
-  // only message that leaves the visitor with nothing to act on.
+  // {{TODO}}: the address to email. The spec names no public address and no
+  // open item covers one, so there is nothing to put here yet. This is the
+  // only message that leaves a visitor with nothing they can act on, which
+  // is why it carries the marker rather than quietly saying "email us".
   //
   // The one confirmed way in is thelead.io/contact-us-lead/, a Contact Form 7
-  // page (Shawn checked the site, #11). Sending them there instead of asking
-  // for an email we cannot name would be the better fix, and needs his word
-  // on whether that form is the right place for a failed enquiry.
+  // page (Shawn checked the site, #11). Sending them there may be the better
+  // answer than any address; raised with him on #12.
   "error.not_configured":
-    "We can't take enquiries right now. Please email us and we'll pick it up.",
+    "We can't take enquiries right now. Please email us at {{TODO: contact address — none published}} and we'll pick it up.",
   "error.server_error": "Something went wrong at our end. Please try again.",
 
   // Per-field refusals, by the field name §8.2's validation_failed returns.
