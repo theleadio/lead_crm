@@ -1,7 +1,7 @@
 "use client";
 
 import Script from "next/script";
-import { useActionState, useEffect, useId, useState } from "react";
+import { useActionState, useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Dict, DictKey } from "../dictionaries";
@@ -17,7 +17,14 @@ import { submitEnquiry } from "./submit";
 // As much of Turnstile's global as we use.
 declare global {
   interface Window {
-    turnstile?: { reset: (el?: string | HTMLElement) => void };
+    turnstile?: {
+      render: (
+        el: HTMLElement,
+        options: { sitekey: string; "response-field-name": string },
+      ) => string;
+      remove: (id: string) => void;
+      reset: (id?: string) => void;
+    };
   }
 }
 
@@ -107,12 +114,91 @@ export function EnquiryForm({
   const ids = useId();
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
+  // React 19 resets a `<form action>` once the action settles, including when
+  // it settles with an error, so a box the visitor ticked comes back unticked
+  // after a refused submit while the text fields keep what was typed.
+  // Consent is the one that matters: a visitor who does not notice would
+  // retry and have the lead saved with no consent and no
+  // `funding_type = 'hrdc'` (§10.3, §8.2).
+  //
+  // Controlling the box is not enough on its own, and this is why the text
+  // fields behave differently. A reset restores every field to its default,
+  // and for a controlled text input React keeps the default in step with the
+  // value on every update — so the reset puts the typed text back. For a
+  // checkbox it does not: react-dom fixes defaultChecked once, when the
+  // input mounts, and leaves it alone on later updates while `checked` is
+  // supplied. The default therefore stays `false` for the life of the form,
+  // the reset reverts to it, and React writes `checked` again only when the
+  // prop changes — which it has not. Hence the line in the handler below:
+  // the state drives what is rendered, and the default follows the state so
+  // a reset has the right value to go back to.
+  const [checks, setChecks] = useState({
+    hrdcIntended: false,
+    consentMarketing: false,
+  });
+  const check =
+    (k: keyof typeof checks) => (e: React.ChangeEvent<HTMLInputElement>) => {
+      const el = e.currentTarget;
+      el.defaultChecked = el.checked;
+      setChecks((c) => ({ ...c, [k]: el.checked }));
+    };
+
+  // §14: focus follows what changed. aria-live announces the summary but
+  // takes nobody to it, so without this the focus stays on a submit button
+  // that is no longer the point, and a keyboard or screen-reader visitor has
+  // to walk back up the form to learn what happened.
+  // Only the failure case lives here. A settled success leaves this page
+  // altogether, for a server-rendered thank-you at its own URL, and a browser
+  // puts focus at the top of a new document by itself — the form never
+  // renders an answer any more (§10.3, §10.4).
+  const summaryBox = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (state.status !== "error") return;
+    // The summary when there is one, and the first field the server named
+    // when there is not — never the top of the page.
+    const firstBad = Object.keys(state.fields)[0];
+    (
+      summaryBox.current ??
+      (firstBad ? document.getElementById(`${ids}-${firstBad}`) : null)
+    )?.focus();
+  }, [state, ids]);
+
+  const captchaBox = useRef<HTMLDivElement | null>(null);
+  const widgetId = useRef<string | null>(null);
+  const [captchaReady, setCaptchaReady] = useState(false);
+
+  // Turnstile's implicit rendering scans the DOM once, when its script loads,
+  // and next/script loads it once per page load. On a client-side move back
+  // to this form the script is already there, nothing scans, and no widget
+  // appears — so no token is sent and §8.2 refuses every submission.
+  //
+  // Rendering and removing the widget belong to the same effect. Driving the
+  // render from `<Script onReady>` and the removal from an unmount effect
+  // leaves them on different lifecycles: Strict Mode's second mount runs the
+  // teardown, `onReady` does not fire again, and the form is left with the
+  // container and no widget — the very failure this is here to prevent.
+  useEffect(() => {
+    const box = captchaBox.current;
+    if (!siteKey || !captchaReady || !box) return;
+    const id = window.turnstile?.render(box, {
+      sitekey: siteKey,
+      "response-field-name": "captchaToken",
+    });
+    widgetId.current = id ?? null;
+    return () => {
+      if (id) window.turnstile?.remove(id);
+      widgetId.current = null;
+    };
+  }, [siteKey, captchaReady]);
+
   // A token is spent by the §8.2 check, and the widget does not remount when
   // the action returns. Without this reset, any refusal after that check —
   // the per-phone limit, a 500 — leaves the spent token in the form and every
   // retry comes back captcha_failed until the visitor reloads the page.
   useEffect(() => {
-    if (state.status === "error") window.turnstile?.reset();
+    if (state.status === "error" && widgetId.current !== null)
+      window.turnstile?.reset(widgetId.current);
   }, [state]);
 
   const set = (k: keyof Values) => (e: { target: { value: string } }) =>
@@ -133,6 +219,7 @@ export function EnquiryForm({
         if (!values.email.trim() && !values.phone.trim()) {
           e.preventDefault();
           setLocalError(t["form.contactRequired"]);
+          document.getElementById(`${ids}-email`)?.focus();
           return;
         }
         setLocalError(null);
@@ -143,7 +230,11 @@ export function EnquiryForm({
       {/* §14: a failure is announced, not only shown. */}
       <div aria-live="polite">
         {showSummary && (
-          <div className="border-danger bg-danger-soft text-danger rounded-md border px-4 py-3 text-sm">
+          <div
+            ref={summaryBox}
+            tabIndex={-1}
+            className="border-danger bg-danger-soft text-danger rounded-md border px-4 py-3 text-sm"
+          >
             <p>{state.message}</p>
             {errors.length > 0 && (
               <ul className="mt-1 list-disc ps-5">
@@ -273,6 +364,7 @@ export function EnquiryForm({
             {...p}
             name="message"
             rows={4}
+            maxLength={2000}
             value={values.message}
             onChange={set("message")}
             className={FIELD}
@@ -281,14 +373,29 @@ export function EnquiryForm({
       </Field>
 
       <label className="text-ink flex items-start gap-3 text-sm">
-        <input type="checkbox" name="hrdcIntended" className="mt-0.5" />
+        <input
+          type="checkbox"
+          name="hrdcIntended"
+          checked={checks.hrdcIntended}
+          onChange={check("hrdcIntended")}
+          className="mt-0.5"
+        />
         <span>{t["form.hrdc"]}</span>
       </label>
 
       {/* §10.3: unticked by default, never a condition of submitting, and
-          never pre-ticked or implied. */}
+          never pre-ticked or implied. The sentence is the spec's, word for
+          word: "offers" and an unsubscribe promise were wider than what the
+          PDPA reviewer has signed off, and consent text is not ours to
+          broaden on the page (spec v1.24, #13). */}
       <label className="text-ink flex items-start gap-3 text-sm">
-        <input type="checkbox" name="consentMarketing" className="mt-0.5" />
+        <input
+          type="checkbox"
+          name="consentMarketing"
+          checked={checks.consentMarketing}
+          onChange={check("consentMarketing")}
+          className="mt-0.5"
+        />
         <span>{t["form.consent"]}</span>
       </label>
 
@@ -329,14 +436,11 @@ export function EnquiryForm({
       {siteKey && (
         <>
           <Script
-            src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+            src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
             strategy="afterInteractive"
+            onReady={() => setCaptchaReady(true)}
           />
-          <div
-            className="cf-turnstile"
-            data-sitekey={siteKey}
-            data-response-field-name="captchaToken"
-          />
+          <div ref={captchaBox} />
         </>
       )}
 

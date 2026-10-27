@@ -1,4 +1,4 @@
-import { requestIp, type Env } from "../../../lib/public/guard.ts";
+import { apiKeys, requestIp, type Env } from "../../../lib/public/guard.ts";
 import { dictionary, type Dict } from "../dictionaries.ts";
 import type { Locale } from "../locale.ts";
 
@@ -7,10 +7,12 @@ import type { Locale } from "../locale.ts";
 // because a "use server" module may export only async functions, and separate
 // from form-contract.ts because this reaches lib/public/.
 
-// §10.3 wants a form name on the touchpoint. The convention is not written
-// down anywhere in the spec — open question in the change proposal; it is a
-// string on a touchpoint and can be renamed later on its own.
-export const FORM_NAME = "website_enquiry";
+// §8.2's touchpoint name, in the §8.2 convention Shawn settled on the review
+// of this branch: source number, brand, the language of the page, then the
+// form. It names the page's language and not the preferredLanguage field —
+// the two differ, and this one says where the lead came from. The Chinese
+// page carries ".02 LEAD - ZH - Website Enquiry" and brings it with it (#13).
+export const FORM_NAME = ".02 LEAD - EN - Website Enquiry";
 
 // §13: what a visitor is told, by response code, in the language they are
 // reading. The route's own `message` strings are not shown in either locale —
@@ -89,9 +91,12 @@ export function buildRequest(
     "content-type": "application/json",
     // Read on the server and never rendered. PUBLIC_API_KEY may hold several
     // comma-separated keys for rotation (§14); any of them is accepted, so
-    // this sends the first. Unset leaves it empty, and §8.2 answers 503 —
-    // closed, not open.
-    "x-api-key": (env.PUBLIC_API_KEY ?? "").split(",")[0].trim(),
+    // this sends the first. Through apiKeys and not a raw split, because the
+    // guard ignores entries under 16 characters: a list led by a short one
+    // would send a key §8.2 rejects, and a rejected key reads as a bad caller
+    // rather than the misconfiguration it is. Nothing left to send leaves it
+    // empty, and §8.2 answers 503 — closed, not open.
+    "x-api-key": apiKeys(env)[0] ?? "",
   };
 
   // No Origin header at all. §8.2 allows that case by design — "a server call

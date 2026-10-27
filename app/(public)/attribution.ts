@@ -2,10 +2,13 @@
 // so they can be tested without a browser and imported from both the client
 // component that writes the cookies and the server action that reads them.
 //
-// Nothing here identifies anybody: a touch holds the campaign fields, the
-// landing URL, the referrer and a time. That is what lets §10.2 call these
-// cookies functional rather than marketing storage (see the PDPA question in
-// the change proposal).
+// A touch holds no name, no email and no phone number — the campaign fields,
+// the landing URL, the referrer and a time. That is not the same as
+// identifying nobody: `gclid` and `fbclid` are ad-click identifiers the ad
+// network can tie back to a person, and a utm value is whatever the campaign
+// put in the link. So §10.2's reading, that these cookies are functional
+// rather than marketing storage, is the PDPA reviewer's to confirm and not
+// ours to assert (open question in the change proposal).
 
 export const FIRST_TOUCH_COOKIE = "lead_first_touch";
 export const LAST_TOUCH_COOKIE = "lead_last_touch";
@@ -13,6 +16,30 @@ export const LAST_TOUCH_COOKIE = "lead_last_touch";
 // §10.2 asks for 90 days on the first touch. The last touch is rewritten on
 // every visit, so its expiry only has to outlive the first one.
 export const TOUCH_MAX_AGE_DAYS = 90;
+
+// The cookie line for a touch, as a plain function so the attributes that
+// matter are tested rather than read. `secure` is the caller's answer to
+// whether the page is served over https, which keeps the DOM out of here.
+//
+// Path=/ because every public page writes and the form reads. SameSite=Lax:
+// these travel with an ordinary top-level navigation from an ad or an email,
+// which is exactly how a campaign visitor arrives, and never on a cross-site
+// subrequest. No Domain, so nothing widens to a parent domain. Not HttpOnly
+// — the form reads them to put them in the submission (§10.2, §8.2).
+export function touchCookie(
+  name: string,
+  value: string,
+  secure: boolean,
+): string {
+  const parts = [
+    `${name}=${value}`,
+    "Path=/",
+    `Max-Age=${TOUCH_MAX_AGE_DAYS * 86400}`,
+    "SameSite=Lax",
+  ];
+  if (secure) parts.push("Secure");
+  return parts.join("; ");
+}
 
 export type Touch = {
   utmSource: string | null;
@@ -92,10 +119,26 @@ export function serialiseTouch(t: Touch): string {
   return encodeURIComponent(JSON.stringify(t));
 }
 
+// Who decoded it already depends on the reader. The browser hands back what
+// `document.cookie` holds, still percent-encoded; Next's `cookies()` decodes
+// once before we see it. Decoding unconditionally therefore runs a second
+// pass on the server, which turns a campaign's own `%50` into `P` and throws
+// outright on a lone `%` — losing the touch on the server and nowhere else.
+// So: read it as JSON first, and only decode when that fails.
+function cookieJson(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return JSON.parse(decodeURIComponent(raw));
+  }
+}
+
 export function parseTouch(raw: string | null | undefined): Touch | null {
   if (!raw) return null;
   try {
-    const o = JSON.parse(decodeURIComponent(raw));
+    const o = cookieJson(raw) as Record<string, unknown> & {
+      occurredAt?: unknown;
+    };
     if (!o || typeof o !== "object") return null;
     if (typeof o.occurredAt !== "string") return null;
     // Cookie text is untrusted — another subdomain can set one of these for

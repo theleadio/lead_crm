@@ -5,9 +5,9 @@ import { useEffect, useRef } from "react";
 import {
   FIRST_TOUCH_COOKIE,
   LAST_TOUCH_COOKIE,
-  TOUCH_MAX_AGE_DAYS,
   nextTouches,
   serialiseTouch,
+  touchCookie,
 } from "./attribution";
 
 // §10.2. Writes the two attribution cookies on every public page. Mounted in
@@ -32,19 +32,11 @@ function readCookie(name: string): string | null {
 
 function writeCookie(name: string, value: string) {
   try {
-    // SameSite=Lax: these travel with ordinary top-level navigation from an
-    // ad or an email, which is exactly how a campaign visitor arrives, and
-    // never on a cross-site subrequest. Not HttpOnly — the form reads them to
-    // put them in the submission, and they identify nobody, so a reader of
-    // the cookie learns nothing about the visitor.
-    const parts = [
-      `${name}=${value}`,
-      "Path=/",
-      `Max-Age=${TOUCH_MAX_AGE_DAYS * 86400}`,
-      "SameSite=Lax",
-    ];
-    if (location.protocol === "https:") parts.push("Secure");
-    document.cookie = parts.join("; ");
+    // The line itself, and the reasoning behind its attributes, is in
+    // ./attribution.ts where a test can reach it. Secure is asked for only
+    // where the page is https: a browser drops a Secure cookie on the plain
+    // http dev server, which would cost attribution in development alone.
+    document.cookie = touchCookie(name, value, location.protocol === "https:");
   } catch {
     // Blocked storage. Nothing to fall back to, and nothing that should fail.
   }
