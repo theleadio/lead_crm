@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import {
   attributionPayload,
   hasCampaign,
@@ -85,6 +86,63 @@ test("a touch survives a round trip through a cookie value", () => {
 test("an unreadable cookie value reads as absent rather than throwing", () => {
   for (const raw of ["", "not json", "%%%", "null", "[]", '{"a":1}'])
     assert.equal(parseTouch(raw), null, `should be null for ${raw}`);
+});
+
+// The browser hands back what `document.cookie` holds, percent-encoded;
+// Next's `cookies()` decodes once before the action sees it. A second decode
+// corrupted a campaign carrying its own `%` and threw on a bare one, so the
+// touch was lost on the server and nowhere else.
+test("a cookie read decodes once, whichever side is reading it", () => {
+  for (const campaign of ["raya%50off", "50% off", "mastery_202611"]) {
+    const t = {
+      ...touchFrom("https://lead.test/enquiry", null),
+      utmCampaign: campaign,
+    };
+    const cookie = serialiseTouch(t);
+    // The browser: document.cookie gives back exactly what was written.
+    assert.deepEqual(parseTouch(cookie), t, `browser read of ${campaign}`);
+    // The server: Next has already decoded it once.
+    assert.deepEqual(
+      parseTouch(decodeURIComponent(cookie)),
+      t,
+      `server read of ${campaign}`,
+    );
+  }
+});
+
+// The three fixes below are in a client component, which these tests cannot
+// mount. Asserting on the source is weaker than driving a browser, but it
+// does stop a silent revert of a bug that costs consent or blocks every
+// submission.
+test("the form's two checkboxes are controlled, like its text fields", () => {
+  const form = readFileSync(
+    new URL("../app/(public)/enquiry/enquiry-form.tsx", import.meta.url),
+    "utf8",
+  );
+  // React 19 resets a settled `<form action>`, including on an error, so an
+  // uncontrolled box would come back unticked after a refused submit.
+  for (const name of ["hrdcIntended", "consentMarketing"]) {
+    const field = form.slice(form.indexOf(`name="${name}"`));
+    assert.match(
+      field.slice(0, 200),
+      /checked=\{checks\./,
+      `${name} is not controlled`,
+    );
+  }
+});
+
+test("Turnstile is rendered explicitly, and removed with the form", () => {
+  const form = readFileSync(
+    new URL("../app/(public)/enquiry/enquiry-form.tsx", import.meta.url),
+    "utf8",
+  );
+  // Implicit rendering scans the page only when the script loads, so a
+  // client-side move back to the form would leave no widget and refuse every
+  // submission.
+  assert.match(form, /api\.js\?render=explicit/);
+  assert.match(form, /window\.turnstile\?\.render\(/);
+  assert.doesNotMatch(form, /className="cf-turnstile"/);
+  assert.match(form, /window\.turnstile\?\.remove\(/);
 });
 
 // A cookie can be hand-edited, or set for the parent domain by another

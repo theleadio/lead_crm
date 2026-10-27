@@ -1,7 +1,7 @@
 "use client";
 
 import Script from "next/script";
-import { useActionState, useEffect, useId, useState } from "react";
+import { useActionState, useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -14,7 +14,14 @@ import { submitEnquiry } from "./submit";
 // As much of Turnstile's global as we use.
 declare global {
   interface Window {
-    turnstile?: { reset: (el?: string | HTMLElement) => void };
+    turnstile?: {
+      render: (
+        el: HTMLElement,
+        options: { sitekey: string; "response-field-name": string },
+      ) => string;
+      remove: (id: string) => void;
+      reset: (id?: string) => void;
+    };
   }
 }
 
@@ -70,12 +77,55 @@ export function EnquiryForm({
   const ids = useId();
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
+  // React 19 resets a `<form action>` once the action settles, including when
+  // it settles with an error, so an uncontrolled checkbox comes back unticked
+  // after a refused submit while the controlled text fields keep what was
+  // typed. Consent is the one that matters: a visitor who does not notice
+  // would retry and have the lead saved with no consent and no
+  // `funding_type = 'hrdc'` (§10.3, §8.2).
+  const [checks, setChecks] = useState({
+    hrdcIntended: false,
+    consentMarketing: false,
+  });
+  const check =
+    (k: keyof typeof checks) => (e: { target: { checked: boolean } }) =>
+      setChecks((c) => ({ ...c, [k]: e.target.checked }));
+
+  const captchaBox = useRef<HTMLDivElement | null>(null);
+  const widgetId = useRef<string | null>(null);
+  const [captchaReady, setCaptchaReady] = useState(false);
+
+  // Turnstile's implicit rendering scans the DOM once, when its script loads,
+  // and next/script loads it once per page load. On a client-side move back
+  // to this form the script is already there, nothing scans, and no widget
+  // appears — so no token is sent and §8.2 refuses every submission.
+  //
+  // Rendering and removing the widget belong to the same effect. Driving the
+  // render from `<Script onReady>` and the removal from an unmount effect
+  // leaves them on different lifecycles: Strict Mode's second mount runs the
+  // teardown, `onReady` does not fire again, and the form is left with the
+  // container and no widget — the very failure this is here to prevent.
+  useEffect(() => {
+    const box = captchaBox.current;
+    if (!siteKey || !captchaReady || !box) return;
+    const id = window.turnstile?.render(box, {
+      sitekey: siteKey,
+      "response-field-name": "captchaToken",
+    });
+    widgetId.current = id ?? null;
+    return () => {
+      if (id) window.turnstile?.remove(id);
+      widgetId.current = null;
+    };
+  }, [siteKey, captchaReady]);
+
   // A token is spent by the §8.2 check, and the widget does not remount when
   // the action returns. Without this reset, any refusal after that check —
   // the per-phone limit, a 500 — leaves the spent token in the form and every
   // retry comes back captcha_failed until the visitor reloads the page.
   useEffect(() => {
-    if (state.status === "error") window.turnstile?.reset();
+    if (state.status === "error" && widgetId.current !== null)
+      window.turnstile?.reset(widgetId.current);
   }, [state]);
 
   const set = (k: keyof Values) => (e: { target: { value: string } }) =>
@@ -257,14 +307,26 @@ export function EnquiryForm({
       </Field>
 
       <label className="text-ink flex items-start gap-3 text-sm">
-        <input type="checkbox" name="hrdcIntended" className="mt-0.5" />
+        <input
+          type="checkbox"
+          name="hrdcIntended"
+          checked={checks.hrdcIntended}
+          onChange={check("hrdcIntended")}
+          className="mt-0.5"
+        />
         <span>I&apos;d like to claim this under HRDC.</span>
       </label>
 
       {/* §10.3: unticked by default, never a condition of submitting, and
           never pre-ticked or implied. */}
       <label className="text-ink flex items-start gap-3 text-sm">
-        <input type="checkbox" name="consentMarketing" className="mt-0.5" />
+        <input
+          type="checkbox"
+          name="consentMarketing"
+          checked={checks.consentMarketing}
+          onChange={check("consentMarketing")}
+          className="mt-0.5"
+        />
         <span>
           Yes, send me news about LEAD&apos;s classes and offers by email and
           WhatsApp. You can unsubscribe at any time.
@@ -303,14 +365,11 @@ export function EnquiryForm({
       {siteKey && (
         <>
           <Script
-            src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+            src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
             strategy="afterInteractive"
+            onReady={() => setCaptchaReady(true)}
           />
-          <div
-            className="cf-turnstile"
-            data-sitekey={siteKey}
-            data-response-field-name="captchaToken"
-          />
+          <div ref={captchaBox} />
         </>
       )}
 

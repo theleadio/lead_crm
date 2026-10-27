@@ -92,10 +92,26 @@ export function serialiseTouch(t: Touch): string {
   return encodeURIComponent(JSON.stringify(t));
 }
 
+// Who decoded it already depends on the reader. The browser hands back what
+// `document.cookie` holds, still percent-encoded; Next's `cookies()` decodes
+// once before we see it. Decoding unconditionally therefore runs a second
+// pass on the server, which turns a campaign's own `%50` into `P` and throws
+// outright on a lone `%` — losing the touch on the server and nowhere else.
+// So: read it as JSON first, and only decode when that fails.
+function cookieJson(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return JSON.parse(decodeURIComponent(raw));
+  }
+}
+
 export function parseTouch(raw: string | null | undefined): Touch | null {
   if (!raw) return null;
   try {
-    const o = JSON.parse(decodeURIComponent(raw));
+    const o = cookieJson(raw) as Record<string, unknown> & {
+      occurredAt?: unknown;
+    };
     if (!o || typeof o !== "object") return null;
     if (typeof o.occurredAt !== "string") return null;
     // Cookie text is untrusted — another subdomain can set one of these for
