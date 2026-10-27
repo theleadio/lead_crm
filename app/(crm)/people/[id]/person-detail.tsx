@@ -789,6 +789,10 @@ function ReviewBanner({
   onCleared: () => void;
 }) {
   const other = person.duplicateOf;
+  // §12.2 (O50): `phone_unnormalised` and `no_name` name a defect in this
+  // record, so there is no pair to judge — the route refuses them too. The
+  // way out is the edit that fixes the record.
+  const canDismiss = canReview && person.needsReviewIsPair;
   return (
     <div className="border-warning bg-warning-soft text-warning space-y-2 rounded-md border px-4 py-3 text-sm">
       <p>Needs review: {person.needsReviewReason}</p>
@@ -801,7 +805,7 @@ function ReviewBanner({
           .
         </p>
       )}
-      {(canReview || (canMerge && other)) && (
+      {(canDismiss || (canMerge && other)) && (
         <div className="flex flex-wrap gap-2 pt-1">
           {canMerge && other && (
             <Button variant="outline" size="sm" asChild>
@@ -810,7 +814,7 @@ function ReviewBanner({
               </Link>
             </Button>
           )}
-          {canReview && (
+          {canDismiss && (
             <NotADuplicate
               id={person.id}
               name={name}

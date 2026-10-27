@@ -58,5 +58,12 @@ export async function POST(
         "not_flagged",
         "This person is no longer flagged for review. Reload to see where they stand.",
       );
+    // §12.2: nobody proposed a pair, so there is nothing to call a duplicate.
+    case "not_a_pair":
+      return apiError(
+        422,
+        "not_a_pair",
+        "This flag is about this record, not a possible duplicate. Edit the person to fix what's flagged and it clears itself.",
+      );
   }
 }
