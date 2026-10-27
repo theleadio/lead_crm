@@ -580,3 +580,61 @@ test("the privacy link points at the page the marketing site actually serves", (
   // Unset: no link at all rather than one to nowhere.
   assert.equal(privacyUrl({}), null);
 });
+
+test("a captured enquiry leaves the form's page, so it cannot be lost", () => {
+  const submit = readFileSync(
+    new URL("../app/(public)/enquiry/submit.ts", import.meta.url),
+    "utf8",
+  );
+  // The answer lives at a URL, not in component state. The language control
+  // is a full navigation (§10.5), so a visitor who switched language after
+  // enquiring was shown the empty form again — and the remount handed them a
+  // fresh idempotency key, putting a second identical lead one submit away.
+  // §10.4's HRDC answer was moved for this reason; §10.3's was not, and had
+  // the same bug.
+  assert.match(
+    submit,
+    /redirect\(localePath\(locale, "\/enquiry\/thank-you"\)\)/,
+  );
+  assert.doesNotMatch(submit, /status: "success"/);
+
+  // Nothing can render a settled state any more, in either form.
+  const contract = readFileSync(
+    new URL("../app/(public)/enquiry/form-contract.ts", import.meta.url),
+    "utf8",
+  );
+  // The type line itself, not the file: the comment above it explains why
+  // "success" is gone and so names the word.
+  assert.match(contract, /status: "idle" \| "error";/);
+  assert.doesNotMatch(contract, /status: "idle" \| "error" \| "success"/);
+  const form = readFileSync(
+    new URL("../app/(public)/enquiry/enquiry-form.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(form, /successHeading|successBody/);
+
+  // And the id §8.2 answered with never reaches the URL (§13): the redirect
+  // target is a bare path, with no query and nothing interpolated into it.
+  // The code is checked, not the file — the comment there names both ids.
+  const target = /redirect\(localePath\(locale, (.+?)\)\)/.exec(submit)?.[1];
+  assert.equal(target, '"/enquiry/thank-you"');
+});
+
+test("the enquiry thank-you is served in both languages", () => {
+  for (const [file, locale] of [
+    ["(en)/enquiry/thank-you/page.tsx", "en"],
+    ["zh/enquiry/thank-you/page.tsx", "zh"],
+  ] as const) {
+    const src = readFileSync(
+      new URL(`../app/(public)/${file}`, import.meta.url),
+      "utf8",
+    );
+    // Each names its own locale, so the pair is a language switch away from
+    // each other rather than a dead end.
+    assert.ok(src.includes(`alternates("${locale}", "/enquiry/thank-you")`));
+    assert.ok(src.includes(`locale="${locale}"`));
+    // A confirmation is not a landing page: a searcher who found it would be
+    // told their enquiry was received when it was not.
+    assert.match(src, /robots: \{ index: false/);
+  }
+});

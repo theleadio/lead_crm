@@ -28,15 +28,13 @@ import { submitRegistration } from "./submit";
 // page says why it cannot take the booking and points at the enquiry form
 // (website-lead-capture).
 
-// §10.4's labels for the shared form (§10.3's fields, unchanged). The
-// success pair cannot be reached from this page — both answers leave it, for
-// Stripe or for /register/thank-you — and is kept only because the shared
-// form's labels require all four.
+// §10.4's labels for the shared form (§10.3's fields, unchanged): only the
+// two control words differ. Both of this page's answers leave it — for
+// Stripe, or for /register/thank-you — so there is no settled state here to
+// label.
 const REGISTER_LABELS: FormLabels = {
   submit: "register.submit",
   submitting: "register.submitting",
-  successHeading: "register.hrdc.heading",
-  successBody: "register.hrdc.body",
 };
 
 export async function RegisterPage({

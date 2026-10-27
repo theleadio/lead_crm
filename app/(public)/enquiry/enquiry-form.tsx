@@ -60,21 +60,19 @@ const blank = (locale: Locale): Values => ({
 // company, the HRDC box) — and differs only in these four strings, its action
 // and the hidden class code, so it reuses the component rather than copying
 // it. The defaults are §10.3's, so the enquiry page passes nothing.
+//
+// Only the two control words. There is no pair for the settled state, because
+// neither form has one any more: a successful enquiry goes to its thank-you
+// page and a registration leaves for Stripe or for /register/thank-you. The
+// answer a visitor gets lives at a URL, so switching language keeps it.
 export type FormLabels = {
   submit: DictKey;
   submitting: DictKey;
-  // What replaces the form when the action settles with `success`. For the
-  // enquiry that is the thank-you; for a registration it is the HRDC answer,
-  // because a card payment leaves for Stripe instead of returning a state.
-  successHeading: DictKey;
-  successBody: DictKey;
 };
 
 const ENQUIRY_LABELS: FormLabels = {
   submit: "form.submit",
   submitting: "form.submitting",
-  successHeading: "form.thankYou.heading",
-  successBody: "form.thankYou.body",
 };
 
 export function EnquiryForm({
@@ -122,21 +120,6 @@ export function EnquiryForm({
 
   const fieldError = (name: string): string | null =>
     (name === "email" ? localError : null) ?? state.fields[name] ?? null;
-
-  if (state.status === "success")
-    return (
-      // §13: the form is replaced by what happens next, and never by the
-      // personId or dealId §8.2 answered with.
-      <div
-        role="status"
-        className="border-line bg-surface-raised rounded-2xl border p-6"
-      >
-        <h2 className="text-ink text-lg font-semibold">
-          {t[labels.successHeading]}
-        </h2>
-        <p className="text-ink-muted mt-2 text-sm">{t[labels.successBody]}</p>
-      </div>
-    );
 
   // Keyed by field name, not by the message: two fields may now share a
   // sentence, and React needs the keys to stay distinct.

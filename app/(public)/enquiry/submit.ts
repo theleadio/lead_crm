@@ -8,7 +8,8 @@ import {
   parseTouch,
 } from "../attribution";
 import { handleLead } from "../../../lib/public/handlers.ts";
-import { isLocale, type Locale } from "../locale";
+import { redirect } from "next/navigation";
+import { isLocale, localePath, type Locale } from "../locale";
 import { isHoneypotFilled, type EnquiryState } from "./form-contract";
 import { FORM_NAME, buildRequest, fieldWording, wording } from "./lead-request";
 
@@ -87,10 +88,17 @@ export async function submitEnquiry(
   const response = await handleLead(buildRequest(payload, await headers()));
 
   if (response.ok)
-    // §8.2 answers with personId and dealId. Neither is carried into the
-    // state the page renders: a visitor has no use for them, and §13 says
-    // the thank-you names the next step, not an identifier.
-    return { status: "success", message: null, fields: {} };
+    // A page of its own rather than a state inside the form, for the same
+    // reason §10.4's HRDC answer is one: the language control is a full
+    // navigation (§10.5), so an answer held in component state was gone the
+    // moment a visitor switched language — they were shown the empty form
+    // again, and the remount handed them a fresh idempotency key, putting a
+    // second identical lead one submit away.
+    //
+    // §8.2 answers with a personId and a dealId. Neither goes into the URL or
+    // the page: a visitor has no use for them, and §13 says the thank-you
+    // names the next step, not an identifier.
+    redirect(localePath(locale, "/enquiry/thank-you"));
 
   const body = (await response.json().catch(() => null)) as {
     error?: { code?: string; fields?: Record<string, string> };
