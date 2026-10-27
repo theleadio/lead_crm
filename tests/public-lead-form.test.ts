@@ -125,6 +125,13 @@ test("the form's two checkboxes are controlled, like its text fields", () => {
   );
   // React 19 resets a settled `<form action>`, including on an error, so an
   // uncontrolled box would come back unticked after a refused submit.
+  //
+  // Controlling it is only half of it, which a browser showed and this file
+  // first did not: a reset goes back to the field's default, react-dom fixes
+  // a checkbox's defaultChecked when the input mounts and never again while
+  // `checked` is supplied, and it writes `checked` only when the prop
+  // changes. So the default has to follow the state, or the tick is lost
+  // with both boxes still reading as ticked in React's own state.
   for (const name of ["hrdcIntended", "consentMarketing"]) {
     const field = form.slice(form.indexOf(`name="${name}"`));
     assert.match(
@@ -133,6 +140,9 @@ test("the form's two checkboxes are controlled, like its text fields", () => {
       `${name} is not controlled`,
     );
   }
+  // The half the browser caught. Without this the state said ticked, the box
+  // read unticked, and the payload carried neither answer.
+  assert.match(form, /el\.defaultChecked = el\.checked;/);
 });
 
 test("Turnstile is rendered explicitly, and removed with the form", () => {

@@ -78,18 +78,33 @@ export function EnquiryForm({
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
   // React 19 resets a `<form action>` once the action settles, including when
-  // it settles with an error, so an uncontrolled checkbox comes back unticked
-  // after a refused submit while the controlled text fields keep what was
-  // typed. Consent is the one that matters: a visitor who does not notice
-  // would retry and have the lead saved with no consent and no
+  // it settles with an error, so a box the visitor ticked comes back unticked
+  // after a refused submit while the text fields keep what was typed.
+  // Consent is the one that matters: a visitor who does not notice would
+  // retry and have the lead saved with no consent and no
   // `funding_type = 'hrdc'` (§10.3, §8.2).
+  //
+  // Controlling the box is not enough on its own, and this is why the text
+  // fields behave differently. A reset restores every field to its default,
+  // and for a controlled text input React keeps the default in step with the
+  // value on every update — so the reset puts the typed text back. For a
+  // checkbox it does not: react-dom fixes defaultChecked once, when the
+  // input mounts, and leaves it alone on later updates while `checked` is
+  // supplied. The default therefore stays `false` for the life of the form,
+  // the reset reverts to it, and React writes `checked` again only when the
+  // prop changes — which it has not. Hence the line in the handler below:
+  // the state drives what is rendered, and the default follows the state so
+  // a reset has the right value to go back to.
   const [checks, setChecks] = useState({
     hrdcIntended: false,
     consentMarketing: false,
   });
   const check =
-    (k: keyof typeof checks) => (e: { target: { checked: boolean } }) =>
-      setChecks((c) => ({ ...c, [k]: e.target.checked }));
+    (k: keyof typeof checks) => (e: React.ChangeEvent<HTMLInputElement>) => {
+      const el = e.currentTarget;
+      el.defaultChecked = el.checked;
+      setChecks((c) => ({ ...c, [k]: el.checked }));
+    };
 
   // §14: focus follows what changed. aria-live announces the summary but
   // takes nobody to it, so without this the focus stays on a submit button
