@@ -1,7 +1,7 @@
 import type { ScheduleClass } from "@/lib/public/schedule";
 import type { Dict } from "../dictionaries.ts";
 import { enquiryUrl } from "../enquiry-link.ts";
-import { LOCALE_LABEL, type Locale } from "../locale.ts";
+import { localePath, type Locale } from "../locale.ts";
 
 // The 10.1 page's view rules, in a plain module so they can be tested without
 // React and imported from both the server page and the client list. Values
@@ -41,14 +41,20 @@ export function filterOptions(classes: ScheduleClass[]) {
   };
 }
 
-// The language a class is taught in, which is not the language the page is
-// read in: "English" and "中文" either way (§10.5, website-localisation). A
-// Chinese page lists an English class as English, because that is what the
-// visitor would be sitting in.
-export function languageLabel(language: string): string {
-  return language === "en" || language === "zh"
-    ? LOCALE_LABEL[language as Locale]
-    : language;
+// The language a class is taught in, named in the page's own language: an
+// English class reads "English" on the English page and 英文 on the Chinese
+// one (§10.5, website-localisation). Which class it is never changes — only
+// the word a reader is given for it, the same way the seats label and the
+// track are the page's words about the feed's data.
+export function languageLabel(language: string, t: Dict): string {
+  switch (language) {
+    case "en":
+      return t["language.en"];
+    case "zh":
+      return t["language.zh"];
+    default:
+      return language;
+  }
 }
 
 export function seatsLabel(c: ScheduleClass, t: Dict): string {
@@ -110,26 +116,26 @@ export type RegisterControl = {
   label: string;
 };
 
-// §10.4 is not built (O43, waiting on the Stripe keys), so every `registerUrl`
-// the feed gives points at a page the website does not serve. Until it ships
-// the card offers the enquiry link instead of a 404. Flip this one line when
-// 10.4 lands and the cards go back to the feed's URL.
-export const REGISTRATION_LIVE = false;
+// §10.4 landed, so a class can be registered for — when a payment can
+// actually complete. That is `checkoutConfigured(env)` in
+// lib/payments/checkout.ts: the Stripe secret and an absolute APP_BASE_URL.
+// The server page reads it and passes it in, because this module is imported
+// by the client list and may hold no `process.env`
+// (tests/client-boundary.test.ts). One answer for the route's 503 and for
+// these cards, so a card can never invite a visitor into a path that ends in
+// "not configured" (website-schedule, website-register).
 
-// A full class cannot be registered for, and neither can one whose register
-// URL is missing — a disabled control beats a link that goes nowhere (§10.1).
 export function registerControl(
   c: ScheduleClass,
   locale: Locale,
   t: Dict,
+  live: boolean,
 ): RegisterControl {
-  // Registration is not open to anyone yet, so the card asks for an enquiry
-  // whatever the class's seats say: enquiring about a full class is a fair
-  // thing to want, and the seats label beside it already says "Full".
-  // The enquiry form is our own page, in this page's own locale, and carries
-  // this class's code, so there is no "no destination" case left to disable
-  // the control for.
-  if (!REGISTRATION_LIVE)
+  // No payment provider configured: nobody can register, so the card asks
+  // for an enquiry whatever the class's seats say. The enquiry form is our
+  // own page, in this page's own locale, and carries this class's code, so
+  // there is no "no destination" case to disable the control for.
+  if (!live)
     return {
       href: enquiryUrl(locale, c.code),
       label: t["card.enquire"],
@@ -149,5 +155,13 @@ export function registerControl(
       label: t["card.register"],
       reason: t["card.register.notOpen"],
     };
-  return { href: c.registerUrl, label: t["card.register"], reason: null };
+  // Our own page, in this page's locale — not the feed's `registerUrl`, which
+  // names the marketing site's origin and carries no locale, so a Chinese
+  // reader would land on the English page. The feed's field is still read
+  // above: null there means registration is not reachable at all (§8.1).
+  return {
+    href: localePath(locale, `/register/${encodeURIComponent(c.code)}`),
+    label: t["card.register"],
+    reason: null,
+  };
 }

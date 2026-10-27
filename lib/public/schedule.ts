@@ -1,4 +1,5 @@
 import { db, withTransaction } from "../sql.ts";
+import { websiteBase } from "./links.ts";
 import {
   scheduleQuerySchema,
   type ScheduleQuery,
@@ -88,12 +89,6 @@ export async function listPublicSchedule(
         : null,
     })),
   };
-}
-
-// PUBLIC_WEBSITE_URL without trailing slashes, or null when unset (then every
-// registerUrl is null).
-export function websiteBase(env: Env): string | null {
-  return (env.PUBLIC_WEBSITE_URL ?? "").trim().replace(/\/+$/, "") || null;
 }
 
 // Runs fn in a transaction whose statements are cut off after ms milliseconds

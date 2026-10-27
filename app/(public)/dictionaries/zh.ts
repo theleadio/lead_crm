@@ -32,6 +32,9 @@ export const zh: Partial<Dict> = {
   "filter.noMatch": "没有课程符合这些筛选条件。",
   "filter.clear": "清除筛选",
 
+  "language.en": "英文",
+  "language.zh": "中文",
+
   "card.dates": "日期",
   "card.where": "地点",
   "card.price": "价格",
@@ -97,4 +100,48 @@ export const zh: Partial<Dict> = {
   "field.phone": "请填写可以联系到你的电话号码，不超过 40 个字符。",
   "field.tooLong": "内容太长，请缩短。",
   "field.default": "请检查这个栏位。",
+
+  "error.class_unavailable":
+    "这个班次已经不开放报名。请另选日期，或告诉我们你想上哪一班。",
+  "error.no_seats":
+    "你填写的时候，最后一个座位刚好被订走了。请另选日期，或问我们下一班。",
+  "error.already_enrolled":
+    "你已经报名这个班次。详情在我们发给你的邮件里；如果没有收到，请告诉我们。",
+
+  "register.title": "报名 — LEAD",
+  "register.description":
+    "报名 LEAD 即将开课的班次。可以用银行卡付款，也可以告诉我们你要用 HRDC 申请。",
+  "register.heading": "报名 {course}",
+  "register.standfirst": "继续下一步后，座位为你保留 24 小时。",
+  "register.summary.dates": "日期",
+  "register.summary.time": "时间",
+  "register.summary.where": "地点",
+  "register.summary.price": "费用",
+  "register.summary.seats": "座位",
+  "register.submit": "继续付款",
+  "register.submitting": "正在前往付款页…",
+  "register.hrdcNote":
+    "要用 HRDC 申请？勾选下面的选项，我们会向你的公司开发票，不收银行卡付款。",
+  "register.hrdc.heading": "关于 HRDC 申请，我们会联系你。",
+  "register.hrdc.body":
+    "HRDC 的座位以发票结算，不用银行卡付款。我们的同事会联系你办理申请并确认座位。",
+  "register.unavailable.heading": "这个班次不开放报名",
+  "register.unavailable.body":
+    "它可能已经开课、满座，或者已经从课表撤下。最新的日期都在课表页上。",
+  "register.full.heading": "这个班次已满座",
+  "register.full.body": "问我们下一个日期，一开放我们就通知你。",
+  "register.closed.heading": "报名尚未开放",
+  "register.closed.body":
+    "这个班次暂时无法用银行卡付款。告诉我们你有兴趣，我们会回复你。",
+  "register.toSchedule": "查看课表",
+  "register.toEnquiry": "咨询这个班次",
+
+  "thankYou.title": "谢谢 — LEAD",
+  "thankYou.description": "报名已经完成，以下是接下来的安排。",
+  "thankYou.heading": "谢谢你，付款已经完成。",
+  "thankYou.body":
+    "我们会用电子邮件和 WhatsApp 发给你上课资料，包括地点、开始时间和需要准备的东西。",
+  "thankYou.noSession.heading": "目前还没有确认的报名",
+  "thankYou.noSession.body":
+    "这个页面上找不到对应的付款记录。如果你中途离开了，请从课表重新开始，或者告诉我们，我们帮你查。",
 };

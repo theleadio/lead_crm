@@ -26,6 +26,14 @@ export function wording(code: string, locale: Locale): string {
       return t["error.payload_too_large"];
     case "validation_failed":
       return t["error.validation_failed"];
+    // §8.3's refusals (website-register). Each says what to do next, because
+    // the visitor can act on all three: pick another class, enquire, or stop.
+    case "class_unavailable":
+      return t["error.class_unavailable"];
+    case "no_seats":
+      return t["error.no_seats"];
+    case "already_enrolled":
+      return t["error.already_enrolled"];
     // An unset key, an unset rate-limit secret or a key we got wrong is our
     // deployment's fault, not the visitor's, so it never reads as their
     // mistake — and it is logged, because nobody else will notice it.
@@ -72,6 +80,10 @@ export function buildRequest(
   payload: Record<string, unknown>,
   incoming: Headers,
   env: Env = process.env,
+  // Which §8 route this is for: "/leads" (§8.2) or "/register" (§8.3). Only
+  // the URL changes — the key, the IP and the Referer handshake below are the
+  // same door, and both routes read the same three headers.
+  path: "/leads" | "/register" = "/leads",
 ): Request {
   const headerBag: Record<string, string> = {
     "content-type": "application/json",
@@ -105,7 +117,7 @@ export function buildRequest(
 
   // The URL is never fetched. Request requires one, and §8.2 reads only the
   // method, the headers and the body.
-  return new Request("https://lead-crm.internal/api/public/leads", {
+  return new Request(`https://lead-crm.internal/api/public${path}`, {
     method: "POST",
     headers: headerBag,
     body: JSON.stringify(payload),

@@ -100,3 +100,24 @@ export const leadSchema = z
       });
   });
 export type LeadInput = z.output<typeof leadSchema>;
+
+// POST /api/public/register (§8.3): everything §8.2 takes, plus the class to
+// book and whether HRDC is claimed — both required, because a registration
+// with no class is not one, and the HRDC answer decides whether the visitor
+// ever reaches Stripe.
+//
+// `locale` was added to the body on 26 Oct with Shawn's agreement: it picks
+// between the English and Chinese return addresses and nothing else. It is
+// not stored, not part of the capture, and not the lead's preferred language.
+export const registerSchema = leadSchema.safeExtend({
+  classCode: z.string().trim().min(1, "Choose a class").max(50),
+  hrdcIntended: z
+    .boolean()
+    .nullish()
+    .transform((v) => v === true),
+  locale: z
+    .enum(["en", "zh"])
+    .nullish()
+    .transform((v) => v ?? "en"),
+});
+export type RegisterInput = z.output<typeof registerSchema>;

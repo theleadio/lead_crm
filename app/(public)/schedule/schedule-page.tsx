@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { formatDateTime } from "@/lib/format/date";
+import { checkoutConfigured } from "@/lib/payments/checkout";
 import { dictionary, fill } from "../dictionaries";
 import { enquiryUrl } from "../enquiry-link";
 import type { Locale } from "../locale";
@@ -20,6 +21,10 @@ import { ScheduleList } from "./schedule-list";
 export async function SchedulePage({ locale }: { locale: Locale }) {
   const t = dictionary(locale);
   const { classes, generatedAt } = await getSchedule();
+  // §10.4: a card offers registration only where a payment can complete —
+  // the Stripe secret and an absolute APP_BASE_URL. Read here, on the server,
+  // and passed down, so the client list holds no environment (§10.5).
+  const live = checkoutConfigured(process.env);
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6">
@@ -50,7 +55,7 @@ export async function SchedulePage({ locale }: { locale: Locale }) {
               when: formatDateTime(generatedAt),
             })}
           </p>
-          <ScheduleList classes={classes} locale={locale} t={t} />
+          <ScheduleList classes={classes} locale={locale} t={t} live={live} />
         </>
       )}
     </main>

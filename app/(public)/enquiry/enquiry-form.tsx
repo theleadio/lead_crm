@@ -4,12 +4,13 @@ import Script from "next/script";
 import { useActionState, useEffect, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { Dict } from "../dictionaries";
+import type { Dict, DictKey } from "../dictionaries";
 import type { Locale } from "../locale";
 import {
   EMPTY_STATE,
   HONEYPOT_FIELD,
   newIdempotencyKey,
+  type EnquiryState,
 } from "./form-contract";
 import { submitEnquiry } from "./submit";
 
@@ -54,23 +55,48 @@ const blank = (locale: Locale): Values => ({
   message: "",
 });
 
+// Which words the controls and the settled state use. §10.4's register page
+// renders this same form — the field set is identical (§10.3's fields, the
+// company, the HRDC box) — and differs only in these four strings, its action
+// and the hidden class code, so it reuses the component rather than copying
+// it. The defaults are §10.3's, so the enquiry page passes nothing.
+export type FormLabels = {
+  submit: DictKey;
+  submitting: DictKey;
+  // What replaces the form when the action settles with `success`. For the
+  // enquiry that is the thank-you; for a registration it is the HRDC answer,
+  // because a card payment leaves for Stripe instead of returning a state.
+  successHeading: DictKey;
+  successBody: DictKey;
+};
+
+const ENQUIRY_LABELS: FormLabels = {
+  submit: "form.submit",
+  submitting: "form.submitting",
+  successHeading: "form.thankYou.heading",
+  successBody: "form.thankYou.body",
+};
+
 export function EnquiryForm({
   classCode,
   courseCode,
   privacyUrl,
   locale,
   t,
+  action = submitEnquiry,
+  labels = ENQUIRY_LABELS,
 }: {
   classCode: string | null;
   courseCode: string | null;
   privacyUrl: string | null;
   locale: Locale;
   t: Dict;
+  // A server action with §13's state shape. Both §8.2's and §8.3's submit
+  // paths have it, and a checkout answer redirects instead of returning.
+  action?: (prev: EnquiryState, form: FormData) => Promise<EnquiryState>;
+  labels?: FormLabels;
 }) {
-  const [state, formAction, pending] = useActionState(
-    submitEnquiry,
-    EMPTY_STATE,
-  );
+  const [state, formAction, pending] = useActionState(action, EMPTY_STATE);
   const [values, setValues] = useState<Values>(() => blank(locale));
   // Email-or-phone, checked before the action is dispatched (§10.3). The
   // server checks it too — this only saves a round trip.
@@ -106,9 +132,9 @@ export function EnquiryForm({
         className="border-line bg-surface-raised rounded-2xl border p-6"
       >
         <h2 className="text-ink text-lg font-semibold">
-          {t["form.thankYou.heading"]}
+          {t[labels.successHeading]}
         </h2>
-        <p className="text-ink-muted mt-2 text-sm">{t["form.thankYou.body"]}</p>
+        <p className="text-ink-muted mt-2 text-sm">{t[labels.successBody]}</p>
       </div>
     );
 
@@ -333,7 +359,7 @@ export function EnquiryForm({
 
       <div className="flex flex-wrap items-center gap-4 pt-1">
         <Button type="submit" disabled={pending}>
-          {pending ? t["form.submitting"] : t["form.submit"]}
+          {pending ? t[labels.submitting] : t[labels.submit]}
         </Button>
         {privacyUrl && (
           <a

@@ -86,12 +86,15 @@ export function ScheduleList({
   classes,
   locale,
   t,
+  live,
 }: {
   classes: ScheduleClass[];
   // The page's locale and its words, read on the server. No env and no
   // dictionary import reaches the browser this way.
   locale: Locale;
   t: Dict;
+  // §10.4: whether registration can complete, decided on the server.
+  live: boolean;
 }) {
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const options = filterOptions(classes);
@@ -114,7 +117,7 @@ export function ScheduleList({
           label={t["filter.language"]}
           value={filters.language}
           onChange={set("language")}
-          options={options.languages.map((v) => [v, languageLabel(v)])}
+          options={options.languages.map((v) => [v, languageLabel(v, t)])}
         />
         <FilterChip
           label={t["filter.track"]}
@@ -146,7 +149,7 @@ export function ScheduleList({
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {shown.map((c) => (
-            <ClassCard key={c.id} cls={c} locale={locale} t={t} />
+            <ClassCard key={c.id} cls={c} locale={locale} t={t} live={live} />
           ))}
         </div>
       )}

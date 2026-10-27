@@ -1,4 +1,5 @@
 import { formatDate } from "@/lib/format/date";
+import { privacyUrl } from "@/lib/public/links";
 import { dictionary, fill } from "../dictionaries";
 import type { Locale } from "../locale";
 import { getSchedule } from "../schedule/feed";
@@ -13,17 +14,11 @@ import { EnquiryForm } from "./enquiry-form";
 // the class it names, and everything sent to §8.2, are otherwise identical
 // (website-lead-capture).
 
-// §10.3 wants the privacy notice beside the submit control. This app has no
-// privacy page of its own, so the link points at the marketing site's, and is
-// left out entirely when PUBLIC_WEBSITE_URL is unset — a dead link next to a
-// consent box is worse than no link. The notice is the same one in both
-// locales until marketing says a Chinese one exists (proposal L3); only the
-// link's text is localised, because a consent box needs a notice beside it in
-// either language.
-function privacyUrl(env: NodeJS.ProcessEnv = process.env): string | null {
-  const base = (env.PUBLIC_WEBSITE_URL ?? "").trim().replace(/\/+$/, "");
-  return base ? `${base}/privacy` : null;
-}
+// §10.3 wants the privacy notice beside the submit control, which
+// `privacyUrl` provides. The notice is the same one in both locales until
+// marketing says a Chinese one exists (proposal L3); only the link's text is
+// localised, because a consent box needs a notice beside it in either
+// language.
 
 export async function EnquiryPage({
   locale,

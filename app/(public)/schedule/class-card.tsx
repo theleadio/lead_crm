@@ -23,13 +23,17 @@ export function ClassCard({
   cls,
   locale,
   t,
+  live,
 }: {
   cls: ScheduleClass;
   locale: Locale;
   t: Dict;
+  // Whether a payment can complete at all, read from configuration by the
+  // server page (§10.4). False = every card asks for an enquiry instead.
+  live: boolean;
 }) {
   const time = timeLabel(cls);
-  const control = registerControl(cls, locale, t);
+  const control = registerControl(cls, locale, t, live);
   // §14: the card is named by its own heading rather than a duplicate label,
   // and a disabled control says why in the same tree a screen reader walks.
   const headingId = `class-${cls.id}-name`;
@@ -62,9 +66,16 @@ export function ClassCard({
           {cls.courseName}
         </h2>
         <div className="flex flex-wrap gap-1.5">
-          {/* The language the class is taught in, not the language this page
-              is read in: the same two words in both locales. */}
-          <Badge variant="outline">{languageLabel(cls.language)}</Badge>
+          {/* The language the class is taught in, in this page's own words:
+              an English class reads "English" here and 英文 on the Chinese
+              page. A Chinese class still reads 中文 on the English page, so
+              the script goes on the element where the two meet (§14). */}
+          <Badge
+            variant="outline"
+            lang={cls.language === "zh" ? LOCALE_LANG.zh : undefined}
+          >
+            {languageLabel(cls.language, t)}
+          </Badge>
           {cls.hrdcClaimable && (
             <Badge variant="success">{t["card.hrdc"]}</Badge>
           )}

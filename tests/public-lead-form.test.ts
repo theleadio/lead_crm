@@ -10,6 +10,7 @@ import {
   trimUrl,
 } from "../app/(public)/attribution.ts";
 import { cleanUrl } from "../lib/public/leads.ts";
+import { privacyUrl } from "../lib/public/links.ts";
 import {
   HONEYPOT_FIELD,
   isHoneypotFilled,
@@ -566,4 +567,16 @@ test("no secret reaches either locale's page", () => {
   const form = readSrc("../app/(public)/enquiry/enquiry-form.tsx");
   const envs = form.match(/process\.env\.[A-Z_]+/g) ?? [];
   assert.deepEqual(envs, ["process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY"]);
+});
+
+// Shawn checked thelead.io on 26 Oct 2026 (PR #11): the notice is at /terms,
+// and /privacy and /privacy-policy both 404. A consent box beside a dead link
+// is the failure this test exists to catch.
+test("the privacy link points at the page the marketing site actually serves", () => {
+  assert.equal(
+    privacyUrl({ PUBLIC_WEBSITE_URL: "https://thelead.io/" }),
+    "https://thelead.io/terms",
+  );
+  // Unset: no link at all rather than one to nowhere.
+  assert.equal(privacyUrl({}), null);
 });

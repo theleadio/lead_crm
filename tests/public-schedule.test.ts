@@ -12,7 +12,6 @@ import {
   filterOptions,
   languageLabel,
   placeLabel,
-  REGISTRATION_LIVE,
   registerControl,
   seatsLabel,
   timeLabel,
@@ -91,62 +90,118 @@ const cls = (over: Partial<ScheduleClass> = {}): ScheduleClass => ({
   ...over,
 });
 
-// §10.4 is not built, so REGISTRATION_LIVE is false and every card asks for an
-// enquiry. These tests cover what ships today; the block below covers the
-// rules that take over when the flag flips.
-test("register control: every class offers the enquiry link while 10.4 is unbuilt", () => {
-  assert.equal(REGISTRATION_LIVE, false, "10.4 shipped? update these tests");
+// §10.4 shipped, so what a card offers depends on whether a payment can
+// complete: `checkoutConfigured(env)` is read by the server page and passed
+// in. `live: false` is the state a deployment with no Stripe key is in, and
+// every card then asks for an enquiry instead (website-schedule).
+test("register control: with no payment provider, every class offers the enquiry link", () => {
   for (const seatsLabel of ["available", "few_seats", "full"] as const)
-    assert.deepEqual(registerControl(cls({ seatsLabel }), "en", EN), {
+    assert.deepEqual(registerControl(cls({ seatsLabel }), "en", EN, false), {
       // §10.3: our own form, carrying the class code so the lead's deal is
       // attached to this class.
       href: "/enquiry?class=AIA-2610-EN",
       label: "Enquire",
       reason: null,
     });
-  // Never the feed's URL: it points at a page the website does not serve.
-  const control = registerControl(cls(), "en", EN);
+  // Never the feed's URL: it names the marketing site, not this app.
+  const control = registerControl(cls(), "en", EN, false);
   assert.notEqual(control.href, base.registerUrl);
   // And never the wording that promises a date we cannot name.
   assert.doesNotMatch(control.label, /soon/i);
 });
 
-test("register control: the enquiry destination always exists now", () => {
+test("register control: the enquiry destination always exists", () => {
   // The disabled "no enquiry URL" branch is gone: the form is a page this
   // app serves, so there is no configuration under which the control leads
   // nowhere. A class code is escaped rather than trusted into the URL.
-  const control = registerControl(cls({ code: "A&B 2611/EN" }), "en", EN);
+  const control = registerControl(
+    cls({ code: "A&B 2611/EN" }),
+    "en",
+    EN,
+    false,
+  );
   assert.equal(control.href, "/enquiry?class=A%26B%202611%2FEN");
   assert.equal(control.reason, null);
 });
 
-// The REGISTRATION_LIVE = true rules, called directly so they are covered
-// before the flag flips. Delete the wrapper when 10.4 ships.
-const live = (c: ScheduleClass) =>
-  c.seatsLabel === "full"
-    ? { href: null, label: "Register", reason: "This class is full" }
-    : c.registerUrl
-      ? { href: c.registerUrl, label: "Register", reason: null }
-      : {
-          href: null,
-          label: "Register",
-          reason: "Registration isn't open for this class yet",
-        };
+test("register control: a bookable class links to this app's register page", () => {
+  for (const seatsLabel of ["available", "few_seats"] as const) {
+    const control = registerControl(cls({ seatsLabel }), "en", EN, true);
+    assert.deepEqual(control, {
+      href: "/register/AIA-2610-EN",
+      label: "Register",
+      reason: null,
+    });
+    // Not the feed's absolute URL: it carries no locale, so a Chinese reader
+    // would land on the English page (website-schedule).
+    assert.notEqual(control.href, base.registerUrl);
+  }
+});
 
-test("register control: once 10.4 ships, full is disabled and bookable links to its register URL", () => {
-  assert.deepEqual(live(cls({ seatsLabel: "full" })), {
+test("register control: a full class is disabled and says why", () => {
+  const control = registerControl(cls({ seatsLabel: "full" }), "en", EN, true);
+  assert.deepEqual(control, {
     href: null,
     label: "Register",
     reason: "This class is full",
   });
-  assert.deepEqual(live(cls({ seatsLabel: "few_seats" })), {
-    href: base.registerUrl,
-    label: "Register",
-    reason: null,
-  });
-  const noUrl = live(cls({ registerUrl: null }));
-  assert.equal(noUrl.href, null);
-  assert.ok(noUrl.reason);
+});
+
+test("register control: a class with no register URL is disabled, not an empty link", () => {
+  // §8.1's field is still the signal for "registration is not reachable at
+  // all" — PUBLIC_WEBSITE_URL unset, for instance.
+  for (const seatsLabel of ["available", "few_seats"] as const) {
+    const control = registerControl(
+      cls({ seatsLabel, registerUrl: null }),
+      "en",
+      EN,
+      true,
+    );
+    assert.equal(control.href, null);
+    assert.ok(control.reason);
+  }
+});
+
+test("register control: both locales, in their own words and their own path", () => {
+  const zh = registerControl(cls(), "zh", ZH, true);
+  assert.equal(zh.href, "/zh/register/AIA-2610-EN");
+  assert.equal(zh.label, ZH["card.register"]);
+  assert.notEqual(zh.label, EN["card.register"]);
+  // A full class on the Chinese page: the reason is Chinese too.
+  const full = registerControl(cls({ seatsLabel: "full" }), "zh", ZH, true);
+  assert.equal(full.reason, ZH["card.register.full"]);
+  // And a class code is escaped into the path, not trusted into it.
+  assert.equal(
+    registerControl(cls({ code: "A&B 2611/EN" }), "zh", ZH, true).href,
+    "/zh/register/A%26B%202611%2FEN",
+  );
+});
+
+test("one decision for every card: the flag is read once, on the server", () => {
+  const view = readFileSync(
+    new URL("../app/(public)/schedule/schedule-view.ts", import.meta.url),
+    "utf8",
+  );
+  // No constant and no environment read in the module the client list
+  // imports: the page decides, so no deploy can leave the cards and the
+  // route disagreeing (website-register). Comments are stripped first — this
+  // file's own prose names `process.env` to say it must not read it.
+  const code = view
+    .split(/\r?\n/)
+    .filter((l) => !l.trim().startsWith("//"))
+    .join("\n");
+  assert.doesNotMatch(code, /REGISTRATION_LIVE/);
+  assert.doesNotMatch(code, /process\.env/);
+  const page = readFileSync(
+    new URL("../app/(public)/schedule/schedule-page.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(page, /checkoutConfigured\(process\.env\)/);
+  assert.equal(
+    page.match(/checkoutConfigured/g)?.length,
+    2,
+    "read once, in one place (the import and the call)",
+  );
 });
 
 test("a class with no time shows the date alone", () => {
@@ -237,14 +292,16 @@ test("the card's own words are localised and the class's data is not", () => {
   assert.equal(placeLabel(c, ZH), placeLabel(c, EN));
 });
 
-test("the language badge names the class's language, not the page's", () => {
-  // The same two words in both locales: it says what the visitor would be
-  // sitting in, which does not change with the language they are reading.
-  assert.equal(languageLabel("en"), "English");
-  assert.equal(languageLabel("zh"), "中文");
+test("the language badge names the class's language in the page's words", () => {
+  // Which class it is does not change; the word for it follows the reader.
+  assert.equal(languageLabel("en", EN), "English");
+  assert.equal(languageLabel("zh", EN), "中文");
+  assert.equal(languageLabel("en", ZH), "英文");
+  assert.equal(languageLabel("zh", ZH), "中文");
   // A value the feed could only give us after a schema change is shown as it
-  // came rather than guessed at.
-  assert.equal(languageLabel("ms"), "ms");
+  // came rather than guessed at, in either locale.
+  assert.equal(languageLabel("ms", EN), "ms");
+  assert.equal(languageLabel("ms", ZH), "ms");
 });
 
 test("every track has a word in both locales", () => {
@@ -267,18 +324,21 @@ test("every track has a word in both locales", () => {
 
 test("a card's enquiry control carries its page's locale and the class code", () => {
   assert.equal(
-    registerControl(cls(), "zh", ZH).href,
+    registerControl(cls(), "zh", ZH, false).href,
     "/zh/enquiry?class=AIA-2610-EN",
   );
   assert.equal(
-    registerControl(cls(), "en", EN).href,
+    registerControl(cls(), "en", EN, false).href,
     "/enquiry?class=AIA-2610-EN",
   );
   // The label is the page's language; the code is not.
-  assert.equal(registerControl(cls(), "zh", ZH).label, ZH["card.enquire"]);
+  assert.equal(
+    registerControl(cls(), "zh", ZH, false).label,
+    ZH["card.enquire"],
+  );
   assert.notEqual(
-    registerControl(cls(), "zh", ZH).label,
-    registerControl(cls(), "en", EN).label,
+    registerControl(cls(), "zh", ZH, false).label,
+    registerControl(cls(), "en", EN, false).label,
   );
 });
 

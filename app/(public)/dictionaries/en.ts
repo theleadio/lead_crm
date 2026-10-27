@@ -32,6 +32,11 @@ export const en = {
   "filter.noMatch": "No class matches these filters.",
   "filter.clear": "Clear filters",
 
+  // The language a class is taught in, as the card's badge, the language
+  // filter and the register summary all name it.
+  "language.en": "English",
+  "language.zh": "中文",
+
   "card.dates": "Dates",
   "card.where": "Where",
   "card.price": "Price",
@@ -98,6 +103,13 @@ export const en = {
   "error.payload_too_large":
     "That message is too long. Please shorten it and try again.",
   "error.validation_failed": "Please check the highlighted fields.",
+  // §8.3's three refusals (website-register). Each names what to do next.
+  "error.class_unavailable":
+    "That class isn't open for registration any more. Pick another date, or tell us what you're after.",
+  "error.no_seats":
+    "The last seat went while you were filling this in. Pick another date, or ask us about the next one.",
+  "error.already_enrolled":
+    "You're already registered for this class. Check your email for the details, or ask us if nothing arrived.",
   // An unset key, an unset rate-limit secret or a key we got wrong is our
   // deployment's fault, not the visitor's.
   "error.not_configured":
@@ -115,4 +127,49 @@ export const en = {
   // summary above the form does not repeat it once per field.
   "field.tooLong": "That is too long — please shorten it.",
   "field.default": "Please check this field.",
+
+  // §10.4 — the register page. The class's own details (course name, code,
+  // dates, venue, price) stay as the §8.1 feed gave them in both locales.
+  "register.title": "Register — LEAD",
+  "register.description":
+    "Take your seat in an upcoming LEAD class. Pay by card, or tell us you're claiming under HRDC.",
+  "register.heading": "Register for {course}",
+  "register.standfirst": "Your seat is held for 24 hours once you continue.",
+  "register.summary.dates": "Dates",
+  "register.summary.time": "Time",
+  "register.summary.where": "Where",
+  "register.summary.price": "Price",
+  "register.summary.seats": "Seats",
+  "register.submit": "Continue to payment",
+  "register.submitting": "Taking you to payment…",
+  "register.hrdcNote":
+    "Claiming under HRDC? Tick the box and we'll invoice your employer instead of taking card payment.",
+  "register.hrdc.heading": "We'll be in touch about HRDC claiming.",
+  "register.hrdc.body":
+    "HRDC seats are invoiced, not paid by card. Our team will contact you to set up the claim and confirm your seat.",
+  // A class the §8.1 feed does not list: unknown, private, past, cancelled or
+  // completed. Not a 404 — the visitor came from somewhere, so the page names
+  // the way on.
+  "register.unavailable.heading": "This class isn't open for registration",
+  "register.unavailable.body":
+    "It may have started, filled up or been taken off the schedule. The current dates are on the schedule page.",
+  "register.full.heading": "This class is full",
+  "register.full.body":
+    "Ask us about the next date — we'll tell you as soon as one opens.",
+  "register.closed.heading": "Registration isn't open yet",
+  "register.closed.body":
+    "We can't take card payments for this class yet. Tell us you're interested and we'll come back to you.",
+  "register.toSchedule": "See the schedule",
+  "register.toEnquiry": "Ask about this class",
+
+  // The page Stripe returns a payer to. It confirms and creates nothing: the
+  // enrolment is confirmed by the payment webhook (§11.2).
+  "thankYou.title": "Thank you — LEAD",
+  "thankYou.description": "Your registration is in. Here's what happens next.",
+  "thankYou.heading": "Thank you — your payment went through.",
+  "thankYou.body":
+    "We'll send your joining details by email and WhatsApp, including the venue, the start time and what to bring.",
+  "thankYou.noSession.heading": "Nothing is confirmed yet",
+  "thankYou.noSession.body":
+    "We have no payment to show against this page. If you were part-way through, start again from the schedule, or ask us and we'll check.",
 } as const;
