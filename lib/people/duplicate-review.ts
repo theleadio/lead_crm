@@ -14,6 +14,14 @@ import { db, withTransaction } from "../sql.ts";
 
 export type DuplicatePair = { id: string; fullName: string };
 
+// §12.2: `phone_unnormalised` and `no_name` (§11.2) name a defect in one
+// record rather than a proposed pair, so they raise no task, have no dismiss
+// and clear through the person edit that fixes the record. Every other reason
+// means §12.2 rule 3 matched someone.
+const DEFECT_REASONS = ["phone_unnormalised", "no_name"];
+export const reasonProposesPair = (reason: string | null): boolean =>
+  reason !== null && !DEFECT_REASONS.includes(reason);
+
 // §7.1: §9.3 merge is super_admin's alone, so the task goes to one of them.
 // The longest-serving active one, deterministically — §9.0 My tasks reads by
 // assignee, so an unassigned task is invisible while §9.14 is unbuilt.
@@ -96,7 +104,9 @@ export type DismissResult =
   | { kind: "stale" }
   // The flag went while this request was in flight — someone else dismissed
   // it, or a merge took the record out of the queue.
-  | { kind: "not_flagged" };
+  | { kind: "not_flagged" }
+  // The flag names a defect in this record, so there is no pair to judge.
+  | { kind: "not_a_pair" };
 
 // §12.2: two people who really are different. Clearing the flag is not an
 // edit of the person, so it is not part of PATCH /api/people/:id — a name
@@ -120,6 +130,10 @@ export async function clearReviewFlag(
       WHERE id = ${personId} AND deleted_at IS NULL AND merged_into_id IS NULL`;
     if (!before) return { kind: "not_found" };
     if (!before.needs_review) return { kind: "not_flagged" };
+    // Before the version check: reloading cannot turn a record defect into a
+    // pair, so a stale version here would invite a retry that fails anyway.
+    if (!reasonProposesPair(before.needs_review_reason))
+      return { kind: "not_a_pair" };
     if (before.version !== ifMatch) return { kind: "stale" };
 
     // The pair is read before the task is closed, so the audit row can say

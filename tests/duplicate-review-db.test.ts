@@ -38,6 +38,9 @@ async function seedPerson(fullName: string, email?: string) {
   return row.id as string;
 }
 
+const auditCount = async () =>
+  (await db()`SELECT count(*)::int AS n FROM audit_log`)[0].n as number;
+
 const pairTasksFor = (personId: string) => db()`
   SELECT id, person_id, related_person_id, assigned_user_id, due_at, done_at
   FROM task
@@ -243,11 +246,11 @@ it("a pair whose other record is gone is not offered", async () => {
 });
 
 // A flagged person with a recorded pair, the state the dismiss acts on.
-async function seedFlaggedPair() {
+async function seedFlaggedPair(reason = "possible_duplicate_company") {
   const candidate = await seedPerson("Dismiss Target");
   const flagged = await seedPerson("Dismiss Source");
   await db()`UPDATE person SET needs_review = true,
-             needs_review_reason = 'possible_duplicate_company'
+             needs_review_reason = ${reason}
              WHERE id = ${flagged}`;
   await raiseDuplicateTask(
     flagged,
@@ -312,6 +315,34 @@ it("the queue roles may dismiss; the others may not", async () => {
   }
 });
 
+// §12.2: a record flagged before pairs were kept, or one whose candidate has
+// since been merged away, has no task to close — the route needs only the
+// flag, so it stays dismissible.
+it("a pair reason with no open task is still dismissible", async () => {
+  const flagged = await seedPerson("No Task Source");
+  await db()`UPDATE person SET needs_review = true,
+             needs_review_reason = 'possible_duplicate_email'
+             WHERE id = ${flagged}`;
+  const [row] =
+    await db()`SELECT version::int AS v FROM person WHERE id = ${flagged}`;
+  assert.equal(await openPairFor(flagged), null, "no pair recorded");
+
+  const r = await clearReviewFlag(flagged, undefined, row.v, admin);
+  assert.equal(r.kind, "dismissed");
+  const [person] = await db()`
+    SELECT needs_review, needs_review_reason FROM person WHERE id = ${flagged}`;
+  assert.equal(person.needs_review, false);
+  assert.equal(person.needs_review_reason, null);
+
+  const [audit] = await db()`
+    SELECT before, after FROM audit_log
+    WHERE entity = 'person' AND entity_id = ${flagged} AND action = 'update'
+    ORDER BY at DESC LIMIT 1`;
+  assert.equal(audit.before.needsReviewReason, "possible_duplicate_email");
+  assert.equal(audit.before.duplicateOf, null);
+  assert.equal(audit.after.notADuplicate, true);
+});
+
 it("a stale version is refused and the flag stays", async () => {
   const { flagged, version } = await seedFlaggedPair();
   const r = await clearReviewFlag(flagged, undefined, version + 1, admin);
@@ -319,6 +350,34 @@ it("a stale version is refused and the flag stays", async () => {
   const [person] =
     await db()`SELECT needs_review FROM person WHERE id = ${flagged}`;
   assert.equal(person.needs_review, true);
+});
+
+// §12.2 (O50): `no_name` and `phone_unnormalised` name a defect in the record
+// itself. The pair task here is set up anyway, so the test can prove a
+// refused dismissal closes nothing.
+it("a flag about this record alone is not a pair to dismiss", async () => {
+  for (const reason of ["no_name", "phone_unnormalised"]) {
+    const { flagged, version } = await seedFlaggedPair(reason);
+    const audits = await auditCount();
+    const r = await clearReviewFlag(flagged, "mine", version, admin);
+    assert.equal(r.kind, "not_a_pair", reason);
+
+    const [person] = await db()`
+      SELECT needs_review, needs_review_reason FROM person WHERE id = ${flagged}`;
+    assert.equal(person.needs_review, true, reason);
+    assert.equal(person.needs_review_reason, reason);
+    const [task] = await pairTasksFor(flagged);
+    assert.equal(task.done_at, null, `task left open for ${reason}`);
+    assert.equal(await auditCount(), audits, `nothing logged for ${reason}`);
+  }
+});
+
+// Reloading cannot turn a record defect into a pair, so the refusal that
+// stands must be the permanent one — a `stale_edit` would invite a retry.
+it("not a pair outranks a stale version", async () => {
+  const { flagged, version } = await seedFlaggedPair("no_name");
+  const r = await clearReviewFlag(flagged, undefined, version + 1, admin);
+  assert.equal(r.kind, "not_a_pair");
 });
 
 it("a second dismissal is refused rather than reported as done", async () => {
