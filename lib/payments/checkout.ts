@@ -130,7 +130,15 @@ export function sessionBody(
 export const idempotencyKey = (enrolmentId: string) =>
   `enrolment:${enrolmentId}`;
 
-export function stripeCheckout(
+// §8.3's session call, named as the spec names it (v1.24, #13), because it is
+// shared: `POST /api/public/register` injects it and `POST /api/deals/:id/
+// checkout-link` (§7) will call the same function rather than write a second
+// one. So it takes no form-shaped and no locale argument — both callers hand
+// it the same CheckoutInput, and whoever builds the return addresses decides
+// the locale before it gets here.
+//
+// `fetchImpl` is the seam the tests use; nothing else should pass it.
+export function createCheckoutSession(
   env: Env,
   fetchImpl: typeof fetch = fetch,
 ): CheckoutPort {

@@ -10,7 +10,7 @@ import {
   idempotencyKey,
   senFromMyr,
   sessionBody,
-  stripeCheckout,
+  createCheckoutSession,
   type CheckoutInput,
 } from "../lib/payments/checkout.ts";
 
@@ -123,7 +123,10 @@ test("a hold inside half an hour is raised to Stripe's minimum", () => {
 
 test("one idempotency key per reservation, not per submission", async () => {
   const stripe = fakeStripe();
-  const port = stripeCheckout({ STRIPE_SECRET_KEY: "sk_test_x" }, stripe.fetch);
+  const port = createCheckoutSession(
+    { STRIPE_SECRET_KEY: "sk_test_x" },
+    stripe.fetch,
+  );
   await port(input());
   await port(input());
   const keys = stripe.calls.map(
@@ -135,7 +138,10 @@ test("one idempotency key per reservation, not per submission", async () => {
 
 test("the call carries the secret as a bearer token and a timeout", async () => {
   const stripe = fakeStripe();
-  const port = stripeCheckout({ STRIPE_SECRET_KEY: "sk_test_x" }, stripe.fetch);
+  const port = createCheckoutSession(
+    { STRIPE_SECRET_KEY: "sk_test_x" },
+    stripe.fetch,
+  );
   const result = await port(input());
   assert.deepEqual(result, {
     kind: "ok",
@@ -155,7 +161,7 @@ test("the call carries the secret as a bearer token and a timeout", async () => 
 
 test("no secret reports not configured instead of throwing", async () => {
   const stripe = fakeStripe();
-  const port = stripeCheckout({}, stripe.fetch);
+  const port = createCheckoutSession({}, stripe.fetch);
   assert.deepEqual(await port(input()), { kind: "not_configured" });
   assert.equal(stripe.calls.length, 0, "nothing is sent without a key");
 });
@@ -165,7 +171,7 @@ test("a provider failure logs its type and code, never the key or the URL", asyn
     status: 402,
     body: { error: { type: "card_error", code: "card_declined" } },
   });
-  const port = stripeCheckout(
+  const port = createCheckoutSession(
     { STRIPE_SECRET_KEY: "sk_test_secret" },
     stripe.fetch,
   );
@@ -186,7 +192,7 @@ test("a timeout is a failure named by the error, not a thrown request", async ()
   const f = (async () => {
     throw Object.assign(new Error("timed out"), { name: "TimeoutError" });
   }) as unknown as typeof fetch;
-  const port = stripeCheckout({ STRIPE_SECRET_KEY: "sk_test_x" }, f);
+  const port = createCheckoutSession({ STRIPE_SECRET_KEY: "sk_test_x" }, f);
   assert.deepEqual(await port(input()), {
     kind: "failed",
     detail: "TimeoutError",
@@ -195,7 +201,10 @@ test("a timeout is a failure named by the error, not a thrown request", async ()
 
 test("an amount that is not an amount never reaches the provider", async () => {
   const stripe = fakeStripe();
-  const port = stripeCheckout({ STRIPE_SECRET_KEY: "sk_test_x" }, stripe.fetch);
+  const port = createCheckoutSession(
+    { STRIPE_SECRET_KEY: "sk_test_x" },
+    stripe.fetch,
+  );
   assert.deepEqual(await port(input({ amountMyr: "0.00" })), {
     kind: "failed",
     detail: "bad_amount",

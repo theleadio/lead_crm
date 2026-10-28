@@ -1,6 +1,9 @@
 import type { ZodError } from "zod";
 import { apiError, validationError } from "../api/errors.ts";
-import { stripeCheckout, type CheckoutPort } from "../payments/checkout.ts";
+import {
+  createCheckoutSession,
+  type CheckoutPort,
+} from "../payments/checkout.ts";
 import {
   leadSchema,
   registerSchema,
@@ -164,7 +167,7 @@ export const handleRegister = (request: Request, d: PublicDeps = live()) =>
     finish: async (input, ctx) => {
       const result = await register(input, ctx, {
         env: d.env,
-        checkout: d.checkout ?? stripeCheckout(d.env),
+        checkout: d.checkout ?? createCheckoutSession(d.env),
       });
       switch (result.kind) {
         case "checkout":
