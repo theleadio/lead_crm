@@ -44,7 +44,11 @@ const SESSIONS_URL = "https://api.stripe.com/v1/checkout/sessions";
 // 24 hours (`stripe_reservation_hours`, migration 006), so a normal
 // reservation lands inside the window; a setting someone raises would not,
 // and a clamped session beats a refused booking.
-const MIN_MS = 30 * 60 * 1000;
+// Exported because §8.3's reservation rule has to agree with it: a hold with
+// less than this left cannot carry a session, since the clamp would push the
+// payment page past the seat.
+export const MIN_EXPIRY_MS = 30 * 60 * 1000;
+const MIN_MS = MIN_EXPIRY_MS;
 const MAX_MS = 24 * 60 * 60 * 1000;
 const TIMEOUT_MS = 10_000;
 

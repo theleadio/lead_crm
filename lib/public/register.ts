@@ -1,7 +1,9 @@
 import { writeAudit } from "../audit.ts";
 import {
+  MIN_EXPIRY_MS,
   appBase,
   checkoutConfigured,
+  senFromMyr,
   type CheckoutPort,
 } from "../payments/checkout.ts";
 import { db, withTransaction } from "../sql.ts";
@@ -100,7 +102,20 @@ export async function register(
   const urls = returnUrls(deps.env, input.locale, cls.code as string);
   if (!urls) return { kind: "not_configured" };
 
-  // Step 4: the seat. One transaction under the class row lock, as every
+  // Step 4: the amount, before anything is held. A class with no price and a
+  // course with no list price cannot be charged for: the provider refuses it
+  // as a bad amount, and holding the seat first would take it out of the
+  // class for the length of the hold, for a payment nobody could have made.
+  //
+  // Our data is wrong, not the visitor's input, so it is logged and answered
+  // as unconfigured rather than as something they did (§13).
+  const amountMyr = String(cls.price_myr ?? "");
+  if (senFromMyr(amountMyr) === null) {
+    console.error("class has no usable price; registration refused", cls.code);
+    return { kind: "not_configured" };
+  }
+
+  // Step 5: the seat. One transaction under the class row lock, as every
   // other seat claim is (§7 Transactions); the database's trigger is the
   // authority and raises `no_seats` on an oversell (§12.1).
   const held = await holdSeat(lead, cls);
@@ -110,7 +125,7 @@ export async function register(
     dealId: lead.dealId,
     enrolmentId: held.enrolmentId,
     classId: cls.id as string,
-    amountMyr: String(cls.price_myr),
+    amountMyr,
     productName: `${courseName(cls)} (${cls.code})`,
     expiresAt: held.expiresAt,
     ...urls,
@@ -177,21 +192,32 @@ async function holdSeat(
         return { kind: "already_enrolled" };
       if (mine) {
         const hold = new Date(mine.seat_reserved_until as string);
-        if (hold > new Date())
+        // More than Stripe's minimum left, so the payment page can be given
+        // this exact moment and the seat and the page die together.
+        if (hold.getTime() > Date.now() + MIN_EXPIRY_MS)
           return {
             kind: "ok",
             enrolmentId: mine.id as string,
             expiresAt: hold,
           };
-        // The hold has run out but `expire_reservations()` has not swept yet
-        // (up to 15 minutes, §12.1). The row holds no seat while it waits, so
-        // the seat guard still applies to this update and an oversell is
-        // still refused.
+        // Otherwise the hold is refreshed rather than reused, which covers
+        // two cases at once.
+        //
+        // Under half an hour left: the provider will not accept an expiry
+        // nearer than 30 minutes and raises it, which would put the payment
+        // page past the seat — a payer could pay for a seat that had already
+        // been freed. Refreshing moves the seat instead of the page.
+        //
+        // Already run out, with `expire_reservations()` not swept yet (up to
+        // 15 minutes, §12.1): the row holds no seat while it waits, so the
+        // seat guard still applies to this update and an oversell is still
+        // refused.
         //
         // shortcut: the per-enrolment idempotency key is unchanged, so Stripe
         // may refuse the new session as a key replayed with different
-        // parameters; the visitor's retry after the sweep then books cleanly.
-        // Upgrade when a reservation is allowed to outlive its payment page.
+        // parameters; the visitor's retry then books cleanly against the
+        // refreshed hold. Upgrade when a reservation is allowed to outlive
+        // its payment page — Shawn is writing that rule into §8.3 (#12).
         const [refreshed] = await sql`
           UPDATE enrolment
           SET seat_reserved_until = now() + make_interval(hours => coalesce((

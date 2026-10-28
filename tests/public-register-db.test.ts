@@ -598,3 +598,82 @@ test("the route is a one-liner over the handler, like the other two", () => {
     .filter((l) => l.trim() && !l.trim().startsWith("//"));
   assert.equal(code.length, 3, code.join(" | "));
 });
+
+// ---- Shawn's two notes on lib/public/register.ts (#12) ---------------------
+
+it("a class with no price anywhere is refused before a seat is held", async () => {
+  // Found in review: holdSeat ran first, Stripe then refused the amount, and
+  // the seat stayed out of the class until the hold expired — for a payment
+  // nobody could have made.
+  const courseId = await newCourse();
+  await db()`UPDATE course SET list_price_myr = NULL WHERE id = ${courseId}`;
+  const classId = await newClass({ courseId, priceMyr: null });
+  const stripe = fakeCheckout();
+
+  const payload = form(await classCode(classId));
+  await refused(
+    await post(payload, { checkout: stripe.port }),
+    503,
+    "not_configured",
+  );
+
+  // Nothing held, and the provider never asked.
+  const [{ n }] = await db()`
+    SELECT count(*)::int AS n FROM enrolment WHERE class_id = ${classId}`;
+  assert.equal(n, 0, "no seat may be held for a class that cannot be charged");
+  assert.equal(stripe.calls.length, 0);
+
+  // The lead is still captured: our data is wrong, not theirs (§8.3 step 1).
+  const [{ n: people }] = await db()`
+    SELECT count(*)::int AS n FROM person WHERE email = ${payload.email}`;
+  assert.equal(people, 1);
+});
+
+it("a reservation with under 30 minutes left is refreshed, not reused", async () => {
+  // Stripe will not accept an expiry nearer than 30 minutes and raises it,
+  // which would put the payment page past the seat: a payer could pay for a
+  // seat that had already been freed.
+  const classId = await newClass({ capacity: 5, priceMyr: "3200.00" });
+  const code = await classCode(classId);
+  const first = fakeCheckout();
+  // The same visitor both times, since the reuse is keyed on the person.
+  const payload = form(code);
+  const out = await created(await post(payload, { checkout: first.port }));
+
+  const [seat] = await db()`
+    SELECT id, seat_reserved_until FROM enrolment
+    WHERE class_id = ${classId} AND person_id = ${out.personId}`;
+  await db()`
+    UPDATE enrolment SET seat_reserved_until = now() + interval '10 minutes'
+    WHERE id = ${seat.id}`;
+
+  const second = fakeCheckout();
+  await created(
+    await post(
+      // A new key, so this is a fresh submission rather than a replay.
+      { ...payload, idempotencyKey: crypto.randomUUID() },
+      { checkout: second.port },
+    ),
+  );
+
+  // Same seat, moved rather than doubled.
+  const [{ n }] = await db()`
+    SELECT count(*)::int AS n FROM enrolment WHERE class_id = ${classId}`;
+  assert.equal(n, 1);
+
+  const [moved] = await db()`
+    SELECT seat_reserved_until FROM enrolment WHERE id = ${seat.id}`;
+  const left =
+    new Date(moved.seat_reserved_until as string).getTime() - Date.now();
+  assert.ok(
+    left > 30 * 60 * 1000,
+    `the hold should have been refreshed, ${Math.round(left / 60000)} min left`,
+  );
+
+  // And the payment page was given that refreshed moment, so the two still
+  // die together rather than the page outliving the seat.
+  assert.equal(
+    second.calls[0].expiresAt.getTime(),
+    new Date(moved.seat_reserved_until as string).getTime(),
+  );
+});

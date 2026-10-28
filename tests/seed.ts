@@ -20,10 +20,14 @@ export async function newUser(role: Role = "operations"): Promise<Viewer> {
   return { id: u.id, role };
 }
 
+// The list price is seeded, so a class created with no price of its own
+// still has one to fall back to (§8.3). A course with neither is a data
+// error that §8.3 refuses before it holds a seat, and a test that wants that
+// case nulls the column itself.
 export async function newCourse(): Promise<string> {
   const [c] = await db()`
-    INSERT INTO course (code, name_en, track, duration_days)
-    VALUES (${`T-${crypto.randomUUID()}`}, 'Test course', 'workshop', 1)
+    INSERT INTO course (code, name_en, track, duration_days, list_price_myr)
+    VALUES (${`T-${crypto.randomUUID()}`}, 'Test course', 'workshop', 1, 1500)
     RETURNING id`;
   return c.id as string;
 }
