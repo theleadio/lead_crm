@@ -1,5 +1,6 @@
 import { formatDate } from "@/lib/format/date";
 import { privacyUrl } from "@/lib/public/links";
+import { CourseHeading } from "../course-heading";
 import { dictionary, fill } from "../dictionaries";
 import type { Locale } from "../locale";
 import { getSchedule } from "../schedule/feed";
@@ -63,9 +64,15 @@ export async function EnquiryPage({
   return (
     <main className="mx-auto w-full max-w-2xl px-4 py-10 sm:px-6">
       <h1 className="text-ink mb-2 text-2xl font-semibold sm:text-3xl">
-        {cls
-          ? fill(t["enquiry.heading.class"], { course: cls.courseName })
-          : t["enquiry.heading"]}
+        {cls ? (
+          <CourseHeading
+            template={t["enquiry.heading.class"]}
+            cls={cls}
+            locale={locale}
+          />
+        ) : (
+          t["enquiry.heading"]
+        )}
       </h1>
       {cls ? (
         <p className="text-ink-muted mb-8 text-sm">

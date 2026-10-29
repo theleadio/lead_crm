@@ -1,7 +1,7 @@
 import type { ScheduleClass } from "@/lib/public/schedule";
 import type { Dict } from "../dictionaries.ts";
 import { enquiryUrl } from "../enquiry-link.ts";
-import { localePath, type Locale } from "../locale.ts";
+import { LOCALE_LANG, localePath, type Locale } from "../locale.ts";
 
 // The 10.1 page's view rules, in a plain module so they can be tested without
 // React and imported from both the server page and the client list. Values
@@ -55,6 +55,35 @@ export function languageLabel(language: string, t: Dict): string {
     default:
       return language;
   }
+}
+
+// The class's name in the page's own language, with the `lang` it needs
+// (§10.5 as read in spec v1.24; the review of #12, item 2). The §8.1 feed
+// returns both names, so a Chinese page shows the Chinese one and an English
+// page the English one, whatever language the class is taught in. A course
+// with no Chinese name falls back to its English name and says so on the
+// element, because a screen reader would otherwise read Latin text in the
+// Chinese voice (WCAG 3.1.2, Language of Parts). `lang` is null when the name
+// is already in the page's language: the subtree says it once, on `<html>`.
+// Nothing asserts a language over `courseNameEn` on the English page — it is
+// the only name we have there, and claiming a language for a name we cannot
+// identify is worse than claiming none.
+export function courseName(
+  c: Pick<ScheduleClass, "courseNameEn" | "courseNameZh">,
+  locale: Locale,
+): { text: string; lang: string | null } {
+  if (locale !== "zh") return { text: c.courseNameEn, lang: null };
+  if (c.courseNameZh) return { text: c.courseNameZh, lang: null };
+  return { text: c.courseNameEn, lang: LOCALE_LANG.en };
+}
+
+// A heading template around its `{course}` placeholder, so the name can be
+// its own element when it carries a `lang`. A template that has lost the
+// placeholder keeps its words and takes the name after them, rather than
+// rendering a heading with no class in it.
+export function splitTemplate(template: string): [string, string] {
+  const parts = template.split("{course}");
+  return parts.length === 2 ? [parts[0], parts[1]] : [template, ""];
 }
 
 export function seatsLabel(c: ScheduleClass, t: Dict): string {

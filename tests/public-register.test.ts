@@ -239,6 +239,8 @@ const cls = (over: Partial<ScheduleClass> = {}): ScheduleClass => ({
   id: "c1",
   code: "AIA-2610-EN",
   courseName: "AI Agentic Automation",
+  courseNameEn: "AI Agentic Automation",
+  courseNameZh: "AI 智能体自动化",
   track: "certification",
   language: "en",
   startDate: "2026-11-10",

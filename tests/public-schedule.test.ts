@@ -8,12 +8,14 @@ import type { ScheduleClass } from "../lib/public/schedule.ts";
 import {
   NO_FILTERS,
   type Filters,
+  courseName,
   filterClasses,
   filterOptions,
   languageLabel,
   placeLabel,
   registerControl,
   seatsLabel,
+  splitTemplate,
   timeLabel,
   trackLabel,
 } from "../app/(public)/schedule/schedule-view.ts";
@@ -86,6 +88,8 @@ const base = {
   id: "1",
   code: "AIA-2610-EN",
   courseName: "AI Agentic Automation",
+  courseNameEn: "AI Agentic Automation",
+  courseNameZh: "AI 智能体自动化",
   track: "certification",
   language: "en",
   startDate: "2026-11-02",
@@ -410,4 +414,57 @@ test("the schedule page's language filter is not the page's language control", (
     "utf8",
   );
   assert.match(chrome, /LanguageLink/);
+});
+
+// ---- The class's name, and the language it is read in (§10.5) -------------
+
+test("course name: each page shows the name in its own language", () => {
+  assert.deepEqual(courseName(cls(), "en"), {
+    text: "AI Agentic Automation",
+    lang: null,
+  });
+  assert.deepEqual(courseName(cls(), "zh"), {
+    text: "AI 智能体自动化",
+    lang: null,
+  });
+});
+
+test("course name: the page's language is not asserted twice", () => {
+  // The name is already in the page's language, so `<html lang>` says it and
+  // the element says nothing (WCAG 3.1.2 is about the parts that differ).
+  assert.equal(courseName(cls(), "en").lang, null);
+  assert.equal(courseName(cls(), "zh").lang, null);
+});
+
+test("course name: a course with no Chinese name falls back and says so", () => {
+  const n = courseName(cls({ courseNameZh: null }), "zh");
+  assert.deepEqual(n, { text: "AI Agentic Automation", lang: "en" });
+});
+
+test("course name: the class's teaching language does not pick the name", () => {
+  // A Chinese-taught class on the English page reads its English name, and
+  // an English-taught class on the Chinese page reads its Chinese one. What
+  // the class is taught in is the badge's business, not the heading's.
+  assert.equal(
+    courseName(cls({ language: "zh" }), "en").text,
+    "AI Agentic Automation",
+  );
+  assert.equal(
+    courseName(cls({ language: "en" }), "zh").text,
+    "AI 智能体自动化",
+  );
+});
+
+test("heading template: both dictionaries split around the course name", () => {
+  for (const t of [EN, ZH]) {
+    for (const key of ["register.heading", "enquiry.heading.class"] as const) {
+      const [before, after] = splitTemplate(t[key]);
+      assert.equal(before + "{course}" + after, t[key]);
+      assert.ok(before.length > 0, `${key} has words before the name`);
+    }
+  }
+});
+
+test("heading template: a template with no placeholder keeps its words", () => {
+  assert.deepEqual(splitTemplate("Register"), ["Register", ""]);
 });

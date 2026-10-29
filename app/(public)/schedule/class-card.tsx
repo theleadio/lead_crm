@@ -5,6 +5,7 @@ import type { ScheduleClass } from "@/lib/public/schedule";
 import type { Dict } from "../dictionaries";
 import { LOCALE_LANG, type Locale } from "../locale";
 import {
+  courseName,
   languageLabel,
   placeLabel,
   registerControl,
@@ -33,6 +34,7 @@ export function ClassCard({
   live: boolean;
 }) {
   const time = timeLabel(cls);
+  const name = courseName(cls, locale);
   const control = registerControl(cls, locale, t, live);
   // §14: the card is named by its own heading rather than a duplicate label,
   // and a disabled control says why in the same tree a screen reader walks.
@@ -41,7 +43,12 @@ export function ClassCard({
   // The visible label is short so the control stays one line in a card this
   // narrow; the course name keeps the accessible name usable on its own, where
   // a screen reader lists the links out of context.
-  const courseSuffix = <span className="sr-only"> — {cls.courseName}</span>;
+  const courseSuffix = (
+    <span className="sr-only" lang={name.lang ?? undefined}>
+      {" — "}
+      {name.text}
+    </span>
+  );
 
   return (
     // The card is three rows of the list's own grid (row-span-3 + subgrid), so
@@ -52,18 +59,15 @@ export function ClassCard({
       className="border-line bg-surface-raised row-span-3 grid grid-rows-subgrid gap-3 rounded-2xl border p-5"
     >
       <div className="flex flex-col items-start gap-2">
-        {/* §10.5: a Chinese class carries its own name, so the script has to
-            be on the element or a screen reader reads it in the page's voice.
-            Any other value inherits from the subtree instead of being
-            asserted: §8.1 types `language` as a plain string, and claiming
-            English over a name we cannot identify is worse than claiming
-            nothing. */}
+        {/* §10.5: the name is the page's own language, and carries `lang`
+            only where it cannot be — a course with no Chinese name on the
+            Chinese page. `courseName` owns that rule (schedule-view). */}
         <h2
           id={headingId}
-          lang={cls.language === "zh" ? LOCALE_LANG.zh : undefined}
+          lang={name.lang ?? undefined}
           className="text-ink text-lg font-semibold"
         >
-          {cls.courseName}
+          {name.text}
         </h2>
         <div className="flex flex-wrap gap-1.5">
           {/* The language the class is taught in, in this page's own words:

@@ -4,9 +4,10 @@ import { formatMoneyMyr } from "@/lib/format/money";
 import { checkoutConfigured } from "@/lib/payments/checkout";
 import { privacyUrl } from "@/lib/public/links";
 import type { ScheduleClass } from "@/lib/public/schedule";
-import { dictionary, fill, type Dict } from "../dictionaries";
+import { dictionary, type Dict } from "../dictionaries";
 import { EnquiryForm, type FormLabels } from "../enquiry/enquiry-form";
 import { enquiryUrl } from "../enquiry-link";
+import { CourseHeading } from "../course-heading";
 import { LOCALE_LANG, localePath, type Locale } from "../locale";
 import { getSchedule } from "../schedule/feed";
 import { registerState, type RegisterState } from "./register-view";
@@ -66,7 +67,11 @@ export async function RegisterPage({
       {cls ? (
         <>
           <h1 className="text-ink mb-2 text-2xl font-semibold sm:text-3xl">
-            {fill(t["register.heading"], { course: cls.courseName })}
+            <CourseHeading
+              template={t["register.heading"]}
+              cls={cls}
+              locale={locale}
+            />
           </h1>
           <ClassSummary cls={cls} t={t} />
         </>
