@@ -4,7 +4,11 @@
 //   npm run db:seed -- --reset wipe business tables first, then fill
 //
 // Also links every Supabase login (auth.users) to an app_user, so signing
-// in works. Refuses to run with NODE_ENV=production.
+// in works. On a database with no Supabase auth schema (the DigitalOcean
+// staging database, O48/O49) there is nothing to read: set
+// SEED_LOGIN_AUTH_USER_ID (the user's id in the Supabase project) and
+// SEED_LOGIN_EMAIL to link one login as super_admin instead.
+// Refuses to run with NODE_ENV=production.
 import postgres from "postgres";
 import { SEED_USERS } from "./seed-ids.ts";
 
@@ -101,7 +105,24 @@ async function seed() {
         (${SEED_USERS.weiPing}, 'weiping@lead.test',    'Wei Ping',   'sales',       'full_time'),
         (${SEED_USERS.daphne},  'daphne@lead.test',     'Daphne',     'marketing',   'full_time'),
         (${SEED_USERS.leeYee},  'leeyee@lead.test',     'Lee Yee',    'part_time',   'part_time')`;
-    const logins = await tx`SELECT id, email FROM auth.users`;
+    // A staging database on DigitalOcean has no auth schema: sign-in lives in
+    // a separate Supabase project, so the login comes from the environment.
+    const [{ has_auth }] =
+      await tx`SELECT to_regclass('auth.users') IS NOT NULL AS has_auth`;
+    const logins: { id: string; email: string }[] = has_auth
+      ? await tx`SELECT id, email FROM auth.users`
+      : process.env.SEED_LOGIN_AUTH_USER_ID && process.env.SEED_LOGIN_EMAIL
+        ? [
+            {
+              id: process.env.SEED_LOGIN_AUTH_USER_ID,
+              email: process.env.SEED_LOGIN_EMAIL,
+            },
+          ]
+        : [];
+    if (!has_auth && logins.length === 0)
+      console.log(
+        "No auth schema and no SEED_LOGIN_AUTH_USER_ID / SEED_LOGIN_EMAIL: no login linked.",
+      );
     for (const u of logins)
       await tx`
         INSERT INTO app_user (auth_user_id, email, full_name, role_code)

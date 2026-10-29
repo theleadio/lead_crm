@@ -1,0 +1,10 @@
+# Netlify had no build command, so every deploy published the repo root as
+# static files: 16 seconds, 0 functions, and the app never ran (PR #6 deploy
+# 6ad5ca21, "No build steps found, continuing to publishing").
+#
+# @netlify/plugin-nextjs is installed by Netlify itself and updated every
+# build, so it is deliberately not declared or pinned here.
+
+[build]
+  command = "npm run build"
+  publish = ".next"
