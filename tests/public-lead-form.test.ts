@@ -48,6 +48,25 @@ test("a campaign arrival keeps every field the link carried", () => {
   assert.equal(t.occurredAt, "2026-10-21T02:00:00.000Z");
 });
 
+test("the O61 click ids are read from the link", () => {
+  const t = touchFrom(
+    "https://lead.test/schedule?gbraid=gb&wbraid=wb&li_fat_id=li&ttclid=tt",
+    null,
+  );
+  assert.equal(t.gbraid, "gb");
+  assert.equal(t.wbraid, "wb");
+  assert.equal(t.liFatId, "li");
+  assert.equal(t.ttclid, "tt");
+  assert.equal(
+    t.landingUrl,
+    "https://lead.test/schedule?gbraid=gb&wbraid=wb&li_fat_id=li&ttclid=tt",
+  );
+  assert.deepEqual(parseTouch(serialiseTouch(t)), t);
+  const payload = attributionPayload(null, t)!;
+  assert.equal(payload.gbraid, "gb");
+  assert.equal(payload.liFatId, "li");
+});
+
 test("a bare arrival is still recorded, so it is not mistaken for a campaign later", () => {
   const t = touchFrom("https://lead.test/schedule", null);
   assert.equal(t.utmSource, null);
@@ -74,6 +93,7 @@ test("trimUrl keeps the same shape as the server's cleanUrl (O14)", () => {
   for (const u of [
     "https://lead.test/schedule?utm_source=fb&session=secret",
     "https://lead.test/a/b?gclid=1&fbclid=2&other=3#frag",
+    "https://lead.test/?gbraid=1&wbraid=2&li_fat_id=3&ttclid=4&msclkid=5",
     "http://user:pw@lead.test/x?utm_campaign=c",
     "javascript:alert(1)",
     "not a url",
@@ -598,6 +618,12 @@ test("hasCampaign is what tells an arrival from a navigation", () => {
   );
   assert.equal(
     hasCampaign(touchFrom("https://lead.test/x?utm_term=ai", null)),
+    true,
+  );
+  // A Google ad tapped inside an iOS app reaches the site with wbraid and
+  // no gclid or utm.
+  assert.equal(
+    hasCampaign(touchFrom("https://lead.test/x?wbraid=1", null)),
     true,
   );
 });

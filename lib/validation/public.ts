@@ -38,6 +38,10 @@ const attributionSchema = z.object({
   utmTerm: text(200),
   gclid: text(200),
   fbclid: text(500),
+  gbraid: text(200),
+  wbraid: text(200),
+  liFatId: text(200),
+  ttclid: text(200),
   landingUrl: text(2000),
   referrer: text(2000),
   firstTouch: z
