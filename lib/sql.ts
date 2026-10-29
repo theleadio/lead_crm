@@ -19,6 +19,9 @@ function root(): Sql {
       // Production stays on TLS; a local Postgres opts out with ?sslmode=disable.
       ssl: url.includes("sslmode=disable") ? false : "require",
       max: 5,
+      // Supabase's pooler (port 6543, transaction mode) drops prepared
+      // statements between queries: "prepared statement ... does not exist".
+      prepare: !url.includes(":6543"),
     });
   }
   return globalForSql.__leadSql;
