@@ -1,8 +1,10 @@
 # Change proposal: capture the other ad-click identifiers
 
-Date: 29 Oct 2026 · From: Shawn (schema owner) · For: Zixuan (§10 capture code), privacy review (PDPA) · Status: **proposal, not decided**
+Date: 29 Oct 2026 · From: Shawn (schema owner) · For: Zixuan (§10 capture code), privacy review (PDPA) · Status: **accepted and built, 29 Oct (spec v1.25, O61, migration 013)**
 
-Touches §5 (`touchpoint`), §8.2 (`attribution` object), §10.2 and decision O14. Under §1 rule 1 the schema is frozen since 16 Oct, so this is written down as a request rather than a migration. Nothing in this document has been built.
+> **Update 29 Oct 2026.** Built as proposed, with these defaults for the open questions: Q1 all four columns; Q3 `firstTouch` unchanged; Q4 200-character caps for all four. Q2 (PDPA) is still with the privacy review. The parameter names and Google's 90-day window were still not checked against the live platform docs.
+
+Touches §5 (`touchpoint`), §8.2 (`attribution` object), §10.2 and decision O14. Under §1 rule 1 the schema is frozen since 16 Oct, so this is written down as a request rather than a migration.
 
 ## 1. The ask
 
