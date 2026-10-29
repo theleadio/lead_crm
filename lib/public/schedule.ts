@@ -19,7 +19,12 @@ const SEATS_LABEL = {
 export type ScheduleClass = {
   id: string;
   code: string;
+  // The name in the class's own language (kept for older callers), and both
+  // names so a page can show its own language's name (§10.5, v1.24). The
+  // Chinese name is null when the course has none.
   courseName: string;
+  courseNameEn: string;
+  courseNameZh: string | null;
   track: string;
   language: string;
   startDate: string;
@@ -51,6 +56,7 @@ export async function listPublicSchedule(
            CASE WHEN cl.mode = 'online' THEN NULL ELSE cl.venue_name END AS venue_name,
            CASE WHEN cl.language = 'zh' THEN coalesce(c.name_zh, c.name_en)
                 ELSE c.name_en END AS course_name,
+           c.name_en AS course_name_en, c.name_zh AS course_name_zh,
            c.track,
            coalesce(cl.price_myr, c.list_price_myr)::text AS price_myr,
            cl.hrdc_claimable
@@ -71,6 +77,8 @@ export async function listPublicSchedule(
       id: r.id,
       code: r.code,
       courseName: r.course_name,
+      courseNameEn: r.course_name_en,
+      courseNameZh: r.course_name_zh,
       track: r.track,
       language: r.language,
       startDate: r.start_date,
