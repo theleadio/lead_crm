@@ -1,9 +1,29 @@
-import { db } from "../sql.ts";
+import postgres from "postgres";
 
 // Read-only window onto the LMS tables (participants, enrollments, cohorts,
-// courses) that live in the same Supabase database. Reads only: the LMS owns
-// these rows. `credentials` is left out on purpose, it holds logins.
+// courses). The LMS is a separate Supabase project from the CRM's own
+// database, so this has its own connection: LMS_DATABASE_URL, ideally the
+// select-only login from scripts/lms-readonly-role.sql. Reads only: the LMS
+// owns these rows. `credentials` is left out on purpose, it holds logins.
 // Only /lib services import this, same layering as lib/sql.ts.
+
+const globalForLms = globalThis as unknown as { __leadLmsSql?: postgres.Sql };
+
+function lms(): postgres.Sql {
+  if (!globalForLms.__leadLmsSql) {
+    const url = process.env.LMS_DATABASE_URL;
+    if (!url) throw new Error("LMS_DATABASE_URL is not set");
+    // Cached on globalThis so dev hot-reload doesn't open a new pool each time.
+    globalForLms.__leadLmsSql = postgres(url, { ssl: "require", max: 3 });
+  }
+  return globalForLms.__leadLmsSql;
+}
+
+export async function closeLms(): Promise<void> {
+  const sql = globalForLms.__leadLmsSql;
+  globalForLms.__leadLmsSql = undefined;
+  await sql?.end();
+}
 
 export type LmsEnrollment = {
   enrollmentId: string;
@@ -28,7 +48,7 @@ export async function listLmsEnrollments(
 ): Promise<LmsEnrollment[]> {
   const limit = Math.min(Math.max(Math.trunc(opts.limit ?? 50), 1), 500);
   const email = opts.email?.trim().toLowerCase() || null;
-  return db()<LmsEnrollment[]>`
+  return lms()<LmsEnrollment[]>`
     select e.id as "enrollmentId", e.created_at as "enrolledAt",
            e.funding_type as "fundingType",
            e.amount_paid_cents as "amountPaidCents",

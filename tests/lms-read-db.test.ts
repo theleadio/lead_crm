@@ -3,13 +3,16 @@
 // the real LMS rows.
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
-import { listLmsEnrollments } from "../lib/lms/read.ts";
-import { closeDb } from "../lib/sql.ts";
+import { closeLms, listLmsEnrollments } from "../lib/lms/read.ts";
 
-after(closeDb);
+after(closeLms);
 
 const it = (name: string, fn: () => Promise<void>) =>
-  test(name, { skip: !process.env.DATABASE_URL && "no DATABASE_URL" }, fn);
+  test(
+    name,
+    { skip: !process.env.LMS_DATABASE_URL && "no LMS_DATABASE_URL" },
+    fn,
+  );
 
 it("lists enrolments with participant, cohort and course joined", async () => {
   const rows = await listLmsEnrollments({ limit: 5 });
