@@ -3,13 +3,15 @@
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import type { ScheduleClass } from "@/lib/public/schedule";
+import type { Dict } from "../dictionaries";
+import type { Locale } from "../locale";
 import { ClassCard } from "./class-card";
 import {
-  LANGUAGE_LABEL,
   NO_FILTERS,
   type Filters,
   filterClasses,
   filterOptions,
+  languageLabel,
   trackLabel,
 } from "./schedule-view";
 
@@ -18,6 +20,10 @@ import {
 // final layout, which is what keeps §10.5's "no layout shift" honest. This
 // renders on the server too, so the schedule is in the HTML and a visitor
 // without JavaScript still sees every class.
+//
+// The dictionary arrives as a prop rather than being imported here, so only
+// the active locale's strings reach the browser and no client module pulls
+// the dictionary in (§10.5, tests/client-boundary.test.ts).
 
 // A filter chip: the field name until something is picked, then the value in
 // the accent colour. It stays a native <select>, so the dropdown is the one
@@ -78,10 +84,17 @@ function FilterChip({
 
 export function ScheduleList({
   classes,
+  locale,
+  t,
+  live,
 }: {
   classes: ScheduleClass[];
-  // Read on the server (it comes from PUBLIC_WEBSITE_URL) and passed down, so
-  // no env reaches the browser.
+  // The page's locale and its words, read on the server. No env and no
+  // dictionary import reaches the browser this way.
+  locale: Locale;
+  t: Dict;
+  // §10.4: whether registration can complete, decided on the server.
+  live: boolean;
 }) {
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const options = filterOptions(classes);
@@ -93,22 +106,27 @@ export function ScheduleList({
     <>
       {/* All three are offered even when the set holds one value (§10.1), and
           every option comes from the set, so none can match nothing. The
-          chips are compact enough to share one line on a phone. */}
+          chips are compact enough to share one line on a phone.
+
+          This language filter picks which classes are listed, by the language
+          they are taught in. It is not the page's own language — that control
+          lives in the header and nowhere near these chips
+          (website-localisation). */}
       <div className="mb-6 flex flex-wrap items-center gap-2">
         <FilterChip
-          label="Language"
+          label={t["filter.language"]}
           value={filters.language}
           onChange={set("language")}
-          options={options.languages.map((v) => [v, LANGUAGE_LABEL[v] ?? v])}
+          options={options.languages.map((v) => [v, languageLabel(v, t)])}
         />
         <FilterChip
-          label="Track"
+          label={t["filter.track"]}
           value={filters.track}
           onChange={set("track")}
-          options={options.tracks.map((v) => [v, trackLabel(v)])}
+          options={options.tracks.map((v) => [v, trackLabel(v, t)])}
         />
         <FilterChip
-          label="City"
+          label={t["filter.city"]}
           value={filters.city}
           onChange={set("city")}
           options={options.cities.map((v) => [v, v])}
@@ -119,19 +137,19 @@ export function ScheduleList({
         // Distinct from the empty-schedule state: classes exist, these filters
         // just match none of them (§10.1).
         <p className="text-ink-muted text-sm">
-          No class matches these filters.{" "}
+          {t["filter.noMatch"]}{" "}
           <button
             type="button"
             onClick={() => setFilters(NO_FILTERS)}
             className="text-ink underline underline-offset-4"
           >
-            Clear filters
+            {t["filter.clear"]}
           </button>
         </p>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {shown.map((c) => (
-            <ClassCard key={c.id} cls={c} />
+            <ClassCard key={c.id} cls={c} locale={locale} t={t} live={live} />
           ))}
         </div>
       )}

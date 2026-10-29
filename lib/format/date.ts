@@ -40,7 +40,8 @@ export function formatTime(date: Date | string): string {
   return `${hour}:${minute}${dayPeriod}`;
 }
 
-const HOUR = 60 * 60 * 1000;
+const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
 // Spec §9.0 Home, overdue tasks: how late a task is, in the largest unit
@@ -67,6 +68,7 @@ export function formatOverdue(
 
 // Spec §9.1 Last activity: relative under 7 days ("3 days ago"), absolute
 // after ("14 Aug 2026"), "—" when there is none — never "Invalid date".
+// Under an hour counts in minutes; "just now" is the first minute only.
 export function formatLastActivity(
   date: Date | string | null,
   now: Date = new Date(),
@@ -79,7 +81,8 @@ export function formatLastActivity(
   if (diff >= 7 * DAY) return formatDate(d);
 
   const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
-  if (diff < HOUR) return "just now";
+  if (diff < MINUTE) return "just now";
+  if (diff < HOUR) return rtf.format(-Math.floor(diff / MINUTE), "minute");
   if (diff < DAY) return rtf.format(-Math.floor(diff / HOUR), "hour");
   return rtf.format(-Math.floor(diff / DAY), "day");
 }

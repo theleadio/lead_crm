@@ -4,10 +4,13 @@ import Script from "next/script";
 import { useActionState, useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type { Dict, DictKey } from "../dictionaries";
+import type { Locale } from "../locale";
 import {
   EMPTY_STATE,
   HONEYPOT_FIELD,
   newIdempotencyKey,
+  type EnquiryState,
 } from "./form-contract";
 import { submitEnquiry } from "./submit";
 
@@ -28,6 +31,10 @@ declare global {
 // §10.3's form. Fields are controlled so a failed submission keeps every
 // value the visitor typed (§13) — React resets an uncontrolled form once its
 // action settles, which would make a retry mean retyping it all.
+//
+// Every word comes from the dictionary the server page read and handed down,
+// so only the active locale's strings reach the browser and this client
+// module imports no dictionary of its own (§10.5, website-localisation).
 
 const FIELD =
   "border-line-strong bg-surface-sunken text-ink focus-visible:outline-focus-ring w-full rounded-sm border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2";
@@ -42,30 +49,60 @@ type Values = {
   message: string;
 };
 
-const BLANK: Values = {
+// The page's locale is the preferred language's default: a visitor who chose
+// the Chinese site most likely wants Chinese follow-up (website-lead-capture,
+// proposal L4). It stays a field, so their own choice is what is submitted.
+const blank = (locale: Locale): Values => ({
   fullName: "",
   email: "",
   phone: "",
   companyName: "",
   jobTitle: "",
-  preferredLanguage: "en",
+  preferredLanguage: locale,
   message: "",
+});
+
+// Which words the controls and the settled state use. §10.4's register page
+// renders this same form — the field set is identical (§10.3's fields, the
+// company, the HRDC box) — and differs only in these four strings, its action
+// and the hidden class code, so it reuses the component rather than copying
+// it. The defaults are §10.3's, so the enquiry page passes nothing.
+//
+// Only the two control words. There is no pair for the settled state, because
+// neither form has one any more: a successful enquiry goes to its thank-you
+// page and a registration leaves for Stripe or for /register/thank-you. The
+// answer a visitor gets lives at a URL, so switching language keeps it.
+export type FormLabels = {
+  submit: DictKey;
+  submitting: DictKey;
+};
+
+const ENQUIRY_LABELS: FormLabels = {
+  submit: "form.submit",
+  submitting: "form.submitting",
 };
 
 export function EnquiryForm({
   classCode,
   courseCode,
   privacyUrl,
+  locale,
+  t,
+  action = submitEnquiry,
+  labels = ENQUIRY_LABELS,
 }: {
   classCode: string | null;
   courseCode: string | null;
   privacyUrl: string | null;
+  locale: Locale;
+  t: Dict;
+  // A server action with §13's state shape. Both §8.2's and §8.3's submit
+  // paths have it, and a checkout answer redirects instead of returning.
+  action?: (prev: EnquiryState, form: FormData) => Promise<EnquiryState>;
+  labels?: FormLabels;
 }) {
-  const [state, formAction, pending] = useActionState(
-    submitEnquiry,
-    EMPTY_STATE,
-  );
-  const [values, setValues] = useState<Values>(BLANK);
+  const [state, formAction, pending] = useActionState(action, EMPTY_STATE);
+  const [values, setValues] = useState<Values>(() => blank(locale));
   // Email-or-phone, checked before the action is dispatched (§10.3). The
   // server checks it too — this only saves a round trip.
   const [localError, setLocalError] = useState<string | null>(null);
@@ -110,14 +147,13 @@ export function EnquiryForm({
   // takes nobody to it, so without this the focus stays on a submit button
   // that is no longer the point, and a keyboard or screen-reader visitor has
   // to walk back up the form to learn what happened.
+  // Only the failure case lives here. A settled success leaves this page
+  // altogether, for a server-rendered thank-you at its own URL, and a browser
+  // puts focus at the top of a new document by itself — the form never
+  // renders an answer any more (§10.3, §10.4).
   const summaryBox = useRef<HTMLDivElement | null>(null);
-  const successBox = useRef<HTMLHeadingElement | null>(null);
 
   useEffect(() => {
-    if (state.status === "success") {
-      successBox.current?.focus();
-      return;
-    }
     if (state.status !== "error") return;
     // The summary when there is one, and the first field the server named
     // when there is not — never the top of the page.
@@ -171,29 +207,9 @@ export function EnquiryForm({
   const fieldError = (name: string): string | null =>
     (name === "email" ? localError : null) ?? state.fields[name] ?? null;
 
-  if (state.status === "success")
-    return (
-      // §13: the form is replaced by what happens next, and never by the
-      // personId or dealId §8.2 answered with.
-      <div
-        role="status"
-        className="border-line bg-surface-raised rounded-2xl border p-6"
-      >
-        <h2
-          ref={successBox}
-          tabIndex={-1}
-          className="text-ink text-lg font-semibold"
-        >
-          Thank you — got it.
-        </h2>
-        <p className="text-ink-muted mt-2 text-sm">
-          One of our team will be in touch within one working day, on the email
-          or phone number you gave us.
-        </p>
-      </div>
-    );
-
-  const errors = Object.values(state.fields);
+  // Keyed by field name, not by the message: two fields may now share a
+  // sentence, and React needs the keys to stay distinct.
+  const errors = Object.entries(state.fields);
   const showSummary = state.status === "error" && state.message;
 
   return (
@@ -202,7 +218,7 @@ export function EnquiryForm({
       onSubmit={(e) => {
         if (!values.email.trim() && !values.phone.trim()) {
           e.preventDefault();
-          setLocalError("Enter an email or a phone number");
+          setLocalError(t["form.contactRequired"]);
           document.getElementById(`${ids}-email`)?.focus();
           return;
         }
@@ -222,8 +238,8 @@ export function EnquiryForm({
             <p>{state.message}</p>
             {errors.length > 0 && (
               <ul className="mt-1 list-disc ps-5">
-                {errors.map((m) => (
-                  <li key={m}>{m}</li>
+                {errors.map(([name, m]) => (
+                  <li key={name}>{m}</li>
                 ))}
               </ul>
             )}
@@ -233,8 +249,9 @@ export function EnquiryForm({
 
       <Field
         id={`${ids}-fullName`}
-        label="Full name"
+        label={t["form.fullName"]}
         required
+        requiredLabel={t["form.required"]}
         error={fieldError("fullName")}
       >
         {(p) => (
@@ -250,8 +267,8 @@ export function EnquiryForm({
 
       <Field
         id={`${ids}-email`}
-        label="Email"
-        hint="Give us an email or a phone number — either is enough."
+        label={t["form.email"]}
+        hint={t["form.email.hint"]}
         error={fieldError("email")}
       >
         {(p) => (
@@ -268,8 +285,8 @@ export function EnquiryForm({
 
       <Field
         id={`${ids}-phone`}
-        label="Phone"
-        hint="Malaysian mobile, for example +60 12-345 6789 or 012-345 6789."
+        label={t["form.phone"]}
+        hint={t["form.phone.hint"]}
         error={fieldError("phone")}
       >
         {(p) => (
@@ -288,7 +305,7 @@ export function EnquiryForm({
       <div className="grid gap-5 sm:grid-cols-2">
         <Field
           id={`${ids}-companyName`}
-          label="Company"
+          label={t["form.company"]}
           error={fieldError("companyName")}
         >
           {(p) => (
@@ -303,7 +320,7 @@ export function EnquiryForm({
         </Field>
         <Field
           id={`${ids}-jobTitle`}
-          label="Job title"
+          label={t["form.jobTitle"]}
           error={fieldError("jobTitle")}
         >
           {(p) => (
@@ -320,7 +337,7 @@ export function EnquiryForm({
 
       <Field
         id={`${ids}-preferredLanguage`}
-        label="Preferred language"
+        label={t["form.preferredLanguage"]}
         error={fieldError("preferredLanguage")}
       >
         {(p) => (
@@ -339,7 +356,7 @@ export function EnquiryForm({
 
       <Field
         id={`${ids}-message`}
-        label="What would you like to know?"
+        label={t["form.message"]}
         error={fieldError("message")}
       >
         {(p) => (
@@ -363,7 +380,7 @@ export function EnquiryForm({
           onChange={check("hrdcIntended")}
           className="mt-0.5"
         />
-        <span>I&apos;d like to claim this under HRDC.</span>
+        <span>{t["form.hrdc"]}</span>
       </label>
 
       {/* §10.3: unticked by default, never a condition of submitting, and
@@ -379,7 +396,7 @@ export function EnquiryForm({
           onChange={check("consentMarketing")}
           className="mt-0.5"
         />
-        <span>Send me updates about LEAD courses by email and WhatsApp.</span>
+        <span>{t["form.consent"]}</span>
       </label>
 
       {/* What the visitor is asking about, from the link that opened the form
@@ -390,6 +407,11 @@ export function EnquiryForm({
         <input type="hidden" name="courseInterest" value={courseCode} />
       )}
       <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
+      {/* So the action can refuse in the language the visitor is reading
+          (§13). Read for its wording only: it is never part of the §8.2
+          payload, so both locales send the same body
+          (website-lead-capture). */}
+      <input type="hidden" name="locale" value={locale} />
 
       {/* The honeypot. Positioned off-screen rather than display:none, which
           some bots check for, out of the tab order and hidden from screen
@@ -398,7 +420,7 @@ export function EnquiryForm({
         aria-hidden="true"
         className="absolute -left-[9999px] w-px overflow-hidden"
       >
-        <label htmlFor={`${ids}-hp`}>Company website</label>
+        <label htmlFor={`${ids}-hp`}>{t["form.honeypot"]}</label>
         <input
           id={`${ids}-hp`}
           name={HONEYPOT_FIELD}
@@ -424,14 +446,14 @@ export function EnquiryForm({
 
       <div className="flex flex-wrap items-center gap-4 pt-1">
         <Button type="submit" disabled={pending}>
-          {pending ? "Sending…" : "Send enquiry"}
+          {pending ? t[labels.submitting] : t[labels.submit]}
         </Button>
         {privacyUrl && (
           <a
             href={privacyUrl}
             className="text-ink-muted hover:text-ink text-sm underline underline-offset-4"
           >
-            How we use your details
+            {t["form.privacy"]}
           </a>
         )}
       </div>
@@ -447,6 +469,7 @@ function Field({
   label,
   hint,
   required,
+  requiredLabel,
   error,
   children,
 }: {
@@ -454,6 +477,8 @@ function Field({
   label: string;
   hint?: string;
   required?: boolean;
+  // The locale's word for it, so the marker is not English beside Chinese.
+  requiredLabel?: string;
   error: string | null;
   children: (props: {
     id: string;
@@ -469,8 +494,8 @@ function Field({
     <div className="space-y-1.5">
       <label htmlFor={id} className="text-ink block text-sm font-medium">
         {label}
-        {required && (
-          <span className="text-ink-muted font-normal"> (required)</span>
+        {required && requiredLabel && (
+          <span className="text-ink-muted font-normal"> {requiredLabel}</span>
         )}
       </label>
       {children({
