@@ -862,10 +862,43 @@ it("attribution: utm fields stored; landing URL kept only from our origins and s
   assert.equal(z.landing_url, null);
 });
 
-test("cleanUrl: path and utm_*/gclid/fbclid only; credentials, fragments and non-http dropped", () => {
+it("attribution: the O61 click ids are stored on the touchpoint", async () => {
+  const r = await ok(
+    await lead(
+      form({
+        attribution: {
+          utmSource: "google",
+          gbraid: "GB1",
+          wbraid: "WB1",
+          liFatId: "LI1",
+          ttclid: "TT1",
+        },
+      }),
+    ),
+  );
+  const [t] = await db()`
+    SELECT gbraid, wbraid, li_fat_id, ttclid
+      FROM touchpoint WHERE person_id = ${r.personId}`;
+  assert.deepEqual(
+    [t.gbraid, t.wbraid, t.li_fat_id, t.ttclid],
+    ["GB1", "WB1", "LI1", "TT1"],
+  );
+  assert.equal(
+    (await lead(form({ attribution: { ttclid: "x".repeat(201) } }))).status,
+    400,
+  );
+});
+
+test("cleanUrl: path and utm_* and click ids only; credentials, fragments and non-http dropped", () => {
   assert.equal(
     cleanUrl("https://u:p@x.test/a/b?gclid=1&q=x&utm_term=y#h"),
     "https://x.test/a/b?gclid=1&utm_term=y",
+  );
+  assert.equal(
+    cleanUrl(
+      "https://x.test/?gbraid=a&wbraid=b&li_fat_id=c&ttclid=d&msclkid=e",
+    ),
+    "https://x.test/?gbraid=a&wbraid=b&li_fat_id=c&ttclid=d",
   );
   assert.equal(cleanUrl("ftp://x.test/"), null);
   assert.equal(cleanUrl("not a url"), null);
