@@ -620,9 +620,10 @@ test("hasCampaign is what tells an arrival from a navigation", () => {
     hasCampaign(touchFrom("https://lead.test/x?utm_term=ai", null)),
     true,
   );
-  // An iOS click from a Google ad carries gbraid and no gclid or utm.
+  // A Google ad tapped inside an iOS app reaches the site with wbraid and
+  // no gclid or utm.
   assert.equal(
-    hasCampaign(touchFrom("https://lead.test/x?gbraid=1", null)),
+    hasCampaign(touchFrom("https://lead.test/x?wbraid=1", null)),
     true,
   );
 });

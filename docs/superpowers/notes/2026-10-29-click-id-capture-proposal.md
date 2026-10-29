@@ -2,7 +2,16 @@
 
 Date: 29 Oct 2026 · From: Shawn (schema owner) · For: Zixuan (§10 capture code), privacy review (PDPA) · Status: **accepted and built, 29 Oct (spec v1.25, O61, migration 013)**
 
-> **Update 29 Oct 2026.** Built as proposed, with these defaults for the open questions: Q1 all four columns; Q3 `firstTouch` unchanged; Q4 200-character caps for all four. Q2 (PDPA) is still with the privacy review. The parameter names and Google's 90-day window were still not checked against the live platform docs.
+> **Update 29 Oct 2026.** Built as proposed, with these defaults for the open questions: Q1 all four columns; Q3 `firstTouch` unchanged; Q4 200-character caps for all four. Q2 (PDPA) is still with the privacy review.
+
+> **Checked against platform docs, 29 Oct.** All four parameter names are confirmed. Three corrections and one finding for the January work:
+>
+> - **`gbraid` vs `wbraid` were the wrong way round in the table below.** Google's API docs: `gbraid` is "present when a user clicks on an ad on the web and is directed to your iOS app"; `wbraid` when "a user clicks on an ad in an iOS app and is directed to your webpage". LEAD has no iOS app, so `wbraid` is the one its leads will carry; `gbraid` will rarely appear. Keeping both costs nothing.
+> - **90 days is confirmed** in Google Ads Help: a click older than 90 days can't be imported. Google also refuses custom conversion variables on a `wbraid` / `gbraid` upload.
+> - **January's Google upload goes through the Data Manager API, not `ConversionUploadService`.** Google's developer blog (May 2026): developer tokens that sent no offline conversion uploads between 17 Dec 2025 and 15 Jun 2026 are refused (`CUSTOMER_NOT_ALLOWLISTED_FOR_THIS_FEATURE`), and Google points new integrations to the Data Manager API, which needs no developer token.
+> - **LinkedIn:** enhanced conversion tracking is on by default for new Insight Tags and works without installing the tag; the value goes to the Conversions API as `LINKEDIN_FIRST_PARTY_ADS_TRACKING_UUID`. **TikTok:** TikTok attaches `ttclid` itself ("Click ID auto-attachment"), or it can be added by hand.
+>
+> Sources: [Google Ads API, manage offline conversions](https://developers.google.com/google-ads/api/docs/conversions/upload-offline); [Google Ads Help, GCLID imports](https://support.google.com/google-ads/answer/7012522); [Google Ads Developer Blog, May 2026](https://ads-developers.googleblog.com/2026/05/changes-to-offline-click-conversion.html); [Data Manager API upgrade guide](https://developers.google.com/data-manager/api/devguides/events/google-ads/offline/upgrade); [LinkedIn, enable first-party cookies](https://www.linkedin.com/help/lms/answer/a423304); [LinkedIn Conversions API use case](https://learn.microsoft.com/en-us/linkedin/marketing/conversions/conversions-usecase); [TikTok Click ID](https://ads.tiktok.com/help/article/tiktok-click-id).
 
 Touches §5 (`touchpoint`), §8.2 (`attribution` object), §10.2 and decision O14. Under §1 rule 1 the schema is frozen since 16 Oct, so this is written down as a request rather than a migration.
 
