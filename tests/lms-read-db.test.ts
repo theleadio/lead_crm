@@ -3,7 +3,11 @@
 // the real LMS rows.
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
-import { closeLms, listLmsEnrollments } from "../lib/lms/read.ts";
+import {
+  closeLms,
+  listLmsEnrollments,
+  lmsHrdcEnrollmentIds,
+} from "../lib/lms/read.ts";
 
 after(closeLms);
 
@@ -34,4 +38,10 @@ it("filters by email, case-insensitively", async () => {
     (await listLmsEnrollments({ email: "nobody@invalid.test" })).length,
     0,
   );
+});
+
+it("lists the HRDC enrolment ids, which are uuids", async () => {
+  const ids = await lmsHrdcEnrollmentIds();
+  assert.ok(ids.length > 0);
+  assert.ok(ids.every((id) => /^[0-9a-f-]{36}$/.test(id)));
 });

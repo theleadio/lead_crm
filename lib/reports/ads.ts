@@ -5,6 +5,7 @@ import {
   type Viewer,
 } from "../auth/permissions.ts";
 import { seatTakenSql } from "../classes/seats.ts";
+import { lmsHrdcEnrollmentIds } from "../lms/read.ts";
 import { db } from "../sql.ts";
 import type { AdsReportQuery } from "../validation/report.ts";
 import {
@@ -316,6 +317,11 @@ export async function signupsPerCampaign(
   // The join is on `utm_campaign_id`, not the campaign name. Names vary in
   // Meta's own data ("WhatsApp" against "Whatsapp") and are retyped per run;
   // the id is the thing Meta and the lead both carry.
+  // A synced seat has no deal, so the deal alone reports 0 HRDC however many
+  // grant seats the LMS holds. The LMS ids top it up; an LMS that cannot be
+  // reached leaves the deal-only count rather than failing the report.
+  const lmsHrdcIds = await lmsHrdcEnrollmentIds().catch(() => [] as string[]);
+
   const rows = await sql`
     WITH first_touch AS (
       SELECT DISTINCT ON (t.person_id)
@@ -330,7 +336,9 @@ export async function signupsPerCampaign(
     SELECT f.utm_campaign_id AS campaign_id,
            max(f.utm_campaign) AS campaign,
            count(*)::int AS signups,
-           count(*) FILTER (WHERE d.funding_type = 'hrdc')::int AS hrdc_signups
+           count(*) FILTER (
+             WHERE d.funding_type = 'hrdc' OR e.id = ANY(${lmsHrdcIds}::uuid[])
+           )::int AS hrdc_signups
     FROM first_touch f
     JOIN enrolment e ON e.person_id = f.person_id
     LEFT JOIN deal d ON d.id = e.deal_id
