@@ -14,7 +14,14 @@ function lms(): postgres.Sql {
     const url = process.env.LMS_DATABASE_URL;
     if (!url) throw new Error("LMS_DATABASE_URL is not set");
     // Cached on globalThis so dev hot-reload doesn't open a new pool each time.
-    globalForLms.__leadLmsSql = postgres(url, { ssl: "require", max: 3 });
+    // prepare: false because the LMS URL is the transaction pooler (port 6543),
+    // which hands each statement a different backend; a named prepared statement
+    // then fails with Postgres 26000 on parallel reads.
+    globalForLms.__leadLmsSql = postgres(url, {
+      ssl: "require",
+      max: 3,
+      prepare: false,
+    });
   }
   return globalForLms.__leadLmsSql;
 }
