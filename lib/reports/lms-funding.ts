@@ -13,6 +13,7 @@
 
 import { requireReportReader } from "./ads.ts";
 import type { Viewer } from "../auth/permissions.ts";
+import type { AdsReportQuery } from "../validation/report.ts";
 import { lmsFundingByCourse } from "../lms/read.ts";
 import type { FundingRow } from "./funding.ts";
 
@@ -22,9 +23,12 @@ function crmLanguage(language: string | null): "en" | "zh" {
   return language === "cn" || language === "zh" ? "zh" : "en";
 }
 
-export async function fundingFromLms(viewer: Viewer): Promise<FundingRow[]> {
+export async function fundingFromLms(
+  viewer: Viewer,
+  q: AdsReportQuery,
+): Promise<FundingRow[]> {
   requireReportReader(viewer);
-  const rows = await lmsFundingByCourse();
+  const rows = await lmsFundingByCourse(q.from, q.to);
   return rows.map((row) => ({
     course: row.courseName,
     language: crmLanguage(row.language),

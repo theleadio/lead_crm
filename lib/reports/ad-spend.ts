@@ -140,6 +140,12 @@ export async function adSpendRows(
   // Whole days, both ends inclusive, like the rest of §9.18. No row cap: this
   // is one row per ad per day for one ad account, and it is summed before
   // anything is drawn — a cap would quietly change a total.
+  // The table is keyed (ad_id, day) per account, so a second ad account — a
+  // demo seed, a client account, a second brand — would be summed into the
+  // same totals. META_AD_ACCOUNT_ID is the account this report is about; with
+  // it unset every account is counted, which is right only while there is one.
+  const account = process.env.META_AD_ACCOUNT_ID?.trim().replace(/^act_/, "");
+
   const rows = await sql<MetaAdInsightRow[]>`
     SELECT day, campaign_name, ad_name, objective, currency, spend,
            impressions, clicks, inline_link_clicks, messages, checkouts,
@@ -147,6 +153,7 @@ export async function adSpendRows(
     FROM meta_ad_insight
     WHERE day >= ${q.from}::date
       AND day <= ${q.to}::date
+      ${account ? sql`AND account_id = ${account}` : sql``}
     ORDER BY day ASC, campaign_name ASC, ad_name ASC`;
 
   return rows.map(toAdSpendRow);

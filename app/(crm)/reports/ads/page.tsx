@@ -20,7 +20,6 @@ import {
   type CampaignRevenue,
   type ObjectiveSplit,
 } from "@/lib/reports/spend";
-import { SPEND_UNAVAILABLE } from "@/lib/reports/types";
 import {
   adsReportQuerySchema,
   readAdsReportParams,
@@ -101,53 +100,68 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
       panel("ad spend", () => adSpendRows(user, query)),
       // Read whether or not the CRM has funding: which of the two the panel
       // shows is decided below, and a failing LMS must not take the screen down.
-      panel("who pays, from the LMS", () => fundingFromLms(user)),
+      panel("who pays, from the LMS", () => fundingFromLms(user, query)),
     ]);
 
   // The cost side of the report, from `meta_ad_insight` (migration 014). The
   // pull asks Meta for ad-level rows, so campaign totals are summed from
   // those rows and there is no second grain to double-count against.
+  //
+  // All of it is wrapped, because this arithmetic throws: `assertOneCurrency`
+  // refuses to add two currencies (MixedCurrency), and one USD row would
+  // otherwise take down every panel on the screen, including the ones that
+  // never touch spend. There is no error.tsx under (crm) to catch it.
   const adSpend: AdSpendRow[] = spend.ok ? spend.data : [];
-  const campaignSpend = byCampaign(adSpend, "ad");
+  const cost = (() => {
+    try {
+      const campaignSpend = byCampaign(adSpend, "ad");
 
-  // Both halves group on a normalised campaign key, because a touchpoint
-  // carries the campaign as a URL did — `+` for a space, percent-escapes, any
-  // case. What the screen prints is the name a person would recognise:
-  // Meta's own, or the tag the lead arrived with when there is no ad row.
-  const displayFor = new Map<string, string>();
-  for (const row of adSpend)
-    displayFor.set(row.campaignName, row.displayName ?? row.campaignName);
-  if (signups.ok)
-    for (const s of signups.data) {
-      const key = normaliseCampaign(s.campaign);
-      if (!displayFor.has(key)) displayFor.set(key, s.campaign);
+      const displayFor = new Map<string, string>();
+      for (const row of adSpend)
+        displayFor.set(row.campaignName, row.displayName ?? row.campaignName);
+      if (signups.ok)
+        for (const s of signups.data) {
+          const key = normaliseCampaign(s.campaign);
+          if (!displayFor.has(key)) displayFor.set(key, s.campaign);
+        }
+      const named = (key: string) => displayFor.get(key) ?? key;
+
+      // Revenue per campaign stays empty: `deal.source_touchpoint_id` exists
+      // (migration 009) but only public intake sets it, so most deals carry
+      // no campaign and a ratio built on the ones that do would read low by
+      // an unknown amount. The panel is wired, not fed.
+      const campaignRevenue = new Map<string, CampaignRevenue>();
+
+      return {
+        campaignSpend,
+        named,
+        returns: roasRows(campaignSpend, campaignRevenue).map((r) => ({
+          ...r,
+          campaign: named(r.campaign),
+        })),
+        whatsappAds: rankAds(adSpend, "messages").map((r) => ({
+          ...r,
+          campaign: named(r.campaign),
+        })),
+        conversionAds: rankAds(adSpend, "checkouts").map((r) => ({
+          ...r,
+          campaign: named(r.campaign),
+        })),
+        spendSplit: spendByObjective(adSpend, "ad").map((r) => ({
+          ...r,
+          campaign: named(r.campaign),
+        })) as ObjectiveSplit[],
+      };
+    } catch (err) {
+      console.error("[ads report] spend arithmetic failed", err);
+      return null;
     }
-  const named = (key: string) => displayFor.get(key) ?? key;
-  // Revenue per campaign stays empty: `deal.source_touchpoint_id` exists
-  // (migration 009) but only public intake sets it, so most deals carry no
-  // campaign and a ratio built on the ones that do would read low by an
-  // unknown amount. The panel is wired, not fed.
-  const campaignRevenue = new Map<string, CampaignRevenue>();
-  const returns = roasRows(campaignSpend, campaignRevenue).map((r) => ({
-    ...r,
-    campaign: named(r.campaign),
-  }));
-  // Ranked on the two action counts the pull now carries: conversations
-  // started, and checkouts started. An ad that counted none of either is not
-  // in its list at all.
-  const whatsappAds = rankAds(adSpend, "messages").map((r) => ({
-    ...r,
-    campaign: named(r.campaign),
-  }));
-  const conversionAds = rankAds(adSpend, "checkouts").map((r) => ({
-    ...r,
-    campaign: named(r.campaign),
-  }));
-  // Ad-grain rows, so the split is told to use that grain: campaign rows and
-  // ad rows are the same ringgit twice.
+  })();
+
   // Funding comes from the CRM when a deal records any, and from the LMS
   // while none does — one decision, so the rings and the bars can never
-  // disagree about where their numbers came from.
+  // disagree about where their numbers came from. Both are ranged on the
+  // report's own dates.
   const whoPays =
     funding.ok && funding.data.some((r) => r.hrdc > 0)
       ? { rows: funding.data, source: "deal" as const }
@@ -156,10 +170,6 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
         : funding.ok
           ? { rows: funding.data, source: "deal" as const }
           : null;
-
-  const spendSplit: ObjectiveSplit[] = spendByObjective(adSpend, "ad").map(
-    (r) => ({ ...r, campaign: named(r.campaign) }),
-  );
 
   // The panels in the order the agreed dashboard sets them, so this screen and
   // that page can be read side by side.
@@ -174,21 +184,21 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
 
       {/* A failed spend read shows the panel's error rather than an empty x
           axis, which would read as "no campaign spent anything". */}
-      {signups.ok && spend.ok ? (
+      {signups.ok && spend.ok && cost ? (
         <EfficiencyMapPanel
           points={efficiencyPoints(
             // Spend summed from the ad-level rows of `meta_ad_insight`,
             // matched to signups on the normalised campaign key. A campaign
             // that spent and produced nothing still has a point; so does one
             // that produced signups with no spend recorded against it.
-            campaignSpend,
+            cost.campaignSpend,
             new Map(
               signups.data.map((s) => [
                 normaliseCampaign(s.campaign),
                 { signups: s.signups, hrdcSignups: s.hrdcSignups },
               ]),
             ),
-          ).map((p) => ({ ...p, campaign: named(p.campaign) }))}
+          ).map((p) => ({ ...p, campaign: cost.named(p.campaign) }))}
         />
       ) : (
         <PanelError what="spend against signups" />
@@ -200,8 +210,8 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
         <PanelError what="course price against HRDC share" />
       )}
 
-      {returns.length > 0 ? (
-        <RoasPanel rows={returns} />
+      {cost && cost.returns.length > 0 ? (
+        <RoasPanel rows={cost.returns} />
       ) : (
         <WaitingPanel
           title="Return on ad spend"
@@ -209,13 +219,13 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
         />
       )}
 
-      {whatsappAds.length > 0 ? (
+      {cost && cost.whatsappAds.length > 0 ? (
         <TopAdsPanel
           title="Top click-to-WhatsApp ads"
           description="The ads that started the most conversations, with what one message cost and how often the ad was clicked."
           countLabel="Messages"
           costLabel="Cost per message"
-          rows={whatsappAds}
+          rows={cost.whatsappAds}
           emptyNote="No click-to-WhatsApp ad recorded a message in this date range."
         />
       ) : (
@@ -225,13 +235,13 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
         />
       )}
 
-      {conversionAds.length > 0 ? (
+      {cost && cost.conversionAds.length > 0 ? (
         <TopAdsPanel
           title="Top conversion ads"
           description="The ads that started the most checkouts, with what one started checkout cost and how often the ad was clicked. A started checkout is not a payment."
           countLabel="Checkouts started"
           costLabel="Cost per checkout"
-          rows={conversionAds}
+          rows={cost.conversionAds}
           emptyNote="No conversion ad recorded a started checkout in this date range."
         />
       ) : (
@@ -256,8 +266,8 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
         <PanelError what="the who-pays panel" />
       )}
 
-      {spendSplit.length > 0 ? (
-        <SpendSplitPanel rows={spendSplit} />
+      {cost && cost.spendSplit.length > 0 ? (
+        <SpendSplitPanel rows={cost.spendSplit} />
       ) : (
         <WaitingPanel
           title="Where the spend went"
@@ -315,7 +325,9 @@ function Shell({
 
       {children}
 
-      <p className="text-ink-muted text-sm">{SPEND_UNAVAILABLE}</p>
+      {/* The footer used to say spend had not arrived yet. It has: the panels
+          above are drawn from `meta_ad_insight`. What is still missing is
+          said by the panel that misses it, not by a line under all of them. */}
     </div>
   );
 }

@@ -419,7 +419,12 @@ async function clean(): Promise<void> {
     await tx`UPDATE person SET first_touchpoint_id = NULL
              WHERE email LIKE ${"%@" + DEMO_DOMAIN}`;
     await tx`DELETE FROM person WHERE email LIKE ${"%@" + DEMO_DOMAIN}`;
-    await tx`DELETE FROM class WHERE code LIKE 'ADSD-%'`;
+    // Class codes are the run suffixes (LTF-0909-CN, …); only course.code
+    // carries the ADSD- tag. Matching class.code deleted nothing, and the
+    // course delete then failed on the class foreign key, so --clean removed
+    // nothing at all and a re-seed hit the unique course code.
+    await tx`DELETE FROM class WHERE course_id IN
+             (SELECT id FROM course WHERE code LIKE 'ADSD-%')`;
     await tx`DELETE FROM course WHERE code LIKE 'ADSD-%'`;
     // Migration 014 may not be applied yet, and a missing table is not a
     // failed clean — there is nothing of ours in it.

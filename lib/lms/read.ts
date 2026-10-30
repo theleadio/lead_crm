@@ -87,7 +87,13 @@ export type LmsFundingRow = {
   hrdc: number;
 };
 
-export async function lmsFundingByCourse(): Promise<LmsFundingRow[]> {
+// `from`/`to` are whole Kuala Lumpur days, both ends inclusive, matching the
+// rest of §9.18. Without them this counted every enrolment the LMS has ever
+// held while the screen said it was showing one month.
+export async function lmsFundingByCourse(
+  from: string,
+  to: string,
+): Promise<LmsFundingRow[]> {
   return lms()<LmsFundingRow[]>`
     select co.name as "courseName", co.name_cn as "courseNameCn",
            c.language,
@@ -98,6 +104,8 @@ export async function lmsFundingByCourse(): Promise<LmsFundingRow[]> {
       from public.enrollments e
       join public.cohorts c on c.id = e.cohort_id
       join public.courses co on co.id = c.course_id
+     where e.created_at >= (${from}::date::timestamp at time zone 'Asia/Kuala_Lumpur')
+       and e.created_at <  ((${to}::date + 1)::timestamp at time zone 'Asia/Kuala_Lumpur')
      group by co.name, co.name_cn, c.language,
               (coalesce(c.end_date, c.start_date) - c.start_date + 1)
     having count(e.id) > 0
