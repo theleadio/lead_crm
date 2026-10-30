@@ -2,13 +2,7 @@ import { notFound } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { permissionFor } from "@/lib/auth/permissions";
 import { formatDate } from "@/lib/format/date";
-import {
-  campaignRows,
-  earliestMetaTouchpoint,
-  leadsPerWeek,
-  signupsPerCampaign,
-  sourceRows,
-} from "@/lib/reports/ads";
+import { earliestMetaTouchpoint, signupsPerCampaign } from "@/lib/reports/ads";
 import {
   fundingBreakdowns,
   fundingSplit,
@@ -18,10 +12,7 @@ import { fundingFromLms } from "@/lib/reports/lms-funding";
 import { adSpendRows, normaliseCampaign } from "@/lib/reports/ad-spend";
 import {
   byCampaign,
-  byDay,
-  costPerActionByCampaign,
   efficiencyPoints,
-  headlineFigures,
   rankAds,
   roasRows,
   spendByObjective,
@@ -38,17 +29,12 @@ import {
 import { PanelError } from "../../dashboard/panel-kit";
 import { EfficiencyMapPanel } from "./panels/efficiency-map";
 import { FundingDonutsPanel } from "./panels/funding-donuts";
-import { LeadsOverTimePanel } from "./panels/leads-over-time";
-import { CostPerActionPanel } from "./panels/cost-per-action";
 import { PriceHrdcPanel } from "./panels/price-hrdc";
 import { RoasPanel } from "./panels/roas";
-import { SpendOverTimePanel } from "./panels/spend-over-time";
 import { SpendSplitPanel } from "./panels/spend-split";
-import { SummaryPanel } from "./panels/summary";
 import { TopAdsPanel } from "./panels/top-ads";
 import { WaitingPanel } from "./panels/waiting";
 import { WhoPaysPanel } from "./panels/who-pays";
-import { CampaignTable, SourceTable } from "./tables";
 
 // Spec §9.18. The ads dashboard, in the app now that the BI tool is dropped
 // (O67). Two panels are drawn from tables that exist; five name what they
@@ -103,29 +89,19 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
   }
 
   const query = parsed.data;
-  const [
-    campaigns,
-    sources,
-    earliest,
-    funding,
-    priceShare,
-    weekly,
-    signups,
-    spend,
-    lmsFunding,
-  ] = await Promise.all([
-    panel("campaign table", () => campaignRows(user, query)),
-    panel("source table", () => sourceRows(user, query)),
-    panel("earliest touchpoint", () => earliestMetaTouchpoint(user)),
-    panel("who pays", () => fundingSplit(user, query)),
-    panel("price against HRDC share", () => priceAgainstHrdcShare(user, query)),
-    panel("leads per week", () => leadsPerWeek(user, query)),
-    panel("signups per campaign", () => signupsPerCampaign(user, query)),
-    panel("ad spend", () => adSpendRows(user, query)),
-    // Read whether or not the CRM has funding: which of the two the panel
-    // shows is decided below, and a failing LMS must not take the screen down.
-    panel("who pays, from the LMS", () => fundingFromLms(user)),
-  ]);
+  const [earliest, funding, priceShare, signups, spend, lmsFunding] =
+    await Promise.all([
+      panel("earliest touchpoint", () => earliestMetaTouchpoint(user)),
+      panel("who pays", () => fundingSplit(user, query)),
+      panel("price against HRDC share", () =>
+        priceAgainstHrdcShare(user, query),
+      ),
+      panel("signups per campaign", () => signupsPerCampaign(user, query)),
+      panel("ad spend", () => adSpendRows(user, query)),
+      // Read whether or not the CRM has funding: which of the two the panel
+      // shows is decided below, and a failing LMS must not take the screen down.
+      panel("who pays, from the LMS", () => fundingFromLms(user)),
+    ]);
 
   // The cost side of the report, from `meta_ad_insight` (migration 014). The
   // pull asks Meta for ad-level rows, so campaign totals are summed from
@@ -168,24 +144,6 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
   }));
   // Ad-grain rows, so the split is told to use that grain: campaign rows and
   // ad rows are the same ringgit twice.
-  // What the ad account can answer without any attribution: its own money
-  // and its own counts. These lead the page, because they are measured.
-  const figures = headlineFigures(adSpend);
-  const days = byDay(adSpend);
-  const perMessage = costPerActionByCampaign(
-    adSpend,
-    "messages",
-    "whatsapp",
-  ).map((r) => ({
-    ...r,
-    campaign: named(r.campaign),
-  }));
-  const perCheckout = costPerActionByCampaign(
-    adSpend,
-    "checkouts",
-    "conversion",
-  ).map((r) => ({ ...r, campaign: named(r.campaign) }));
-
   // Funding comes from the CRM when a deal records any, and from the LMS
   // while none does — one decision, so the rings and the bars can never
   // disagree about where their numbers came from.
@@ -211,42 +169,6 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
           Attribution data starts {formatDate(earliest.data)}; a range reaching
           further back has nothing to count.
         </p>
-      )}
-
-      {spend.ok && adSpend.length > 0 && (
-        <>
-          <SummaryPanel figures={figures} from={query.from} to={query.to} />
-          <SpendOverTimePanel
-            days={days}
-            totals={{
-              spend: figures.spend,
-              messages: figures.messages,
-              checkouts: figures.checkouts,
-            }}
-          />
-          <CostPerActionPanel
-            title="What a conversation cost"
-            description="Spend divided by the conversations it started, for campaigns run with Meta’s engagement objective. Cheapest first; a campaign that started none is not listed."
-            unit="conversations"
-            guides={[10, 25, 50]}
-            rows={perMessage}
-            emptyNote="No campaign started a conversation in this date range."
-          />
-          <CostPerActionPanel
-            title="What a started checkout cost"
-            description="Spend divided by the checkouts it started, for campaigns run with Meta’s sales objective. A started checkout is not a payment — the money that arrived is Stripe's, and tying it back to a campaign is O30."
-            unit="checkouts"
-            guides={[25, 50, 100]}
-            rows={perCheckout}
-            emptyNote="No campaign started a checkout in this date range."
-          />
-        </>
-      )}
-
-      {weekly.ok ? (
-        <LeadsOverTimePanel data={weekly.data} />
-      ) : (
-        <PanelError what="leads per week" />
       )}
 
       {/* A failed spend read shows the panel's error rather than an empty x
@@ -340,17 +262,6 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
           title="Where the spend went"
           waitingFor="recorded ad spend per ad type — the ad tables §5 defers"
         />
-      )}
-
-      {campaigns.ok ? (
-        <CampaignTable table={campaigns.data} />
-      ) : (
-        <PanelError what="the campaign table" />
-      )}
-      {sources.ok ? (
-        <SourceTable table={sources.data} />
-      ) : (
-        <PanelError what="the source table" />
       )}
     </Shell>
   );
