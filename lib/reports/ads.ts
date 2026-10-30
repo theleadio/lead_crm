@@ -7,6 +7,7 @@ import {
 import { seatTakenSql } from "../classes/seats.ts";
 import { db } from "../sql.ts";
 import type { AdsReportQuery } from "../validation/report.ts";
+import { SIZE_FLOOR } from "./class-size.ts";
 import {
   NO_SPEND,
   type AdsCampaignRow,
@@ -38,6 +39,19 @@ export const META_SOURCES = [
   "ig",
   "meta",
 ] as const;
+
+// §9.18 class size: big, middle and small are bands on the course's own list
+// price (lib/reports/class-size.ts), so the filter is a price range rather
+// than a name or a track. An unpriced course is in no band, which is why a
+// filtered view uses an inner comparison and not COALESCE.
+function sizeSql(sql: postgres.Sql, q: AdsReportQuery) {
+  if (!q.size) return sql``;
+  const price = sql`co.list_price_myr`;
+  if (q.size === "big") return sql`AND ${price} >= ${SIZE_FLOOR.big}`;
+  if (q.size === "middle")
+    return sql`AND ${price} >= ${SIZE_FLOOR.middle} AND ${price} < ${SIZE_FLOOR.big}`;
+  return sql`AND ${price} > 0 AND ${price} < ${SIZE_FLOOR.middle}`;
+}
 
 // `alias` is the touchpoint table's alias in the calling query.
 export function metaTouchpointSql(sql: postgres.Sql, alias = "t") {
@@ -333,8 +347,11 @@ export async function signupsPerCampaign(
            count(*) FILTER (WHERE d.funding_type = 'hrdc')::int AS hrdc_signups
     FROM first_touch f
     JOIN enrolment e ON e.person_id = f.person_id
+    JOIN class cl ON cl.id = e.class_id
+    JOIN course co ON co.id = cl.course_id
     LEFT JOIN deal d ON d.id = e.deal_id
     WHERE ${seatTakenSql(sql)}
+      ${sizeSql(sql, q)}
       AND e.created_at >= (${q.from}::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
       AND e.created_at < ((${q.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
     GROUP BY f.utm_campaign_id

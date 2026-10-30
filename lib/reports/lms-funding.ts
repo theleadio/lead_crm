@@ -16,6 +16,7 @@ import type { Viewer } from "../auth/permissions.ts";
 import type { AdsReportQuery } from "../validation/report.ts";
 import { lmsFundingByCourse } from "../lms/read.ts";
 import { db } from "../sql.ts";
+import { matchesSize } from "./class-size.ts";
 import type { FundingRow } from "./funding.ts";
 
 // The LMS writes `cn`; the CRM's class language is `zh` (§4). One name for
@@ -46,16 +47,21 @@ export async function fundingFromLms(
     lmsFundingByCourse(q.from, q.to),
     crmListPrices(),
   ]);
-  return rows.map((row) => ({
-    course: row.courseName,
-    language: crmLanguage(row.language),
-    durationDays: row.durationDays,
-    // The LMS still has no price — courses.price_cents is 0 and
-    // cohorts.price_cents is null on every row — so the figure comes from the
-    // CRM. It is the self-funded list price before 8% SST; the HRDC and
-    // with-coaching tiers have no column yet.
-    listPriceMyr: prices.get(row.courseName) ?? null,
-    hrdc: row.hrdc,
-    notHrdc: row.seats - row.hrdc,
-  }));
+  // The size filter is applied here, after the price join, because the price
+  // is what decides the size. A course nobody has priced has no size, so a
+  // filtered view leaves it out rather than guessing which band it is in.
+  return rows
+    .filter((row) => matchesSize(prices.get(row.courseName) ?? null, q.size))
+    .map((row) => ({
+      course: row.courseName,
+      language: crmLanguage(row.language),
+      durationDays: row.durationDays,
+      // The LMS still has no price — courses.price_cents is 0 and
+      // cohorts.price_cents is null on every row — so the figure comes from the
+      // CRM. It is the self-funded list price before 8% SST; the HRDC and
+      // with-coaching tiers have no column yet.
+      listPriceMyr: prices.get(row.courseName) ?? null,
+      hrdc: row.hrdc,
+      notHrdc: row.seats - row.hrdc,
+    }));
 }
