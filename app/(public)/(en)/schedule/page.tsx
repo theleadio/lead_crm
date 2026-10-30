@@ -14,6 +14,11 @@ export const metadata: Metadata = {
   alternates: alternates("en", "/schedule"),
 };
 
+// Reads the database per request (cached five minutes in feed.ts), never at
+// build: a deploy with no DATABASE_URL, such as a Netlify preview, must still
+// build.
+export const dynamic = "force-dynamic";
+
 export default function Page() {
   return <SchedulePage locale="en" />;
 }

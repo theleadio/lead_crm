@@ -18,7 +18,15 @@ function root(): Sql {
     globalForSql.__leadSql = postgres(url, {
       // Production stays on TLS; a local Postgres opts out with ?sslmode=disable.
       ssl: url.includes("sslmode=disable") ? false : "require",
-      max: 5,
+      // Supabase's session pooler caps clients at its pool size (15 on Free),
+      // shared by every server. A serverless function (Netlify runs on
+      // Lambda) gets one connection, and idle ones are released, so warm
+      // functions don't hold the pool: "max clients reached in session mode".
+      max: process.env.AWS_LAMBDA_FUNCTION_NAME ? 1 : 5,
+      idle_timeout: 20,
+      // Supabase's pooler (port 6543, transaction mode) drops prepared
+      // statements between queries: "prepared statement ... does not exist".
+      prepare: !url.includes(":6543"),
     });
   }
   return globalForSql.__leadSql;
