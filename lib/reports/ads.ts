@@ -304,17 +304,31 @@ export async function signupsPerCampaign(
   requireReportReader(viewer);
   const sql = db();
 
+  // Credited to the campaign that first found the buyer, per person — the
+  // model the panel names (O30 is what stops it being per deal).
+  //
+  // "First" is the earliest touchpoint carrying a campaign id, not the
+  // `is_first_touch` flag: the SalesProcess attribution import appends rows
+  // without setting it, so the flag is false on all 3,241 of them and
+  // trusting it credits nobody. `occurred_at` is what the flag was standing
+  // in for, and the id breaks a tie so the answer is stable.
+  //
+  // The join is on `utm_campaign_id`, not the campaign name. Names vary in
+  // Meta's own data ("WhatsApp" against "Whatsapp") and are retyped per run;
+  // the id is the thing Meta and the lead both carry.
   const rows = await sql`
     WITH first_touch AS (
-      SELECT t.person_id, t.utm_campaign
+      SELECT DISTINCT ON (t.person_id)
+             t.person_id, t.utm_campaign_id, t.utm_campaign
       FROM touchpoint t
       JOIN person p ON p.id = t.person_id
-      WHERE t.is_first_touch
-        AND t.utm_campaign IS NOT NULL
+      WHERE t.utm_campaign_id IS NOT NULL
         AND ${metaTouchpointSql(sql)}
         AND ${livePersonSql(sql)}
+      ORDER BY t.person_id, t.occurred_at ASC, t.id ASC
     )
-    SELECT f.utm_campaign AS campaign,
+    SELECT f.utm_campaign_id AS campaign_id,
+           max(f.utm_campaign) AS campaign,
            count(*)::int AS signups,
            count(*) FILTER (WHERE d.funding_type = 'hrdc')::int AS hrdc_signups
     FROM first_touch f
@@ -323,11 +337,12 @@ export async function signupsPerCampaign(
     WHERE ${seatTakenSql(sql)}
       AND e.created_at >= (${q.from}::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
       AND e.created_at < ((${q.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
-    GROUP BY f.utm_campaign
-    ORDER BY signups DESC, campaign ASC
+    GROUP BY f.utm_campaign_id
+    ORDER BY signups DESC, campaign_id ASC
     LIMIT ${ROWS_SHOWN}`;
 
   return rows.map((r) => ({
+    campaignId: r.campaign_id,
     campaign: r.campaign,
     signups: r.signups,
     hrdcSignups: r.hrdc_signups,

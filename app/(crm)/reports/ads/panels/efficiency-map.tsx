@@ -93,7 +93,7 @@ export function EfficiencyMapPanel({ points }: { points: EfficiencyPoint[] }) {
           >
             {/* Cost-per-signup guides. Solid hairlines, labelled at the end,
                 so the diagonal is read as a rate and not as data. */}
-            {COST_PER_SIGNUP_GUIDES.map((rate) => {
+            {COST_PER_SIGNUP_GUIDES.map((rate, i) => {
               const atCeiling = maxSpend / rate;
               const capped = Math.min(atCeiling, maxSignups);
               const endX = x(capped * rate);
@@ -108,9 +108,12 @@ export function EfficiencyMapPanel({ points }: { points: EfficiencyPoint[] }) {
                     stroke="var(--line-strong)"
                     strokeWidth="1"
                   />
+                  {/* Steep guides all leave through the top edge within a
+                      few pixels of each other, so the labels are stepped
+                      down their own line instead of sitting at its end. */}
                   <text
                     x={endX + 6}
-                    y={endY + 4}
+                    y={endY + 4 + i * 13}
                     fontSize="10"
                     fill="var(--ink-subtle)"
                   >
@@ -175,20 +178,50 @@ export function EfficiencyMapPanel({ points }: { points: EfficiencyPoint[] }) {
             </text>
 
             {(() => {
-              // The ones a reader should see named: biggest spenders and
-              // biggest producers. Everything else is still a mark with hover
-              // text, and every campaign is in the table below.
+              // Campaigns that produced something are the readable part of
+              // this chart. The ones on the baseline sit on top of each other
+              // — labelling them turns the axis into a smear — so only the
+              // two biggest spenders among them are named, which is the point
+              // being made about them. Every campaign is still in the table.
               const named = new Set(
-                [...spent]
-                  .sort((a, b) => Number(b.spend) - Number(a.spend))
-                  .slice(0, LABELLED)
-                  .concat(
-                    [...spent]
-                      .sort((a, b) => b.signups - a.signups)
-                      .slice(0, LABELLED),
-                  )
-                  .map((p) => p.campaign),
+                [
+                  ...[...spent]
+                    .filter((p) => p.signups > 0)
+                    .sort((a, b) => b.signups - a.signups)
+                    .slice(0, LABELLED),
+                  ...[...spent]
+                    .filter((p) => p.signups === 0)
+                    .sort((a, b) => Number(b.spend) - Number(a.spend))
+                    .slice(0, 2),
+                ].map((p) => p.campaign),
               );
+              // Labels of points sitting on top of each other are nudged
+              // down one line at a time, so a cheap campaign with one signup
+              // does not overwrite its neighbour. Placement only: the mark
+              // itself never moves.
+              // Labels are 10px text, so about 5.2px a character: two of them
+              // clash when their boxes overlap, not when their anchors are
+              // close. Measuring the box is what stops a long name sitting on
+              // top of its neighbour.
+              const placed: { from: number; to: number; y: number }[] = [];
+              const labelOffset = (cx: number, cy: number, text: string) => {
+                const from = cx;
+                const to = cx + text.length * 5.2;
+                let dy = 0;
+                while (
+                  placed.some(
+                    (q) =>
+                      Math.abs(q.y - (cy + dy)) < 11 &&
+                      from < q.to &&
+                      q.from < to,
+                  )
+                ) {
+                  dy += 11;
+                }
+                placed.push({ from, to, y: cy + dy });
+                return dy;
+              };
+
               return spent.map((p) => {
                 const cx = x(Number(p.spend));
                 const cy = y(p.signups);
@@ -210,7 +243,11 @@ export function EfficiencyMapPanel({ points }: { points: EfficiencyPoint[] }) {
                     {named.has(p.campaign) && (
                       <text
                         x={cx + r + 4}
-                        y={cy + 4}
+                        y={
+                          cy +
+                          4 +
+                          labelOffset(cx, cy, campaignLabel(p.campaign))
+                        }
                         fontSize="10"
                         fill="var(--ink-muted)"
                       >

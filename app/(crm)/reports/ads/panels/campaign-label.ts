@@ -24,5 +24,24 @@ export function campaignLabel(name: string): string {
   // nothing on its own, so it keeps the segment before it.
   const qualifier = /^(hrdc|self[- ]funded|v\d+|details targeting)$/i;
   const penultimate = parts.at(-2);
-  return qualifier.test(tail) && penultimate ? `${penultimate} ${tail}` : tail;
+  const base =
+    qualifier.test(tail) && penultimate ? `${penultimate} ${tail}` : tail;
+
+  // One class is usually advertised by two campaigns at once — a sales one
+  // and a click-to-WhatsApp one — and their names differ only in that
+  // segment. Dropping it makes two different campaigns read as one point
+  // labelled twice, so the objective is kept when the name carries one.
+  // Middle segments only: every name in this account opens with the
+  // brand ("LEAD"), which matches `leads?` and would be appended to all
+  // of them, and the tail is the class itself.
+  const objective = parts
+    .slice(1, -1)
+    .find((part) =>
+      /^(sales|whatsapp|leads?|impression|traffic|conversion|engagement|awareness)$/i.test(
+        part,
+      ),
+    );
+  return objective && !base.toLowerCase().includes(objective.toLowerCase())
+    ? `${base} · ${objective}`
+    : base;
 }

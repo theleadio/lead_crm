@@ -134,6 +134,45 @@ export function hrdcShare(hrdc: number, seats: number): number {
   return seats > 0 ? hrdc / seats : 0;
 }
 
+// The same scatter, built from funding rows instead of a second query — the
+// LMS source has the seats and the CRM has the price, and this is where they
+// meet. One point per course, so the two languages of one programme are one
+// point; a course with no price is left off, because it cannot be placed on
+// the price axis at all.
+export function priceShareFromFunding(rows: FundingRow[]): PriceShareRow[] {
+  const byCourse = new Map<
+    string,
+    { listPriceMyr: string; hrdc: number; seats: number }
+  >();
+  for (const row of rows) {
+    if (!row.listPriceMyr) continue;
+    const seen = byCourse.get(row.course);
+    const seats = row.hrdc + row.notHrdc;
+    if (seen) {
+      seen.hrdc += row.hrdc;
+      seen.seats += seats;
+    } else {
+      byCourse.set(row.course, {
+        listPriceMyr: row.listPriceMyr,
+        hrdc: row.hrdc,
+        seats,
+      });
+    }
+  }
+  return [...byCourse]
+    .map(([course, r]) => ({
+      course,
+      listPriceMyr: r.listPriceMyr,
+      hrdcShare: hrdcShare(r.hrdc, r.seats),
+      seats: r.seats,
+    }))
+    .sort(
+      (a, b) =>
+        Number(a.listPriceMyr) - Number(b.listPriceMyr) ||
+        a.course.localeCompare(b.course),
+    );
+}
+
 // The reference dashboard's one-day against two-day tiers.
 export function priceTier(durationDays: number): string {
   return durationDays === 1 ? "1 day" : `${durationDays} days`;

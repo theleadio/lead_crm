@@ -20,6 +20,7 @@ import {
 
 const insight = (over: Partial<MetaAdInsightRow> = {}): MetaAdInsightRow => ({
   day: "2026-10-01",
+  campaign_id: "1200000000001",
   campaign_name: "aiauto_202610_leads_en",
   ad_name: "aiauto_202610_leads_en — carousel",
   currency: "MYR",
@@ -37,7 +38,8 @@ const insight = (over: Partial<MetaAdInsightRow> = {}): MetaAdInsightRow => ({
 test("carries the money and the counts through untouched", () => {
   const row = toAdSpendRow(insight());
   assert.equal(row.metricDate, "2026-10-01");
-  assert.equal(row.campaignName, "aiauto_202610_leads_en");
+  assert.equal(row.campaignName, "1200000000001");
+  assert.equal(row.displayName, "aiauto_202610_leads_en");
   assert.equal(row.adName, "aiauto_202610_leads_en — carousel");
   assert.equal(row.spend, "120.50");
   assert.equal(row.impressions, 5500);
@@ -59,7 +61,11 @@ test("every row is ad-level, so campaign totals sum from the ad grain", () => {
   const rows = [
     insight({ spend: "100.00" }),
     insight({ ad_name: "aiauto_202610_leads_en — video", spend: "50.25" }),
-    insight({ campaign_name: "vibe_202610_leads_cn", spend: "80.00" }),
+    insight({
+      campaign_id: "2",
+      campaign_name: "vibe_202610_leads_cn",
+      spend: "80.00",
+    }),
   ].map(toAdSpendRow);
 
   assert.equal(
@@ -71,8 +77,8 @@ test("every row is ad-level, so campaign totals sum from the ad grain", () => {
   assert.equal(byCampaign(rows, "campaign").size, 0);
 
   const totals = byCampaign(rows, "ad");
-  assert.equal(totals.get("aiauto_202610_leads_en")?.spend, "150.25");
-  assert.equal(totals.get("vibe_202610_leads_cn")?.spend, "80.00");
+  assert.equal(totals.get("1200000000001")?.spend, "150.25");
+  assert.equal(totals.get("2")?.spend, "80.00");
 });
 
 // Meta's objective, bucketed. The account reports four of them, and anything
@@ -107,7 +113,7 @@ test("link clicks are carried beside every click, never instead of them", () => 
 test("an ad that counted nothing is in no ranking", () => {
   const rows = [
     insight(),
-    insight({ campaign_name: "ltf_202609_leads_cn" }),
+    insight({ campaign_id: "2", campaign_name: "ltf_202609_leads_cn" }),
   ].map(toAdSpendRow);
   assert.deepEqual(rankAds(rows, "messages"), []);
   assert.deepEqual(rankAds(rows, "checkouts"), []);
@@ -120,33 +126,37 @@ test("an ad that counted nothing is in no ranking", () => {
 // Every tagged ad in the account carries utm_campaign={{campaign.name}}, so
 // the tag resolves to the campaign's own name at click time. What arrives on
 // a touchpoint is that name as a URL carried it.
-test("the campaign key is the name as a URL would have carried it", () => {
+test("the campaign key is Meta's id; the name is only for the screen", () => {
   const row = toAdSpendRow(
-    insight({ campaign_name: "LEAD | Oct2026 | WhatsApp | AI Vibe Coding" }),
+    insight({
+      campaign_id: "1200000000009",
+      campaign_name: "LEAD | Oct2026 | WhatsApp | AI Vibe Coding",
+    }),
   );
-  assert.equal(row.campaignName, "lead | oct2026 | whatsapp | ai vibe coding");
+  assert.equal(row.campaignName, "1200000000009");
   assert.equal(row.displayName, "LEAD | Oct2026 | WhatsApp | AI Vibe Coding");
+});
+
+// Meta cases its own names inconsistently ("WhatsApp" against "Whatsapp") and
+// they are retyped per run. Two rows of one campaign stay one campaign.
+test("the same campaign id survives the name being cased differently", () => {
+  const rows = [
+    insight({ campaign_id: "77", campaign_name: "LEAD | WhatsApp | Vibe" }),
+    insight({
+      campaign_id: "77",
+      campaign_name: "LEAD | Whatsapp | Vibe",
+      ad_name: "b",
+      spend: "10.00",
+    }),
+  ].map(toAdSpendRow);
+  assert.equal(byCampaign(rows, "ad").size, 1);
+  assert.equal(byCampaign(rows, "ad").get("77")?.spend, "130.50");
 });
 
 test("a macro tag is not mistaken for a campaign name", () => {
   const macro =
     "utm_source=fb_ad&utm_campaign={{campaign.name}}&utm_content={{ad.name}}";
   assert.equal(utmCampaignFromTags(macro), null);
-  assert.equal(
-    toAdSpendRow(insight({ campaign_name: "Vibe KL", url_tags: macro }))
-      .campaignName,
-    "vibe kl",
-  );
-});
-
-test("a tag with a literal campaign in it wins over Meta's name", () => {
-  const row = toAdSpendRow(
-    insight({
-      campaign_name: "LEAD | Oct2026 | Sales | Vibe",
-      url_tags: "utm_source=fb_ad&utm_campaign=vibe_202610_sales_en",
-    }),
-  );
-  assert.equal(row.campaignName, "vibe_202610_sales_en");
 });
 
 test("a space is a space however the URL spelled it", () => {
@@ -182,6 +192,7 @@ test("the same ad name in two campaigns stays two rows", () => {
     insight({ ad_name: "Info Banner 1", messages: 5 }),
     insight({
       ad_name: "Info Banner 1",
+      campaign_id: "2",
       campaign_name: "other campaign",
       messages: 3,
     }),
@@ -236,9 +247,9 @@ test("byDay sums a day across its ads, in date order", () => {
 
 test("cost per action ranks cheapest first and drops campaigns with none", () => {
   const rows = [
-    insight({ campaign_name: "dear", spend: "100.00", messages: 2 }),
-    insight({ campaign_name: "cheap", spend: "100.00", messages: 50 }),
-    insight({ campaign_name: "silent", spend: "100.00", messages: 0 }),
+    insight({ campaign_id: "dear", spend: "100.00", messages: 2 }),
+    insight({ campaign_id: "cheap", spend: "100.00", messages: 50 }),
+    insight({ campaign_id: "silent", spend: "100.00", messages: 0 }),
   ].map(toAdSpendRow);
   assert.deepEqual(
     costPerActionByCampaign(rows, "messages").map((r) => [

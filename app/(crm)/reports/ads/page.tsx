@@ -7,9 +7,10 @@ import {
   fundingBreakdowns,
   fundingSplit,
   priceAgainstHrdcShare,
+  priceShareFromFunding,
 } from "@/lib/reports/funding";
 import { fundingFromLms } from "@/lib/reports/lms-funding";
-import { adSpendRows, normaliseCampaign } from "@/lib/reports/ad-spend";
+import { adSpendRows } from "@/lib/reports/ad-spend";
 import {
   byCampaign,
   efficiencyPoints,
@@ -120,10 +121,9 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
       for (const row of adSpend)
         displayFor.set(row.campaignName, row.displayName ?? row.campaignName);
       if (signups.ok)
-        for (const s of signups.data) {
-          const key = normaliseCampaign(s.campaign);
-          if (!displayFor.has(key)) displayFor.set(key, s.campaign);
-        }
+        for (const s of signups.data)
+          if (!displayFor.has(s.campaignId))
+            displayFor.set(s.campaignId, s.campaign ?? s.campaignId);
       const named = (key: string) => displayFor.get(key) ?? key;
 
       // Revenue per campaign stays empty: `deal.source_touchpoint_id` exists
@@ -171,6 +171,14 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
           ? { rows: funding.data, source: "deal" as const }
           : null;
 
+  // The scatter follows the same source as the rings and bars, or the screen
+  // would show deal seats beside LMS seats and no label saying so. The LMS
+  // rows carry the CRM price already, so this needs no second query.
+  const priceScatter =
+    whoPays?.source === "lms"
+      ? { ok: true as const, data: priceShareFromFunding(whoPays.rows) }
+      : priceShare;
+
   // The panels in the order the agreed dashboard sets them, so this screen and
   // that page can be read side by side.
   return (
@@ -187,14 +195,13 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
       {signups.ok && spend.ok && cost ? (
         <EfficiencyMapPanel
           points={efficiencyPoints(
-            // Spend summed from the ad-level rows of `meta_ad_insight`,
-            // matched to signups on the normalised campaign key. A campaign
-            // that spent and produced nothing still has a point; so does one
-            // that produced signups with no spend recorded against it.
+            // Both sides keyed on Meta's campaign id. A campaign that spent
+            // and produced nothing still has a point; so does one that
+            // produced signups with no spend recorded against it.
             cost.campaignSpend,
             new Map(
               signups.data.map((s) => [
-                normaliseCampaign(s.campaign),
+                s.campaignId,
                 { signups: s.signups, hrdcSignups: s.hrdcSignups },
               ]),
             ),
@@ -204,8 +211,8 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
         <PanelError what="spend against signups" />
       )}
 
-      {priceShare.ok ? (
-        <PriceHrdcPanel rows={priceShare.data} />
+      {priceScatter.ok ? (
+        <PriceHrdcPanel rows={priceScatter.data} />
       ) : (
         <PanelError what="course price against HRDC share" />
       )}

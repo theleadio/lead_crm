@@ -76,7 +76,10 @@ export type AdsWeeks = {
 // credits the campaign that first found them. O30 is what stops this being
 // per deal, and the panel says which model it used.
 export type CampaignSignups = {
-  campaign: string;
+  // Meta's own campaign id, which both the ad rows and the attributed lead
+  // carry. The name is for the screen only — it varies in Meta's own data.
+  campaignId: string;
+  campaign: string | null;
   signups: number;
   hrdcSignups: number;
 };

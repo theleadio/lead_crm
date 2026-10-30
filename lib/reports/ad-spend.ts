@@ -19,6 +19,7 @@ import type { AdObjective, AdSpendRow } from "./spend.ts";
 // One row of the table, as postgres hands it back.
 export type MetaAdInsightRow = {
   day: string | Date;
+  campaign_id: string;
   campaign_name: string;
   ad_name: string;
   objective: string | null;
@@ -68,10 +69,9 @@ export function objectiveBucket(objective: string | null): AdObjective {
   return OBJECTIVE_BUCKET[objective.trim().toUpperCase()] ?? "other";
 }
 
-// The campaign a touchpoint will have recorded. Every tagged ad in this
-// account carries `utm_campaign={{campaign.name}}`, so the tag resolves to
-// the campaign's own name at click time — which is why the join is on the
-// name and why the name has to be compared the way a URL carried it.
+// Kept for the leads that carry a campaign *name* and no id — older rows,
+// and anything that arrived before the SalesProcess import. The id is the
+// join key now, so this is a fallback, not the path.
 //
 // `+` is a space in a query string, `%20` is a space, and the case the
 // browser sent is not ours to trust. A tag with a literal campaign in it
@@ -105,9 +105,10 @@ export function normaliseCampaign(name: string): string {
 export function toAdSpendRow(row: MetaAdInsightRow): AdSpendRow {
   return {
     metricDate: ymd(row.day),
-    // The key the signups side is matched on, not the display name. The
-    // display name is kept beside it so a panel can print what Meta calls it.
-    campaignName: campaignKey(row),
+    // Meta's campaign id is the key both halves group on. The lead carries
+    // it (SalesProcess attribution), the ad row carries it, and unlike the
+    // name it is not retyped per run or cased differently between them.
+    campaignName: row.campaign_id,
     displayName: row.campaign_name,
     adName: row.ad_name,
     objective: objectiveBucket(row.objective),
@@ -147,7 +148,7 @@ export async function adSpendRows(
   const account = process.env.META_AD_ACCOUNT_ID?.trim().replace(/^act_/, "");
 
   const rows = await sql<MetaAdInsightRow[]>`
-    SELECT day, campaign_name, ad_name, objective, currency, spend,
+    SELECT day, campaign_id, campaign_name, ad_name, objective, currency, spend,
            impressions, clicks, inline_link_clicks, messages, checkouts,
            url_tags
     FROM meta_ad_insight
