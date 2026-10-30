@@ -339,10 +339,15 @@ function Shell({
             stays shareable and needs no client JavaScript. */}
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium">Class size</span>
+          {/* The popup is drawn by the browser, not by us: it takes the
+              element's own background and colour scheme, so both are set
+              here. Inheriting `.dark` is not enough — Chrome renders the
+              option list light otherwise. */}
           <select
             name="filter[size]"
             defaultValue={size}
-            className="border-line focus-visible:outline-focus-ring rounded-md border px-3 py-2 focus-visible:outline-2"
+            className="border-line bg-surface-raised text-ink focus-visible:outline-focus-ring rounded-md border px-3 py-2 focus-visible:outline-2"
+            style={{ colorScheme: "dark" }}
           >
             <option value="">Every size</option>
             {CLASS_SIZES.map((s) => (
