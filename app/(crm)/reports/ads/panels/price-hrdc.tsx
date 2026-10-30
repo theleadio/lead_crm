@@ -119,14 +119,22 @@ export function PriceHrdcPanel({ rows }: { rows: PriceShareRow[] }) {
                   clash is nudged down a line. The mark never moves. */}
               {(() => {
                 const placed: { y: number; left: boolean }[] = [];
+                // Points at 0% sit on the bottom rule, so nudging down puts
+                // their labels over the axis numbers. Near the floor the
+                // stack goes up instead, and either way it stays inside the
+                // plot — a label outside it is worse than one omitted.
                 const nudge = (cy: number, left: boolean) => {
+                  const floor = PAD.top + PLOT_H - 6;
+                  const step = cy > floor - 26 ? -13 : 13;
                   let dy = 0;
                   while (
                     placed.some(
                       (q) => q.left === left && Math.abs(q.y - (cy + dy)) < 13,
-                    )
+                    ) &&
+                    cy + dy + step > PAD.top &&
+                    cy + dy + step < floor
                   ) {
-                    dy += 13;
+                    dy += step;
                   }
                   placed.push({ y: cy + dy, left });
                   return dy;
