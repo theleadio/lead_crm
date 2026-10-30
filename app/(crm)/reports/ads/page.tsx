@@ -222,7 +222,7 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
       ) : (
         <WaitingPanel
           title="Return on ad spend"
-          waitingFor="recorded ad spend, and O30 — a deal does not record the touchpoint that created it, so every order would be credited to advertising and the ratio would be an upper bound shown as a measurement"
+          waitingFor="revenue. Ad spend is recorded, but `payment` is empty and the LMS records no amount either, so there is no money to divide it into. Tying each payment back to a campaign is the second half (O30)"
         />
       )}
 
@@ -238,7 +238,7 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
       ) : (
         <WaitingPanel
           title="Top click-to-WhatsApp ads"
-          waitingFor="ad-level engagement — messages, cost per message and click-through rate live only in the ad tables"
+          waitingFor="a click-to-WhatsApp ad that started a conversation in this date range"
         />
       )}
 
@@ -254,7 +254,7 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
       ) : (
         <WaitingPanel
           title="Top conversion ads"
-          waitingFor="ad-level engagement — checkouts started, cost per checkout and click-through rate live only in the ad tables"
+          waitingFor="a conversion ad that started a checkout in this date range"
         />
       )}
 
@@ -278,7 +278,7 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
       ) : (
         <WaitingPanel
           title="Where the spend went"
-          waitingFor="recorded ad spend per ad type — the ad tables §5 defers"
+          waitingFor="recorded ad spend in this date range"
         />
       )}
     </Shell>
