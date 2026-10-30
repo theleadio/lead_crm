@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fetchInsights, mapInsight } from "../lib/ads/meta.ts";
+import { fetchInsights, fetchUrlTags, mapInsight } from "../lib/ads/meta.ts";
 
 const raw = (over: Record<string, unknown> = {}) => ({
   account_id: "111",
@@ -78,5 +78,121 @@ test("fetchInsights throws Meta's error message", async () => {
   await assert.rejects(
     fetchInsights({ days: 1, fetchImpl }),
     /Invalid OAuth token.*190/,
+  );
+});
+
+test("mapInsight reads objective as-is, messages, checkouts, inline_link_clicks", () => {
+  const r = mapInsight(
+    raw({
+      objective: "OUTCOME_SALES",
+      inline_link_clicks: "18",
+      actions: [
+        { action_type: "link_click", value: "20" },
+        {
+          action_type: "onsite_conversion.messaging_conversation_started_7d",
+          value: "4",
+        },
+        {
+          action_type: "offsite_conversion.fb_pixel_initiate_checkout",
+          value: "2",
+        },
+        { action_type: "offsite_conversion.fb_pixel_purchase", value: "9" },
+        { action_type: "lead", value: "3" },
+      ],
+    }),
+  );
+  assert.equal(r.objective, "OUTCOME_SALES");
+  assert.equal(r.messages, 4);
+  assert.equal(r.checkouts, 2);
+  assert.equal(r.inlineLinkClicks, 18);
+  assert.equal(r.leads, 3);
+  assert.equal(r.clicks, 25);
+  assert.equal(r.urlTags, null);
+});
+
+test("mapInsight: missing or zero new fields mean 0 and null objective, not NaN", () => {
+  for (const over of [{ actions: undefined }, { actions: [], objective: "" }]) {
+    const r = mapInsight(raw(over));
+    assert.equal(r.objective, null);
+    assert.equal(r.messages, 0);
+    assert.equal(r.checkouts, 0);
+    assert.equal(r.inlineLinkClicks, 0);
+    assert.equal(r.urlTags, null);
+  }
+});
+
+test("fetchInsights asks Meta for objective and inline_link_clicks", async () => {
+  process.env.META_ACCESS_TOKEN = "tok";
+  process.env.META_AD_ACCOUNT_ID = "111";
+  let url = "";
+  const fetchImpl = (async (u: string) => {
+    url = u;
+    return new Response(JSON.stringify({ data: [] }), { status: 200 });
+  }) as typeof fetch;
+  await fetchInsights({ days: 1, fetchImpl });
+  const fields = new URL(url).searchParams.get("fields")?.split(",");
+  assert.ok(fields?.includes("objective"));
+  assert.ok(fields?.includes("inline_link_clicks"));
+});
+
+test("fetchUrlTags pages, token only in the header, maps null for missing", async () => {
+  process.env.META_ACCESS_TOKEN = "tok";
+  process.env.META_AD_ACCOUNT_ID = "111";
+  const seen: { url: string; auth: string | null }[] = [];
+  const pages = [
+    {
+      data: [
+        {
+          id: "a1",
+          creative: { url_tags: "utm_source=facebook&utm_campaign=x" },
+        },
+        { id: "a2" },
+      ],
+      paging: { next: "https://graph.facebook.com/page2" },
+    },
+    {
+      data: [
+        { id: "a3", creative: { url_tags: "" } },
+        { id: "a4", creative: { id: "9" } },
+      ],
+    },
+  ];
+  const fetchImpl = (async (url: string, init?: RequestInit) => {
+    seen.push({ url, auth: new Headers(init?.headers).get("authorization") });
+    return new Response(JSON.stringify(pages.shift()), { status: 200 });
+  }) as typeof fetch;
+  const m = await fetchUrlTags({ fetchImpl });
+  assert.deepEqual(
+    [...m],
+    [
+      ["a1", "utm_source=facebook&utm_campaign=x"],
+      ["a2", null],
+      ["a3", null],
+      ["a4", null],
+    ],
+  );
+  assert.equal(seen.length, 2);
+  assert.match(seen[0].url, /act_111\/ads\?/);
+  assert.ok(!seen[0].url.includes("tok"));
+  assert.equal(seen[0].auth, "Bearer tok");
+  assert.equal(seen[1].auth, "Bearer tok");
+  const q = new URL(seen[0].url).searchParams;
+  assert.equal(q.get("fields"), "id,creative{url_tags}");
+  assert.equal(q.get("limit"), "500");
+  assert.match(decodeURIComponent(seen[0].url), /creative\{url_tags\}/);
+  assert.match(q.get("effective_status") ?? "", /ARCHIVED/);
+});
+
+test("fetchUrlTags throws Meta's error message in the same format", async () => {
+  process.env.META_ACCESS_TOKEN = "tok";
+  process.env.META_AD_ACCOUNT_ID = "act_111";
+  const fetchImpl = (async () =>
+    new Response(
+      JSON.stringify({ error: { message: "Invalid OAuth token", code: 190 } }),
+      { status: 400 },
+    )) as typeof fetch;
+  await assert.rejects(
+    fetchUrlTags({ fetchImpl }),
+    /^Error: Meta API 400: Invalid OAuth token \(code 190\)$/,
   );
 });

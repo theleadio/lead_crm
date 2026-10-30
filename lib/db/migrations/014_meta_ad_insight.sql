@@ -14,7 +14,18 @@
 -- Money: numeric(12,2), never float. `currency` is Meta's account currency;
 -- the spec says MYR only, so anything else is stored as it came, not converted.
 -- `leads` counts Meta's `lead` action only (on-Facebook instant forms and
--- pixel leads are both reported under it).
+-- pixel leads are both reported under it). `messages` and `checkouts` are single
+-- action_types too: onsite_conversion.messaging_conversation_started_7d and
+-- offsite_conversion.fb_pixel_initiate_checkout.
+--
+-- `objective` is the campaign objective exactly as Meta sent it (OUTCOME_SALES,
+-- MESSAGES, ...); nothing here interprets it; NULL when Meta omitted it.
+-- `inline_link_clicks` is link clicks only, for a link CTR like Ads Manager's;
+-- `clicks` still counts every click.
+-- `url_tags` is the ad creative's literal UTM string, so a report can join to
+-- touchpoint.utm_campaign exactly instead of matching campaign_name. It is per
+-- ad, copied onto each daily row, from a second API call (the ads edge); NULL
+-- when Meta returned none or that call failed. A NULL never overwrites a tag.
 --
 -- No person_id: nothing joins an ad row to a lead yet. touchpoint.utm_campaign
 -- is the loose link (compare it to campaign_name); a real one is O30.
@@ -39,9 +50,21 @@ CREATE TABLE IF NOT EXISTS meta_ad_insight (
   impressions   integer       NOT NULL CHECK (impressions >= 0),
   clicks        integer       NOT NULL CHECK (clicks >= 0),
   leads         integer       NOT NULL DEFAULT 0 CHECK (leads >= 0),
+  objective     text,
+  messages      integer       NOT NULL DEFAULT 0 CHECK (messages >= 0),
+  checkouts     integer       NOT NULL DEFAULT 0 CHECK (checkouts >= 0),
+  inline_link_clicks integer  NOT NULL DEFAULT 0 CHECK (inline_link_clicks >= 0),
+  url_tags      text,
   synced_at     timestamptz   NOT NULL DEFAULT now(),
   PRIMARY KEY (ad_id, day)
 );
+-- For a database that already has the first version of this table.
+ALTER TABLE meta_ad_insight ADD COLUMN IF NOT EXISTS objective text;
+ALTER TABLE meta_ad_insight ADD COLUMN IF NOT EXISTS messages integer NOT NULL DEFAULT 0 CHECK (messages >= 0);
+ALTER TABLE meta_ad_insight ADD COLUMN IF NOT EXISTS checkouts integer NOT NULL DEFAULT 0 CHECK (checkouts >= 0);
+ALTER TABLE meta_ad_insight ADD COLUMN IF NOT EXISTS inline_link_clicks integer NOT NULL DEFAULT 0 CHECK (inline_link_clicks >= 0);
+ALTER TABLE meta_ad_insight ADD COLUMN IF NOT EXISTS url_tags text;
+
 CREATE INDEX IF NOT EXISTS meta_ad_insight_day_idx ON meta_ad_insight (day);
 CREATE INDEX IF NOT EXISTS meta_ad_insight_campaign_idx ON meta_ad_insight (campaign_id, day);
 
