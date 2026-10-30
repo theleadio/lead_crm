@@ -87,7 +87,8 @@ async function once() {
     };
 
     // course. CRM requires track + duration_days; LMS has neither, so use
-    // placeholders (workshop, span of its longest cohort) and fix by hand in the CRM.
+    // track from the name (Certification / Mastery, else workshop) and the span
+    // of its longest cohort; fix by hand in the CRM if wrong.
     const spans = new Map<string, number>();
     for (const c of src.cohorts) {
       const n = Math.round((+c.end_date - +c.start_date) / 86400000) + 1;
@@ -116,7 +117,11 @@ async function once() {
         code,
         name_en: c.name,
         name_zh: c.name_cn,
-        track: "workshop",
+        track: /certification/i.test(c.name)
+          ? "certification"
+          : /mastery/i.test(c.name)
+            ? "mastery"
+            : "workshop",
         duration_days: spans.get(c.id) ?? 1,
         list_price_myr: price,
         is_active: c.is_active,
@@ -130,7 +135,8 @@ async function once() {
     ]);
 
     // class. Venue, capacity and mode are not in the LMS: online if the slug says so,
-    // else in_person with venue "TBC". capacity = enrolments seen (min 1).
+    // else in_person at AI365 Hub (address/city TBC). Capacity: 40 for a class still
+    // to run, enrolments seen for one already run (min 1 either way).
     const seats = new Map<string, number>();
     for (const e of src.enrols)
       seats.set(e.cohort_id, (seats.get(e.cohort_id) ?? 0) + 1);
@@ -168,14 +174,16 @@ async function once() {
         end_date: day(k.end_date),
         language: lang,
         mode: online ? "online" : "in_person",
-        venue_name: online ? null : "TBC",
+        venue_name: online ? null : "AI365 Hub",
         venue_address: online ? null : "TBC",
         city: online ? null : "TBC",
         online_url: online ? (k.board_url ?? "https://thelead.io") : null,
-        capacity: Math.max(seats.get(k.id) ?? 1, 1),
+        capacity: Math.max(seats.get(k.id) ?? 1, completed ? 1 : 40),
         price_myr: k.price_cents != null ? k.price_cents / 100 : null,
         status,
-        notes: "Imported from LMS. Mode, venue and capacity are placeholders.",
+        notes: online
+          ? "Imported from LMS."
+          : "Imported from LMS. Venue address and city still TBC.",
       });
     }
     await upsert("class", classes, "id", [
