@@ -138,3 +138,92 @@ export function hrdcShare(hrdc: number, seats: number): number {
 export function priceTier(durationDays: number): string {
   return durationDays === 1 ? "1 day" : `${durationDays} days`;
 }
+
+// --- the who-pays breakdowns ------------------------------------------------
+// The same seats cut three ways: every seat, by how long the programme runs,
+// and by the language it was taught in. Each cut sums to the same total, so a
+// reader can check one against another.
+//
+// The reference dashboard cuts the middle one by price (RM 734 classes, RM
+// 3,456 certifications). Price is NULL on every course in both databases, so
+// this cuts by length instead — which is what the price tiers stand for — and
+// says so rather than printing a price nobody recorded.
+
+export type FundingSlice = {
+  key: string;
+  label: string;
+  note: string;
+  hrdc: number;
+  notHrdc: number;
+};
+
+export type FundingBreakdowns = {
+  all: FundingSlice;
+  byTier: FundingSlice[];
+  byLanguage: FundingSlice[];
+};
+
+const LANGUAGE_NAME: Record<string, string> = { en: "EN", zh: "CN" };
+
+function fold(
+  key: string,
+  label: string,
+  note: string,
+  rows: FundingRow[],
+): FundingSlice {
+  return {
+    key,
+    label,
+    note,
+    hrdc: rows.reduce((n, r) => n + r.hrdc, 0),
+    notHrdc: rows.reduce((n, r) => n + r.notHrdc, 0),
+  };
+}
+
+function groupBy<T>(rows: FundingRow[], of: (row: FundingRow) => T) {
+  const out = new Map<T, FundingRow[]>();
+  for (const row of rows) {
+    const list = out.get(of(row)) ?? [];
+    list.push(row);
+    out.set(of(row), list);
+  }
+  return out;
+}
+
+export function fundingBreakdowns(rows: FundingRow[]): FundingBreakdowns {
+  const seats = rows.reduce((n, r) => n + r.hrdc + r.notHrdc, 0);
+  const programmes = new Set(rows.map((r) => r.course)).size;
+
+  const byTier = [...groupBy(rows, (r) => r.durationDays)]
+    .sort(([a], [b]) => a - b)
+    .map(([days, list]) =>
+      fold(
+        `tier-${days}`,
+        priceTier(days),
+        `${days === 1 ? "one-day" : `${days}-day`} programmes`,
+        list,
+      ),
+    );
+
+  const byLanguage = [...groupBy(rows, (r) => r.language)]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([language, list]) =>
+      fold(
+        `lang-${language}`,
+        LANGUAGE_NAME[language] ?? language,
+        "programmes",
+        list,
+      ),
+    );
+
+  return {
+    all: fold(
+      "all",
+      String(seats),
+      `seats, ${programmes} ${programmes === 1 ? "programme" : "programmes"}`,
+      rows,
+    ),
+    byTier,
+    byLanguage,
+  };
+}

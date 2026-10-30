@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/table";
 import { formatDate } from "@/lib/format/date";
 import type { AdsWeeks } from "@/lib/reports/types";
+import { PanelCard } from "./panel-card";
 
 // §9.18 leads over time: the page's only time axis. Small multiples — one
 // column chart per channel on a shared y scale — rather than one stacked
@@ -108,18 +109,21 @@ export function LeadsOverTimePanel({ data }: { data: AdsWeeks }) {
   const grand = weeks.reduce((n, w) => n + w.total, 0);
 
   return (
-    <section className="flex flex-col gap-3">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-base font-semibold">
+    <PanelCard
+      eyebrow="TREND"
+      title={
+        <>
           Meta leads per week{" "}
           <span className="text-ink-muted font-normal">({grand} in range)</span>
-        </h2>
-        <p className="text-ink-muted text-sm">
+        </>
+      }
+      description={
+        <>
           Kuala Lumpur weeks, starting Monday (§4). One chart per channel, all
           on the same scale, so a tall column means the same number in each.
-        </p>
-      </div>
-
+        </>
+      }
+    >
       {grand === 0 ? (
         <div className="border-line bg-surface-raised rounded-md border p-5">
           <p className="text-ink-muted text-sm">
@@ -167,6 +171,6 @@ export function LeadsOverTimePanel({ data }: { data: AdsWeeks }) {
           </TableCard>
         </>
       )}
-    </section>
+    </PanelCard>
   );
 }

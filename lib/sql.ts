@@ -19,6 +19,14 @@ function root(): Sql {
       // Production stays on TLS; a local Postgres opts out with ?sslmode=disable.
       ssl: url.includes("sslmode=disable") ? false : "require",
       max: 5,
+      // Supabase's transaction pooler (port 6543) hands a different backend
+      // to every statement, so a prepared statement is gone by the time it is
+      // executed: Postgres 26000, "prepared statement does not exist", from
+      // routine FetchPreparedStatement. Parallel reads hit it hardest — the
+      // ads report fired eight at once and took 104 seconds of retries.
+      // Preparing is off for that port and left on for a direct connection or
+      // the session pooler (5432), where it is worth having.
+      prepare: !/:6543(\/|$)/.test(url),
     });
   }
   return globalForSql.__leadSql;

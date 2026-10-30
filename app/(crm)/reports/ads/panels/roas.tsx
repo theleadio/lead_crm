@@ -1,3 +1,4 @@
+import { PanelCard } from "./panel-card";
 import { TableCard } from "@/components/list-kit";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -9,6 +10,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatMoneyMyr } from "@/lib/format/money";
+import { campaignLabel } from "./campaign-label";
 import {
   axisCeiling,
   ROAS_BANDS,
@@ -93,17 +95,18 @@ export function RoasPanel({ rows }: { rows: RoasRow[] }) {
   const percent = (roas: number) => `${Math.min(roas / ceiling, 1) * 100}%`;
 
   return (
-    <section className="flex flex-col gap-3">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-base font-semibold">Return on ad spend</h2>
-        <p className="text-ink-muted text-sm">
+    <PanelCard
+      eyebrow="RETURN"
+      title={<>Return on ad spend</>}
+      description={
+        <>
           Stripe revenue divided by what the campaign spent. A campaign that
           spent nothing has no return rather than an infinite one, and shows an
           em dash. The bars run to {ceiling}×; one that goes further is drawn
           cut, with its exact ratio beside it.
-        </p>
-      </div>
-
+        </>
+      }
+    >
       {rows.length === 0 ? (
         <div className="border-line bg-surface-raised rounded-md border p-5">
           <p className="text-ink-muted text-sm">
@@ -118,7 +121,9 @@ export function RoasPanel({ rows }: { rows: RoasRow[] }) {
             {rows.map((row) => (
               <div key={row.campaign} className="flex flex-col gap-1">
                 <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
-                  <span className="font-medium">{row.campaign}</span>
+                  <span className="font-medium" title={row.campaign}>
+                    {campaignLabel(row.campaign)}
+                  </span>
                   <span className="text-ink-muted flex items-center gap-2">
                     <span>{formatRoas(row.stripeRoas)} Stripe</span>
                     {row.band && (
@@ -210,6 +215,6 @@ export function RoasPanel({ rows }: { rows: RoasRow[] }) {
           </TableCard>
         </>
       )}
-    </section>
+    </PanelCard>
   );
 }

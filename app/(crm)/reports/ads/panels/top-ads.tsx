@@ -9,6 +9,8 @@ import {
 } from "@/components/ui/table";
 import { formatMoneyMyr } from "@/lib/format/money";
 import type { AdRankRow } from "@/lib/reports/spend";
+import { campaignLabel } from "./campaign-label";
+import { PanelCard } from "./panel-card";
 
 // §9.18 panels 4 and 5: the ads that produced the most conversations, and the
 // ads that produced the most checkouts.
@@ -45,12 +47,11 @@ export function TopAdsPanel({
   const peak = Math.max(...rows.map((r) => r.count), 0);
 
   return (
-    <section className="flex flex-col gap-3">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-base font-semibold">{panelTitle}</h2>
-        <p className="text-ink-muted text-sm">{description}</p>
-      </div>
-
+    <PanelCard
+      eyebrow="ADS"
+      title={<>{panelTitle}</>}
+      description={<>{description}</>}
+    >
       {rows.length === 0 ? (
         <div className="border-line bg-surface-raised rounded-md border p-5">
           <p className="text-ink-muted text-sm">{emptyNote}</p>
@@ -71,7 +72,9 @@ export function TopAdsPanel({
               {rows.map((row) => (
                 <TableRow key={`${row.campaign}-${row.ad}`}>
                   <TableCell>{row.ad}</TableCell>
-                  <TableCell>{row.campaign}</TableCell>
+                  <TableCell title={row.campaign}>
+                    {campaignLabel(row.campaign)}
+                  </TableCell>
                   <TableCell>
                     <span className="flex items-center gap-2">
                       <span className="tabular-nums">{row.count}</span>
@@ -99,6 +102,6 @@ export function TopAdsPanel({
           </Table>
         </TableCard>
       )}
-    </section>
+    </PanelCard>
   );
 }

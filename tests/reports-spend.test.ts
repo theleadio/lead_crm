@@ -31,6 +31,7 @@ const row = (over: Partial<AdSpendRow> = {}): AdSpendRow => ({
   spend: "100.00",
   impressions: 1000,
   clicks: 50,
+  linkClicks: 50,
   messages: 0,
   checkouts: 0,
   ...over,
@@ -228,6 +229,7 @@ test("rankAds: ranked by what was counted, with cost and rate beside it", () => 
       spend: "100.00",
       messages: 80,
       clicks: 40,
+      linkClicks: 25,
       impressions: 1000,
     }),
     row({ adName: "vid_c", spend: "100.00", messages: 0 }),
@@ -241,7 +243,9 @@ test("rankAds: ranked by what was counted, with cost and rate beside it", () => 
       ["vid_a", 60, "5.00"],
     ],
   );
-  assert.equal(ranked[0]!.ctr, 0.04);
+  // The rate is link clicks over impressions — 25 of 1000, not the 40 clicks
+  // Meta counted in total. Ads Manager quotes the link rate.
+  assert.equal(ranked[0]!.ctr, 0.025);
 });
 
 test("rankAds: the limit caps the table", () => {
@@ -264,11 +268,15 @@ test("spendByObjective: every objective present, so stacks line up", () => {
   assert.deepEqual(splits[0]!.byObjective, {
     whatsapp: "600.00",
     conversion: "400.00",
+    lead_form: "0.00",
+    awareness: "0.00",
     other: "0.00",
   });
   assert.deepEqual(splits[1]!.byObjective, {
     whatsapp: "0.00",
     conversion: "250.00",
+    lead_form: "0.00",
+    awareness: "0.00",
     other: "0.00",
   });
 });

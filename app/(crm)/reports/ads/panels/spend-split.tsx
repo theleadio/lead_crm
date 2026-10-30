@@ -1,3 +1,4 @@
+import { PanelCard } from "./panel-card";
 import { TableCard } from "@/components/list-kit";
 import {
   Table,
@@ -8,6 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatMoneyMyr, sumMyr } from "@/lib/format/money";
+import { campaignLabel } from "./campaign-label";
 import {
   AD_OBJECTIVES,
   type AdObjective,
@@ -31,6 +33,8 @@ import {
 const OBJECTIVE_LABEL: Record<AdObjective, string> = {
   whatsapp: "Click-to-WhatsApp ads",
   conversion: "Conversion ads",
+  lead_form: "Lead-form ads",
+  awareness: "Awareness ads",
   other: "Other objectives",
 };
 
@@ -72,8 +76,11 @@ function Facet({
                 key={`${objective}-${row.campaign}`}
                 className="flex items-center gap-3 text-sm"
               >
-                <span className="text-ink-muted w-48 shrink-0 truncate">
-                  {row.campaign}
+                <span
+                  className="text-ink-muted w-52 shrink-0 truncate"
+                  title={row.campaign}
+                >
+                  {campaignLabel(row.campaign)}
                 </span>
                 <span className="flex min-w-0 flex-1 items-center gap-2">
                   <span
@@ -107,20 +114,23 @@ export function SpendSplitPanel({ rows }: { rows: ObjectiveSplit[] }) {
   const grand = sumMyr(rows.map((r) => r.total));
 
   return (
-    <section className="flex flex-col gap-3">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-base font-semibold">
+    <PanelCard
+      eyebrow="CONTEXT"
+      title={
+        <>
           Where the spend went{" "}
           <span className="text-ink-muted font-normal">
             ({formatMoneyMyr(grand)} in range)
           </span>
-        </h2>
-        <p className="text-ink-muted text-sm">
+        </>
+      }
+      description={
+        <>
           Campaign-level spend by ad objective. One chart per objective, all on
           the same scale, so a long bar means the same amount in each.
-        </p>
-      </div>
-
+        </>
+      }
+    >
       {rows.length === 0 ? (
         <div className="border-line bg-surface-raised rounded-md border p-5">
           <p className="text-ink-muted text-sm">
@@ -170,6 +180,6 @@ export function SpendSplitPanel({ rows }: { rows: ObjectiveSplit[] }) {
           </TableCard>
         </>
       )}
-    </section>
+    </PanelCard>
   );
 }

@@ -15,7 +15,18 @@ import { sumMyr } from "../format/money.ts";
 // What the reference dashboard splits spend by. `other` keeps the total
 // honest when an objective arrives that we have not mapped, instead of
 // dropping its spend.
-export const AD_OBJECTIVES = ["whatsapp", "conversion", "other"] as const;
+// The live account reports four objectives — engagement, sales, leads and
+// awareness — so the split carries four buckets and keeps `other` for an
+// objective we have not mapped. Three buckets would have filed the two
+// biggest webinars and every awareness campaign under "other", which reads
+// as an answer rather than as a bucket nobody chose.
+export const AD_OBJECTIVES = [
+  "whatsapp",
+  "conversion",
+  "lead_form",
+  "awareness",
+  "other",
+] as const;
 export type AdObjective = (typeof AD_OBJECTIVES)[number];
 
 // One row of whatever Shawn's pull writes. `adName` is null on a
@@ -24,13 +35,23 @@ export type AdObjective = (typeof AD_OBJECTIVES)[number];
 // total that looks right and is wrong.
 export type AdSpendRow = {
   metricDate: string;
+  // The key both halves of the report group on — the campaign as a
+  // touchpoint's `utm_campaign` would have carried it, compared the way a URL
+  // carried it rather than the way Meta prints it.
   campaignName: string;
+  // What Meta calls it, for the screen. Absent on a row that has no separate
+  // display form.
+  displayName?: string;
   adName: string | null;
   objective: AdObjective;
   currency: string;
   spend: string;
   impressions: number;
+  // Every click Meta counted, and the link clicks alone. Ads Manager's CTR is
+  // the link one, so a rate shown here is built from `linkClicks` and the two
+  // are never added.
   clicks: number;
+  linkClicks: number;
   messages: number;
   checkouts: number;
 };
@@ -278,15 +299,38 @@ export function rankAds(
   limit = 10,
 ): AdRankRow[] {
   assertOneCurrency(rows);
-  return rows
-    .filter((r) => r.adName !== null && r[by] > 0)
-    .map((r) => ({
-      ad: r.adName!,
-      campaign: r.campaignName,
-      count: r[by],
-      costPer: costPer(r.spend, r[by]),
-      ctr: ctr(r.clicks, r.impressions),
-    }))
+
+  // A row is one ad on one day, so an ad that ran a fortnight arrives
+  // fourteen times. This ranks ads over the range, not ad-days: without the
+  // fold one ad fills the table with its separate days, and the cost per
+  // message is one day's cost rather than what the ad actually cost.
+  const ads = new Map<string, AdSpendRow[]>();
+  for (const row of rows) {
+    if (row.adName === null) continue;
+    const key = `${row.campaignName}\u0000${row.adName}`;
+    const list = ads.get(key) ?? [];
+    list.push(row);
+    ads.set(key, list);
+  }
+
+  return [...ads.values()]
+    .map((days) => {
+      const first = days[0]!;
+      const count = days.reduce((n, r) => n + r[by], 0);
+      return {
+        ad: first.adName!,
+        campaign: first.campaignName,
+        count,
+        costPer: costPer(sumMyr(days.map((r) => r.spend)), count),
+        // Link clicks, not every click: this is the rate Ads Manager quotes,
+        // and a rate built on all clicks reads about twice as high.
+        ctr: ctr(
+          days.reduce((n, r) => n + r.linkClicks, 0),
+          days.reduce((n, r) => n + r.impressions, 0),
+        ),
+      };
+    })
+    .filter((r) => r.count > 0)
     .sort((a, b) => b.count - a.count || a.ad.localeCompare(b.ad))
     .slice(0, limit);
 }
@@ -300,10 +344,17 @@ export type ObjectiveSplit = {
 // Panel 7. Where the money went, per campaign, split by what the ads were
 // for. Every objective is present at zero so the segments line up across
 // campaigns and the stacks are comparable.
-export function spendByObjective(rows: AdSpendRow[]): ObjectiveSplit[] {
+export function spendByObjective(
+  rows: AdSpendRow[],
+  grain: "campaign" | "ad" = "campaign",
+): ObjectiveSplit[] {
   assertOneCurrency(rows);
   const campaigns = new Map<string, AdSpendRow[]>();
-  for (const row of rows.filter((r) => r.adName === null)) {
+  // One grain only, for the reason `byCampaign` gives: campaign rows and ad
+  // rows describe the same ringgit, and adding both doubles the total.
+  for (const row of rows.filter((r) =>
+    grain === "campaign" ? r.adName === null : r.adName !== null,
+  )) {
     const list = campaigns.get(row.campaignName) ?? [];
     list.push(row);
     campaigns.set(row.campaignName, list);
@@ -352,4 +403,111 @@ export function axisCeiling(max: number): number {
 export function bubbleRadius(count: number, peak: number): number {
   if (peak <= 0 || count <= 0) return MIN_R;
   return MIN_R + (MAX_R - MIN_R) * Math.sqrt(count / peak);
+}
+
+// --- what the spend side can answer on its own ------------------------------
+// These need no attribution: they are the ad account's own numbers, so they
+// hold while `touchpoint` has no campaign to join to (O30, and the import).
+
+export type HeadlineFigures = {
+  spend: string;
+  messages: number;
+  checkouts: number;
+  costPerMessage: string | null;
+  costPerCheckout: string | null;
+  impressions: number;
+  linkClicks: number;
+  linkCtr: number | null;
+  campaigns: number;
+  ads: number;
+  days: number;
+};
+
+export function headlineFigures(rows: AdSpendRow[]): HeadlineFigures {
+  assertOneCurrency(rows);
+  const spend = sumMyr(rows.map((r) => r.spend));
+  const messages = rows.reduce((n, r) => n + r.messages, 0);
+  const checkouts = rows.reduce((n, r) => n + r.checkouts, 0);
+  const impressions = rows.reduce((n, r) => n + r.impressions, 0);
+  const linkClicks = rows.reduce((n, r) => n + r.linkClicks, 0);
+  return {
+    spend,
+    messages,
+    checkouts,
+    costPerMessage: costPer(spend, messages),
+    costPerCheckout: costPer(spend, checkouts),
+    impressions,
+    linkClicks,
+    linkCtr: ctr(linkClicks, impressions),
+    campaigns: new Set(rows.map((r) => r.campaignName)).size,
+    ads: new Set(rows.filter((r) => r.adName).map((r) => r.adName)).size,
+    days: new Set(rows.map((r) => r.metricDate)).size,
+  };
+}
+
+export type DayTotals = {
+  day: string;
+  spend: string;
+  messages: number;
+  checkouts: number;
+};
+
+// One row per day that has any row, in date order. Days the account spent
+// nothing on are absent rather than zero: the pull only writes days it has.
+export function byDay(rows: AdSpendRow[]): DayTotals[] {
+  assertOneCurrency(rows);
+  const days = new Map<string, AdSpendRow[]>();
+  for (const row of rows) {
+    const list = days.get(row.metricDate) ?? [];
+    list.push(row);
+    days.set(row.metricDate, list);
+  }
+  return [...days]
+    .map(([day, list]) => ({
+      day,
+      spend: sumMyr(list.map((r) => r.spend)),
+      messages: list.reduce((n, r) => n + r.messages, 0),
+      checkouts: list.reduce((n, r) => n + r.checkouts, 0),
+    }))
+    .sort((a, b) => a.day.localeCompare(b.day));
+}
+
+export type ActionCostRow = {
+  campaign: string;
+  spend: string;
+  count: number;
+  costPer: string | null;
+};
+
+// What one conversation, or one started checkout, cost in each campaign.
+// Cheapest first — the ranking is the point, and a campaign that counted none
+// of the thing is left out rather than shown as infinitely expensive.
+export function costPerActionByCampaign(
+  rows: AdSpendRow[],
+  by: "messages" | "checkouts",
+  // Only campaigns that were run for this action. A sales campaign that
+  // happened to collect two messages costs "RM 670 a conversation", which is
+  // not a fact about its efficiency — it never set out to start one.
+  objective?: AdObjective,
+): ActionCostRow[] {
+  assertOneCurrency(rows);
+  const campaigns = new Map<string, AdSpendRow[]>();
+  for (const row of rows) {
+    if (objective && row.objective !== objective) continue;
+    const list = campaigns.get(row.campaignName) ?? [];
+    list.push(row);
+    campaigns.set(row.campaignName, list);
+  }
+  return [...campaigns]
+    .map(([campaign, list]) => {
+      const spend = sumMyr(list.map((r) => r.spend));
+      const count = list.reduce((n, r) => n + r[by], 0);
+      return { campaign, spend, count, costPer: costPer(spend, count) };
+    })
+    .filter((r) => r.costPer !== null)
+    .sort(
+      (a, b) =>
+        Number(a.costPer) - Number(b.costPer) ||
+        a.campaign.localeCompare(b.campaign),
+    );
 }

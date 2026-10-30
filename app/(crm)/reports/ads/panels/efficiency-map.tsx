@@ -1,3 +1,4 @@
+import { PanelCard } from "./panel-card";
 import { TableCard } from "@/components/list-kit";
 import {
   Table,
@@ -8,6 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatMoneyMyr } from "@/lib/format/money";
+import { campaignLabel } from "./campaign-label";
 import {
   axisCeiling,
   bubbleRadius,
@@ -32,34 +34,53 @@ const PAD = { top: 16, right: 110, bottom: 48, left: 64 };
 const PLOT_W = WIDTH - PAD.left - PAD.right;
 const PLOT_H = HEIGHT - PAD.top - PAD.bottom;
 
+// How many points carry their own label. Every campaign is in the table, and
+// every mark has hover text; the chart labels the ones worth reading first,
+// because forty labels on one plot is a smear, not a chart.
+const LABELLED = 8;
+
+// A y axis counting seats should tick in whole seats. Below a handful, the
+// quarter ticks an axis ceiling gives would read "1, 1, 1, 0" — the same
+// number three times, rounded.
+function signupTicks(max: number): number[] {
+  if (max <= 1) return [0, 1];
+  if (max <= 6) return Array.from({ length: max + 1 }, (_, i) => i);
+  return [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(f * max));
+}
+
 export function EfficiencyMapPanel({ points }: { points: EfficiencyPoint[] }) {
   const spent = points.filter((p) => Number(p.spend) > 0);
+  const totalSignups = points.reduce((n, p) => n + p.signups, 0);
   const maxSpend = axisCeiling(
     Math.max(...points.map((p) => Number(p.spend)), 0),
   );
-  const maxSignups = axisCeiling(Math.max(...points.map((p) => p.signups), 0));
+  const peakSignups = Math.max(...points.map((p) => p.signups), 0);
+  const maxSignups =
+    peakSignups <= 6 ? Math.max(peakSignups, 1) : axisCeiling(peakSignups);
   const peakHrdc = Math.max(...points.map((p) => p.hrdcSignups), 0);
 
   const x = (spend: number) => PAD.left + (spend / maxSpend) * PLOT_W;
   const y = (signups: number) => PAD.top + (1 - signups / maxSignups) * PLOT_H;
 
   return (
-    <section className="flex flex-col gap-3">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-base font-semibold">Spend against signups</h2>
-        <p className="text-ink-muted text-sm">
+    <PanelCard
+      eyebrow="MUST SEE"
+      title={<>Spend against signups</>}
+      description={
+        <>
           One point per campaign: what it cost, and the seats it produced.
           Bubble size is the grant-funded share. Signups are credited to the
           campaign of the buyer&apos;s first touch, per person — a buyer with
           two purchases credits that campaign twice (O30).
-        </p>
-      </div>
-
-      {spent.length === 0 ? (
+        </>
+      }
+    >
+      {spent.length === 0 || totalSignups === 0 ? (
         <div className="border-line bg-surface-raised flex flex-col gap-2 rounded-md border p-5">
           <p className="text-ink-muted text-sm">
-            The plot needs recorded ad spend, which arrives with the ad tables.
-            The signups below are counted and current.
+            {spent.length === 0
+              ? "The plot needs recorded ad spend. The signups below are counted and current."
+              : "Spend is recorded, but no signup in this range is credited to any of these campaigns — so every point would sit on zero. The figures are below."}
           </p>
         </div>
       ) : (
@@ -100,24 +121,24 @@ export function EfficiencyMapPanel({ points }: { points: EfficiencyPoint[] }) {
             })}
 
             {/* Axes: one horizontal rule per quarter, no dashes. */}
-            {[0, 0.25, 0.5, 0.75, 1].map((f) => (
-              <g key={`y${f}`}>
+            {signupTicks(maxSignups).map((seats) => (
+              <g key={`y${seats}`}>
                 <line
                   x1={PAD.left}
                   x2={PAD.left + PLOT_W}
-                  y1={y(f * maxSignups)}
-                  y2={y(f * maxSignups)}
+                  y1={y(seats)}
+                  y2={y(seats)}
                   stroke="var(--line)"
                   strokeWidth="1"
                 />
                 <text
                   x={PAD.left - 10}
-                  y={y(f * maxSignups) + 4}
+                  y={y(seats) + 4}
                   textAnchor="end"
                   fontSize="11"
                   fill="var(--ink-muted)"
                 >
-                  {Math.round(f * maxSignups)}
+                  {seats}
                 </text>
               </g>
             ))}
@@ -153,35 +174,53 @@ export function EfficiencyMapPanel({ points }: { points: EfficiencyPoint[] }) {
               Signups
             </text>
 
-            {spent.map((p) => {
-              const cx = x(Number(p.spend));
-              const cy = y(p.signups);
-              const r = bubbleRadius(p.hrdcSignups, peakHrdc);
-              return (
-                <g key={p.campaign}>
-                  <title>
-                    {`${p.campaign}: ${formatMoneyMyr(p.spend)}, ${p.signups} signups (${p.hrdcSignups} HRDC)${p.costPerSignup ? `, ${formatMoneyMyr(p.costPerSignup)} per signup` : ""}`}
-                  </title>
-                  <circle
-                    cx={cx}
-                    cy={cy}
-                    r={r}
-                    fill="var(--lead-blue)"
-                    fillOpacity="0.75"
-                    stroke="var(--surface-raised)"
-                    strokeWidth="2"
-                  />
-                  <text
-                    x={cx + r + 4}
-                    y={cy + 4}
-                    fontSize="10"
-                    fill="var(--ink-muted)"
-                  >
-                    {p.campaign}
-                  </text>
-                </g>
+            {(() => {
+              // The ones a reader should see named: biggest spenders and
+              // biggest producers. Everything else is still a mark with hover
+              // text, and every campaign is in the table below.
+              const named = new Set(
+                [...spent]
+                  .sort((a, b) => Number(b.spend) - Number(a.spend))
+                  .slice(0, LABELLED)
+                  .concat(
+                    [...spent]
+                      .sort((a, b) => b.signups - a.signups)
+                      .slice(0, LABELLED),
+                  )
+                  .map((p) => p.campaign),
               );
-            })}
+              return spent.map((p) => {
+                const cx = x(Number(p.spend));
+                const cy = y(p.signups);
+                const r = bubbleRadius(p.hrdcSignups, peakHrdc);
+                return (
+                  <g key={p.campaign}>
+                    <title>
+                      {`${p.campaign}: ${formatMoneyMyr(p.spend)}, ${p.signups} signups (${p.hrdcSignups} HRDC)${p.costPerSignup ? `, ${formatMoneyMyr(p.costPerSignup)} per signup` : ""}`}
+                    </title>
+                    <circle
+                      cx={cx}
+                      cy={cy}
+                      r={r}
+                      fill="var(--lead-blue)"
+                      fillOpacity="0.75"
+                      stroke="var(--surface-raised)"
+                      strokeWidth="2"
+                    />
+                    {named.has(p.campaign) && (
+                      <text
+                        x={cx + r + 4}
+                        y={cy + 4}
+                        fontSize="10"
+                        fill="var(--ink-muted)"
+                      >
+                        {campaignLabel(p.campaign)}
+                      </text>
+                    )}
+                  </g>
+                );
+              });
+            })()}
           </svg>
         </div>
       )}
@@ -222,6 +261,6 @@ export function EfficiencyMapPanel({ points }: { points: EfficiencyPoint[] }) {
           </TableBody>
         </Table>
       </TableCard>
-    </section>
+    </PanelCard>
   );
 }

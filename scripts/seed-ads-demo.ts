@@ -32,6 +32,28 @@ const sql = postgres(url, {
 
 const DEMO_DOMAIN = "ads-demo.test";
 
+// Every demo row in `meta_ad_insight` carries this account id, so --clean
+// removes exactly the fake spend and never a real pull's rows.
+const DEMO_AD_ACCOUNT = "act_adsdemo";
+
+// What a signup cost, per course, in whole ringgit. The spread is the point:
+// the efficiency map is only worth drawing if some campaigns sit well above
+// the RM 200 guide and some well below it.
+const COST_PER_SIGNUP: Record<string, number> = {
+  "ADSD-LTF": 38,
+  "ADSD-CLAUDE": 72,
+  "ADSD-FULLST": 96,
+  "ADSD-DATASC": 118,
+  "ADSD-AIENG": 134,
+  "ADSD-AGENTS": 165,
+  "ADSD-AIAUTO": 305,
+  "ADSD-VIBE": 430,
+};
+const DEFAULT_COST_PER_SIGNUP = 120;
+
+// Meta runs the ads before the class, not after it.
+const AD_WINDOW_DAYS = 14;
+
 // Prices come out of the reference dashboard as revenue / orders: about
 // RM 734 for a one-day programme and RM 3,420-3,456 for a two-day one. That
 // gap is the whole point of the price-against-HRDC-share panel.
@@ -270,6 +292,112 @@ const SOURCES = [
 
 const DAY = 24 * 60 * 60 * 1000;
 
+// Migration 014 is Shawn's and may not be applied to this database yet. The
+// rest of the demo data is still worth seeding without it, so its absence is
+// reported rather than thrown.
+async function hasAdInsights(tx: postgres.TransactionSql): Promise<boolean> {
+  const [row] = await tx<{ present: boolean }[]>`
+    SELECT to_regclass('public.meta_ad_insight') IS NOT NULL AS present`;
+  return row?.present ?? false;
+}
+
+// Splits whole cents across weighted buckets so the parts add up to the total
+// exactly — the largest remainders take the leftover cents. Money is never
+// divided in floating point (§12.7).
+function allocate(totalCents: number, weights: number[]): number[] {
+  const sum = weights.reduce((n, w) => n + w, 0);
+  const exact = weights.map((w) => (totalCents * w) / sum);
+  const parts = exact.map(Math.floor);
+  let left = totalCents - parts.reduce((n, p) => n + p, 0);
+  const order = exact
+    .map((e, i) => ({ i, fraction: e - Math.floor(e) }))
+    .sort((a, b) => b.fraction - a.fraction);
+  for (const { i } of order) {
+    if (left <= 0) break;
+    parts[i] += 1;
+    left -= 1;
+  }
+  return parts;
+}
+
+function money(cents: number): string {
+  return (cents / 100).toFixed(2);
+}
+
+// One row per ad per day, the shape Meta's insights edge reports and
+// migration 014 stores. Two ads per campaign, spend rising towards the class
+// date, and a cost per signup that varies by course rather than by chance —
+// the panels are only worth looking at if the campaigns differ.
+function adInsightRows() {
+  const rows = [];
+  for (const run of RUNS) {
+    const [, course, language, start, , , signups, , campaign] = run;
+    const classStart = Date.parse(`${start}T00:00:00Z`);
+    const perSignup = COST_PER_SIGNUP[course] ?? DEFAULT_COST_PER_SIGNUP;
+    const totalCents = signups * perSignup * 100;
+
+    // Later days carry more of the budget, which is how these campaigns were
+    // actually run: spend climbs as the class fills.
+    const dayWeights = Array.from(
+      { length: AD_WINDOW_DAYS },
+      (_, d) => 10 + d * 2,
+    );
+    const perDay = allocate(totalCents, dayWeights);
+
+    for (let d = 0; d < AD_WINDOW_DAYS; d += 1) {
+      const day = new Date(classStart - (AD_WINDOW_DAYS - d) * DAY)
+        .toISOString()
+        .slice(0, 10);
+      // The carousel takes the larger share; the video is the cheaper test.
+      const [carousel, video] = allocate(perDay[d], [3, 2]);
+      const ads: [string, number][] = [
+        [`${campaign}__carousel`, carousel],
+        [`${campaign}__video`, video],
+      ];
+
+      for (const [adId, cents] of ads) {
+        // About RM 1.20 a click and one click in fifty-five impressions —
+        // ordinary numbers for these campaigns, so the ranked ad tables and
+        // the click-through rates read as plausible.
+        const clicks = Math.max(1, Math.round(cents / 120));
+        rows.push({
+          ad_id: adId,
+          day,
+          account_id: DEMO_AD_ACCOUNT,
+          campaign_id: `${campaign}__id`,
+          campaign_name: campaign,
+          adset_id: `${campaign}__adset`,
+          adset_name: `${campaign} · ${language === "zh" ? "CN" : "EN"}`,
+          ad_name: adId.endsWith("carousel")
+            ? `${campaign} — carousel`
+            : `${campaign} — video`,
+          currency: "MYR",
+          spend: money(cents),
+          impressions: clicks * 55,
+          clicks,
+          // Meta's own names, so the report's bucketing is exercised rather
+          // than bypassed: the carousel sells, the video opens a chat.
+          objective: adId.endsWith("carousel")
+            ? "OUTCOME_SALES"
+            : "OUTCOME_ENGAGEMENT",
+          // Link clicks are a share of every click, the way the live account
+          // reports them — never equal to the click count.
+          inline_link_clicks: Math.max(1, Math.round(clicks * 0.45)),
+          messages: adId.endsWith("video") ? Math.round(clicks * 0.08) : 0,
+          checkouts: adId.endsWith("carousel") ? Math.round(clicks * 0.05) : 0,
+          url_tags:
+            "utm_source=fb_ad&utm_medium={{adset.name}}" +
+            `&utm_campaign=${campaign}&utm_content={{ad.name}}`,
+          // Meta counts a lead when the form is submitted, which is always
+          // more than the seats that were finally taken.
+          leads: Math.max(1, Math.round((clicks * signups) / 160)),
+        });
+      }
+    }
+  }
+  return rows;
+}
+
 async function clean(): Promise<void> {
   await sql.begin(async (tx) => {
     const people = tx`
@@ -293,6 +421,10 @@ async function clean(): Promise<void> {
     await tx`DELETE FROM person WHERE email LIKE ${"%@" + DEMO_DOMAIN}`;
     await tx`DELETE FROM class WHERE code LIKE 'ADSD-%'`;
     await tx`DELETE FROM course WHERE code LIKE 'ADSD-%'`;
+    // Migration 014 may not be applied yet, and a missing table is not a
+    // failed clean — there is nothing of ours in it.
+    if (await hasAdInsights(tx))
+      await tx`DELETE FROM meta_ad_insight WHERE account_id = ${DEMO_AD_ACCOUNT}`;
   });
   console.log("Removed the ads demo data.");
 }
@@ -440,9 +572,35 @@ async function seed(): Promise<void> {
       }
     }
 
+    // The spend side. Upserted on (ad_id, day) like the real pull, so
+    // re-running the seed is as harmless as re-running the sync.
+    let adRows = 0;
+    if (await hasAdInsights(tx)) {
+      const rows = adInsightRows();
+      await tx`
+        INSERT INTO meta_ad_insight ${tx(rows)}
+        ON CONFLICT (ad_id, day) DO UPDATE SET
+          spend = EXCLUDED.spend,
+          impressions = EXCLUDED.impressions,
+          clicks = EXCLUDED.clicks,
+          leads = EXCLUDED.leads,
+          objective = EXCLUDED.objective,
+          inline_link_clicks = EXCLUDED.inline_link_clicks,
+          messages = EXCLUDED.messages,
+          checkouts = EXCLUDED.checkouts,
+          url_tags = EXCLUDED.url_tags,
+          synced_at = now()`;
+      adRows = rows.length;
+    }
+
     console.log(
       `Seeded ${COURSES.length} courses, ${RUNS.length} class runs, ` +
         `${people} people, ${enrolments} enrolments, ${touchpoints} touchpoints.`,
+    );
+    console.log(
+      adRows > 0
+        ? `Seeded ${adRows} meta_ad_insight rows under ${DEMO_AD_ACCOUNT}.`
+        : "meta_ad_insight is not in this database (migration 014); no ad spend seeded.",
     );
   });
 }

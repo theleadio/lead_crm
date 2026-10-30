@@ -9,14 +9,24 @@ import {
   signupsPerCampaign,
   sourceRows,
 } from "@/lib/reports/ads";
-import { fundingSplit, priceAgainstHrdcShare } from "@/lib/reports/funding";
+import {
+  fundingBreakdowns,
+  fundingSplit,
+  priceAgainstHrdcShare,
+} from "@/lib/reports/funding";
+import { fundingFromLms } from "@/lib/reports/lms-funding";
+import { adSpendRows, normaliseCampaign } from "@/lib/reports/ad-spend";
 import {
   byCampaign,
+  byDay,
+  costPerActionByCampaign,
   efficiencyPoints,
+  headlineFigures,
   rankAds,
   roasRows,
   spendByObjective,
   type AdSpendRow,
+  type ObjectiveSplit,
 } from "@/lib/reports/spend";
 import { SPEND_UNAVAILABLE } from "@/lib/reports/types";
 import {
@@ -27,10 +37,14 @@ import {
 // place. Imported where it lives rather than moved, so Home stays untouched.
 import { PanelError } from "../../dashboard/panel-kit";
 import { EfficiencyMapPanel } from "./panels/efficiency-map";
+import { FundingDonutsPanel } from "./panels/funding-donuts";
 import { LeadsOverTimePanel } from "./panels/leads-over-time";
+import { CostPerActionPanel } from "./panels/cost-per-action";
 import { PriceHrdcPanel } from "./panels/price-hrdc";
 import { RoasPanel } from "./panels/roas";
+import { SpendOverTimePanel } from "./panels/spend-over-time";
 import { SpendSplitPanel } from "./panels/spend-split";
+import { SummaryPanel } from "./panels/summary";
 import { TopAdsPanel } from "./panels/top-ads";
 import { WaitingPanel } from "./panels/waiting";
 import { WhoPaysPanel } from "./panels/who-pays";
@@ -89,33 +103,104 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
   }
 
   const query = parsed.data;
-  const [campaigns, sources, earliest, funding, priceShare, weekly, signups] =
-    await Promise.all([
-      panel("campaign table", () => campaignRows(user, query)),
-      panel("source table", () => sourceRows(user, query)),
-      panel("earliest touchpoint", () => earliestMetaTouchpoint(user)),
-      panel("who pays", () => fundingSplit(user, query)),
-      panel("price against HRDC share", () =>
-        priceAgainstHrdcShare(user, query),
-      ),
-      panel("leads per week", () => leadsPerWeek(user, query)),
-      panel("signups per campaign", () => signupsPerCampaign(user, query)),
-    ]);
+  const [
+    campaigns,
+    sources,
+    earliest,
+    funding,
+    priceShare,
+    weekly,
+    signups,
+    spend,
+    lmsFunding,
+  ] = await Promise.all([
+    panel("campaign table", () => campaignRows(user, query)),
+    panel("source table", () => sourceRows(user, query)),
+    panel("earliest touchpoint", () => earliestMetaTouchpoint(user)),
+    panel("who pays", () => fundingSplit(user, query)),
+    panel("price against HRDC share", () => priceAgainstHrdcShare(user, query)),
+    panel("leads per week", () => leadsPerWeek(user, query)),
+    panel("signups per campaign", () => signupsPerCampaign(user, query)),
+    panel("ad spend", () => adSpendRows(user, query)),
+    // Read whether or not the CRM has funding: which of the two the panel
+    // shows is decided below, and a failing LMS must not take the screen down.
+    panel("who pays, from the LMS", () => fundingFromLms(user)),
+  ]);
 
-  // The cost side of the report. §5 defers the ad tables, so the pull writes
-  // nothing yet and every spend panel falls through to what it waits for.
-  // When Shawn's Meta pull lands, reading the rows here is the whole change:
-  // the panels below already draw them.
-  const adSpend: AdSpendRow[] = [];
-  const campaignSpend = byCampaign(adSpend);
-  // Revenue per campaign stays empty while O30 stands: a deal records no
-  // touchpoint, so crediting orders to a campaign would be a guess shown as a
-  // measurement. The panel is wired, not fed.
+  // The cost side of the report, from `meta_ad_insight` (migration 014). The
+  // pull asks Meta for ad-level rows, so campaign totals are summed from
+  // those rows and there is no second grain to double-count against.
+  const adSpend: AdSpendRow[] = spend.ok ? spend.data : [];
+  const campaignSpend = byCampaign(adSpend, "ad");
+
+  // Both halves group on a normalised campaign key, because a touchpoint
+  // carries the campaign as a URL did — `+` for a space, percent-escapes, any
+  // case. What the screen prints is the name a person would recognise:
+  // Meta's own, or the tag the lead arrived with when there is no ad row.
+  const displayFor = new Map<string, string>();
+  for (const row of adSpend)
+    displayFor.set(row.campaignName, row.displayName ?? row.campaignName);
+  if (signups.ok)
+    for (const s of signups.data) {
+      const key = normaliseCampaign(s.campaign);
+      if (!displayFor.has(key)) displayFor.set(key, s.campaign);
+    }
+  const named = (key: string) => displayFor.get(key) ?? key;
+  // Revenue per campaign stays empty: `deal.source_touchpoint_id` exists
+  // (migration 009) but only public intake sets it, so most deals carry no
+  // campaign and a ratio built on the ones that do would read low by an
+  // unknown amount. The panel is wired, not fed.
   const campaignRevenue = new Map<string, { stripe: string; hrdc: string }>();
-  const returns = roasRows(campaignSpend, campaignRevenue);
-  const whatsappAds = rankAds(adSpend, "messages");
-  const conversionAds = rankAds(adSpend, "checkouts");
-  const spendSplit = spendByObjective(adSpend);
+  const returns = roasRows(campaignSpend, campaignRevenue).map((r) => ({
+    ...r,
+    campaign: named(r.campaign),
+  }));
+  // Ranked on the two action counts the pull now carries: conversations
+  // started, and checkouts started. An ad that counted none of either is not
+  // in its list at all.
+  const whatsappAds = rankAds(adSpend, "messages").map((r) => ({
+    ...r,
+    campaign: named(r.campaign),
+  }));
+  const conversionAds = rankAds(adSpend, "checkouts").map((r) => ({
+    ...r,
+    campaign: named(r.campaign),
+  }));
+  // Ad-grain rows, so the split is told to use that grain: campaign rows and
+  // ad rows are the same ringgit twice.
+  // What the ad account can answer without any attribution: its own money
+  // and its own counts. These lead the page, because they are measured.
+  const figures = headlineFigures(adSpend);
+  const days = byDay(adSpend);
+  const perMessage = costPerActionByCampaign(
+    adSpend,
+    "messages",
+    "whatsapp",
+  ).map((r) => ({
+    ...r,
+    campaign: named(r.campaign),
+  }));
+  const perCheckout = costPerActionByCampaign(
+    adSpend,
+    "checkouts",
+    "conversion",
+  ).map((r) => ({ ...r, campaign: named(r.campaign) }));
+
+  // Funding comes from the CRM when a deal records any, and from the LMS
+  // while none does — one decision, so the rings and the bars can never
+  // disagree about where their numbers came from.
+  const whoPays =
+    funding.ok && funding.data.some((r) => r.hrdc > 0)
+      ? { rows: funding.data, source: "deal" as const }
+      : lmsFunding.ok && lmsFunding.data.length > 0
+        ? { rows: lmsFunding.data, source: "lms" as const }
+        : funding.ok
+          ? { rows: funding.data, source: "deal" as const }
+          : null;
+
+  const spendSplit: ObjectiveSplit[] = spendByObjective(adSpend, "ad").map(
+    (r) => ({ ...r, campaign: named(r.campaign) }),
+  );
 
   // The panels in the order the agreed dashboard sets them, so this screen and
   // that page can be read side by side.
@@ -128,25 +213,59 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
         </p>
       )}
 
+      {spend.ok && adSpend.length > 0 && (
+        <>
+          <SummaryPanel figures={figures} from={query.from} to={query.to} />
+          <SpendOverTimePanel
+            days={days}
+            totals={{
+              spend: figures.spend,
+              messages: figures.messages,
+              checkouts: figures.checkouts,
+            }}
+          />
+          <CostPerActionPanel
+            title="What a conversation cost"
+            description="Spend divided by the conversations it started, for campaigns run with Meta’s engagement objective. Cheapest first; a campaign that started none is not listed."
+            unit="conversations"
+            guides={[10, 25, 50]}
+            rows={perMessage}
+            emptyNote="No campaign started a conversation in this date range."
+          />
+          <CostPerActionPanel
+            title="What a started checkout cost"
+            description="Spend divided by the checkouts it started, for campaigns run with Meta’s sales objective. A started checkout is not a payment — the money that arrived is Stripe's, and tying it back to a campaign is O30."
+            unit="checkouts"
+            guides={[25, 50, 100]}
+            rows={perCheckout}
+            emptyNote="No campaign started a checkout in this date range."
+          />
+        </>
+      )}
+
       {weekly.ok ? (
         <LeadsOverTimePanel data={weekly.data} />
       ) : (
         <PanelError what="leads per week" />
       )}
 
-      {signups.ok ? (
+      {/* A failed spend read shows the panel's error rather than an empty x
+          axis, which would read as "no campaign spent anything". */}
+      {signups.ok && spend.ok ? (
         <EfficiencyMapPanel
           points={efficiencyPoints(
-            // No spend table yet, so the x axis is empty and the panel says
-            // so. The moment the ad pull lands, this map is the only change.
-            new Map(),
+            // Spend summed from the ad-level rows of `meta_ad_insight`,
+            // matched to signups on the normalised campaign key. A campaign
+            // that spent and produced nothing still has a point; so does one
+            // that produced signups with no spend recorded against it.
+            campaignSpend,
             new Map(
               signups.data.map((s) => [
-                s.campaign,
+                normaliseCampaign(s.campaign),
                 { signups: s.signups, hrdcSignups: s.hrdcSignups },
               ]),
             ),
-          )}
+          ).map((p) => ({ ...p, campaign: named(p.campaign) }))}
         />
       ) : (
         <PanelError what="spend against signups" />
@@ -199,8 +318,17 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
         />
       )}
 
-      {funding.ok ? (
-        <WhoPaysPanel rows={funding.data} />
+      {/* The CRM's deals are the answer when any of them records funding.
+          None do today, so the LMS stands in and both panels say so. The
+          rings are the shape of it; the bars are programme by programme. */}
+      {whoPays ? (
+        <>
+          <FundingDonutsPanel
+            breakdowns={fundingBreakdowns(whoPays.rows)}
+            source={whoPays.source}
+          />
+          <WhoPaysPanel rows={whoPays.rows} source={whoPays.source} />
+        </>
       ) : (
         <PanelError what="the who-pays panel" />
       )}

@@ -71,7 +71,7 @@ function livePersonSql(sql: postgres.Sql) {
 // refused here. The §6 matrix has no Reports row, so the report rides on
 // person read, and the part_time "assigned only" kind of read does not open
 // an aggregate over everyone's leads (O62).
-function requireReportReader(viewer: Viewer): void {
+export function requireReportReader(viewer: Viewer): void {
   const { assignedOnly } = requirePermission(viewer, "person", "read");
   if (assignedOnly) throw new PermissionError("person");
 }

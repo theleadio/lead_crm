@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/table";
 import { formatMoneyMyr } from "@/lib/format/money";
 import type { PriceShareRow } from "@/lib/reports/funding";
+import { PanelCard } from "./panel-card";
 
 // §9.18 price against HRDC share: the question is where a programme sits, not
 // which is biggest, so a scatter. One series, so one hue and no legend — the
@@ -43,17 +44,16 @@ export function PriceHrdcPanel({ rows }: { rows: PriceShareRow[] }) {
   const priceTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * ceiling);
 
   return (
-    <section className="flex flex-col gap-3">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-base font-semibold">
-          Course price against HRDC share
-        </h2>
-        <p className="text-ink-muted text-sm">
+    <PanelCard
+      eyebrow="MUST SEE"
+      title={<>Course price against HRDC share</>}
+      description={
+        <>
           Each point is one programme: its list price, and the share of its
           seats in this range that HRDC funded.
-        </p>
-      </div>
-
+        </>
+      }
+    >
       {rows.length === 0 ? (
         <div className="border-line bg-surface-raised rounded-md border p-5">
           <p className="text-ink-muted text-sm">
@@ -169,6 +169,6 @@ export function PriceHrdcPanel({ rows }: { rows: PriceShareRow[] }) {
           </TableCard>
         </>
       )}
-    </section>
+    </PanelCard>
   );
 }

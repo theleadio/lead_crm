@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/table";
 import { priceTier, type FundingRow } from "@/lib/reports/funding";
 import { formatMoneyMyr } from "@/lib/format/money";
+import { PanelCard } from "./panel-card";
 
 // §9.18 who pays: part-to-whole per programme, so a horizontal stacked bar —
 // the names are long and the question is a share, not a magnitude.
@@ -75,18 +76,28 @@ function Legend() {
   );
 }
 
-export function WhoPaysPanel({ rows }: { rows: FundingRow[] }) {
+export function WhoPaysPanel({
+  rows,
+  source = "deal",
+}: {
+  rows: FundingRow[];
+  // Where funding was read. The CRM's own deals are the real answer; the LMS
+  // is read while the import does not carry funding across, and the panel
+  // says so rather than presenting a borrowed number as its own.
+  source?: "deal" | "lms";
+}) {
   return (
-    <section className="flex flex-col gap-3">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-base font-semibold">Who pays</h2>
-        <p className="text-ink-muted text-sm">
-          Seat-holding enrolments (§12.1) by programme and class language. HRDC
-          means the deal records HRDC funding; an enrolment with no deal has no
-          recorded funding and is counted as not HRDC rather than guessed.
-        </p>
-      </div>
-
+    <PanelCard
+      eyebrow="CONTEXT"
+      title={<>Who pays</>}
+      description={
+        <>
+          {source === "deal"
+            ? "Seat-holding enrolments (§12.1) by programme and class language. HRDC means the deal records HRDC funding; an enrolment with no deal has no recorded funding and is counted as not HRDC rather than guessed."
+            : "Seats by programme and class language, counted in the LMS, which is the only place that records how each was funded — no deal in the CRM carries it yet. HRDC means the LMS says hrdc; self-funded, internal, leaders' club and refresher seats all count as not HRDC."}
+        </>
+      }
+    >
       {rows.length === 0 ? (
         <div className="border-line bg-surface-raised rounded-md border p-5">
           <p className="text-ink-muted text-sm">
@@ -157,6 +168,6 @@ export function WhoPaysPanel({ rows }: { rows: FundingRow[] }) {
           </TableCard>
         </>
       )}
-    </section>
+    </PanelCard>
   );
 }
