@@ -113,35 +113,57 @@ export function PriceHrdcPanel({ rows }: { rows: PriceShareRow[] }) {
                 List price
               </text>
 
-              {rows.map((row) => {
-                const cx = x(Number(row.listPriceMyr));
-                const cy = y(row.hrdcShare);
-                return (
-                  <g key={row.course}>
-                    <title>
-                      {`${row.course}: ${formatMoneyMyr(row.listPriceMyr)}, ${Math.round(row.hrdcShare * 100)}% HRDC of ${row.seats} seats`}
-                    </title>
-                    {/* A 2px surface ring, so overlapping points stay apart
+              {/* A label on the dearest course would run off the right
+                  edge, and two courses at one price land on each other, so a
+                  point past the two-thirds mark is labelled to its left and a
+                  clash is nudged down a line. The mark never moves. */}
+              {(() => {
+                const placed: { y: number; left: boolean }[] = [];
+                const nudge = (cy: number, left: boolean) => {
+                  let dy = 0;
+                  while (
+                    placed.some(
+                      (q) => q.left === left && Math.abs(q.y - (cy + dy)) < 13,
+                    )
+                  ) {
+                    dy += 13;
+                  }
+                  placed.push({ y: cy + dy, left });
+                  return dy;
+                };
+                return rows.map((row) => {
+                  const cx = x(Number(row.listPriceMyr));
+                  const cy = y(row.hrdcShare);
+                  const toTheLeft = cx > PAD.left + PLOT_W * 0.66;
+                  const dy = nudge(cy, toTheLeft);
+                  return (
+                    <g key={row.course}>
+                      <title>
+                        {`${row.course}: ${formatMoneyMyr(row.listPriceMyr)}, ${Math.round(row.hrdcShare * 100)}% HRDC of ${row.seats} seats`}
+                      </title>
+                      {/* A 2px surface ring, so overlapping points stay apart
                         without a border drawn around the mark. */}
-                    <circle
-                      cx={cx}
-                      cy={cy}
-                      r="6"
-                      fill="var(--lead-blue)"
-                      stroke="var(--surface-raised)"
-                      strokeWidth="2"
-                    />
-                    <text
-                      x={cx + 10}
-                      y={cy + 4}
-                      fontSize="11"
-                      fill="var(--ink-muted)"
-                    >
-                      {row.course}
-                    </text>
-                  </g>
-                );
-              })}
+                      <circle
+                        cx={cx}
+                        cy={cy}
+                        r="6"
+                        fill="var(--lead-blue)"
+                        stroke="var(--surface-raised)"
+                        strokeWidth="2"
+                      />
+                      <text
+                        x={toTheLeft ? cx - 10 : cx + 10}
+                        y={cy + 4 + dy}
+                        textAnchor={toTheLeft ? "end" : "start"}
+                        fontSize="11"
+                        fill="var(--ink-muted)"
+                      >
+                        {row.course}
+                      </text>
+                    </g>
+                  );
+                });
+              })()}
             </svg>
           </div>
 
