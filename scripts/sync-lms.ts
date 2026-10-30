@@ -105,18 +105,8 @@ async function once() {
       let code = `lms-${slug(c.name)}`.slice(0, 60);
       while (usedCode.has(code) && !haveCourse.has(c.id)) code += "-x";
       usedCode.add(code);
+      const price = c.price_cents ? c.price_cents / 100 : null;
       const seen = haveCourse.get(c.id);
-      // Every LMS course has price_cents = 0, so taking the LMS figure
-      // literally wrote NULL over whatever the CRM held and wiped the prices
-      // someone had entered from the published course pages. A price the LMS
-      // does not have is not a price of nothing: the CRM keeps its own until
-      // the LMS carries one, and a real LMS figure still wins.
-      const crmPrice = seen
-        ? ((
-            JSON.parse(seen) as [string, string | null, number | null, boolean]
-          )[2] ?? null)
-        : null;
-      const price = c.price_cents ? c.price_cents / 100 : crmPrice;
       if (seen === JSON.stringify([c.name, c.name_cn, price, c.is_active])) {
         bump("course", "same");
         continue;
