@@ -14,6 +14,7 @@
     "ghl:import": "node --env-file=.env.local scripts/import-ghl-contacts.ts",
     "lms:sync": "node --env-file=.env.local scripts/sync-lms.ts",
     "events:drain": "node --env-file-if-exists=.env.local scripts/drain-outbox.ts",
+    "ads:sync": "node --env-file-if-exists=.env.local scripts/sync-meta-ads.ts",
     "reservations:expire": "node --env-file-if-exists=.env.local scripts/expire-reservations.ts"
   },
   "dependencies": {
