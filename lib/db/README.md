@@ -20,6 +20,8 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/011_task_source_key.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/012_rate_limit.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/013_click_ids.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/014_meta_ad_insight.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/015_touchpoint_campaign_ids.sql
     psql -d <db> -f lib/db/tests/schema_constraints.sql
     psql -d <db> -f lib/db/tests/002_merge_erase_tests.sql
     psql -d <db> -f lib/db/tests/003_company_from_form_tests.sql
