@@ -205,7 +205,7 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
                 { signups: s.signups, hrdcSignups: s.hrdcSignups },
               ]),
             ),
-          ).map((p) => ({ ...p, campaign: cost.named(p.campaign) }))}
+          ).map((p) => ({ ...p, displayName: cost.named(p.campaign) }))}
         />
       ) : (
         <PanelError what="spend against signups" />

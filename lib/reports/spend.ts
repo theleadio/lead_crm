@@ -209,7 +209,12 @@ export function byCampaign(
 // --- the five panels' rows -------------------------------------------------
 
 export type EfficiencyPoint = {
+  // Meta's campaign id — the identity, and what a React key and a label set
+  // must use. Two live campaigns can carry the same name (a sales one and a
+  // click-to-WhatsApp one for the same class), so the name identifies
+  // nothing.
   campaign: string;
+  displayName?: string;
   spend: string;
   signups: number;
   hrdcSignups: number;

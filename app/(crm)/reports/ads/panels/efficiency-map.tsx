@@ -229,7 +229,7 @@ export function EfficiencyMapPanel({ points }: { points: EfficiencyPoint[] }) {
                 return (
                   <g key={p.campaign}>
                     <title>
-                      {`${p.campaign}: ${formatMoneyMyr(p.spend)}, ${p.signups} signups (${p.hrdcSignups} HRDC)${p.costPerSignup ? `, ${formatMoneyMyr(p.costPerSignup)} per signup` : ""}`}
+                      {`${p.displayName ?? p.campaign}: ${formatMoneyMyr(p.spend)}, ${p.signups} signups (${p.hrdcSignups} HRDC)${p.costPerSignup ? `, ${formatMoneyMyr(p.costPerSignup)} per signup` : ""}`}
                     </title>
                     <circle
                       cx={cx}
@@ -246,12 +246,16 @@ export function EfficiencyMapPanel({ points }: { points: EfficiencyPoint[] }) {
                         y={
                           cy +
                           4 +
-                          labelOffset(cx, cy, campaignLabel(p.campaign))
+                          labelOffset(
+                            cx,
+                            cy,
+                            campaignLabel(p.displayName ?? p.campaign),
+                          )
                         }
                         fontSize="10"
                         fill="var(--ink-muted)"
                       >
-                        {campaignLabel(p.campaign)}
+                        {campaignLabel(p.displayName ?? p.campaign)}
                       </text>
                     )}
                   </g>
@@ -276,7 +280,9 @@ export function EfficiencyMapPanel({ points }: { points: EfficiencyPoint[] }) {
           <TableBody>
             {points.map((p) => (
               <TableRow key={`t-${p.campaign}`}>
-                <TableCell>{p.campaign}</TableCell>
+                <TableCell title={p.campaign}>
+                  {p.displayName ?? p.campaign}
+                </TableCell>
                 <TableCell>{p.signups}</TableCell>
                 <TableCell>{p.hrdcSignups}</TableCell>
                 <TableCell>
