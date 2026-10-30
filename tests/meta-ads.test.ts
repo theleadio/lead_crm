@@ -181,6 +181,8 @@ test("fetchUrlTags pages, token only in the header, maps null for missing", asyn
   assert.equal(q.get("limit"), "500");
   assert.match(decodeURIComponent(seen[0].url), /creative\{url_tags\}/);
   assert.match(q.get("effective_status") ?? "", /ARCHIVED/);
+  // The ads edge rejects DELETED outright (code 100, subcode 1815001).
+  assert.doesNotMatch(q.get("effective_status") ?? "", /DELETED/);
 });
 
 test("fetchUrlTags throws Meta's error message in the same format", async () => {

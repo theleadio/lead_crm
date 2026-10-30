@@ -136,7 +136,6 @@ export async function fetchInsights(opts: {
 const AD_STATUSES = [
   "ACTIVE",
   "PAUSED",
-  "DELETED",
   "ARCHIVED",
   "IN_PROCESS",
   "WITH_ISSUES",
