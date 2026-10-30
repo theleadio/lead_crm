@@ -47,6 +47,10 @@ export function NavLinks({
           <Link
             key={item.href}
             href={item.href}
+            // Every CRM page is dynamic and reads the database. Prefetching all
+            // ten sidebar links on each load started ten serverless functions at
+            // once, which exhausted Supabase's connection pool and made pages 500.
+            prefetch={false}
             aria-current={active ? "page" : undefined}
             title={item.label}
             className={`focus-visible:outline-lead-blue flex items-center justify-center gap-2.5 rounded-full px-2.5 py-2.5 text-[13px] focus-visible:outline-2 focus-visible:outline-offset-2 md:justify-start md:px-3.5 ${
