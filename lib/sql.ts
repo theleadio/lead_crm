@@ -25,7 +25,10 @@ function root(): Sql {
       max: process.env.AWS_LAMBDA_FUNCTION_NAME ? 1 : 5,
       idle_timeout: 20,
       // Supabase's pooler (port 6543, transaction mode) drops prepared
-      // statements between queries: "prepared statement ... does not exist".
+      // statements between queries: Postgres 26000, "prepared statement ...
+      // does not exist", from routine FetchPreparedStatement. Parallel reads
+      // hit it hardest — the ads report fires eight at once and spent 104
+      // seconds retrying before this was set.
       prepare: !url.includes(":6543"),
     });
   }

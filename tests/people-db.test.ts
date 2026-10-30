@@ -68,8 +68,12 @@ it("list: paginates with a total (spec §7)", async () => {
   assert.equal(first.data.length, 25);
   const total = await visibleCount();
   assert.equal(first.page.total, total);
-  const last = await listPeople({ page: 3, limit: 25 }, admin);
-  assert.equal(last.data.length, total - 50);
+  // The last page holds the remainder, whatever the table's size — the dev
+  // database is seeded, demo-seeded and hand-edited, and §14 budgets for
+  // 13,000 people, so the count is derived rather than assumed.
+  const lastPage = Math.ceil(total / 25);
+  const last = await listPeople({ page: lastPage, limit: 25 }, admin);
+  assert.equal(last.data.length, total - (lastPage - 1) * 25);
 });
 
 it("search: every phone shape finds the same person (spec §9.1)", async () => {
@@ -99,22 +103,28 @@ it("filters: stage, owner, tag, open deal, created between", async () => {
   const tagged = (await all(admin, { tags: [vip.id] })).data;
   assert.ok(tagged.length > 0 && tagged.every((p) => p.tags.includes("vip")));
 
+  // Every visible person is on exactly one side of the filter. Both sides are
+  // totals over the whole table, so they are compared against the table's
+  // count — `everyone` is one page of at most 100 and would not match it.
   const withDeal = await all(admin, { hasOpenDeal: true });
   const without = await all(admin, { hasOpenDeal: false });
-  assert.equal(withDeal.page.total + without.page.total, everyone.length);
+  assert.equal(withDeal.page.total + without.page.total, await visibleCount());
 
-  // Created between, in Malaysia dates (UTC+8).
+  // Created between, in Malaysia dates (UTC+8). The expected count comes from
+  // the database for the same reason: a page cannot stand in for a total.
   const kl = (iso: string) =>
     new Date(Date.parse(iso) + 8 * 3600e3).toISOString().slice(0, 10);
   const newest = kl(everyone[0].createdAt);
   const weekAgo = kl(
     new Date(Date.parse(everyone[0].createdAt) - 6 * 864e5).toISOString(),
   );
-  const expected = everyone.filter(
-    (p) => kl(p.createdAt) >= weekAgo && kl(p.createdAt) <= newest,
-  );
+  const [{ n: expected }] = await db()`
+    SELECT count(*)::int AS n FROM person
+    WHERE deleted_at IS NULL AND merged_into_id IS NULL
+      AND (created_at AT TIME ZONE 'Asia/Kuala_Lumpur')::date
+            BETWEEN ${weekAgo}::date AND ${newest}::date`;
   const got = await all(admin, { createdFrom: weekAgo, createdTo: newest });
-  assert.equal(got.page.total, expected.length);
+  assert.equal(got.page.total, expected);
 });
 
 it("marketing: masked contact details, never the real values (§6 ¹)", async () => {
@@ -554,10 +564,20 @@ it("PDPA export: super_admin only, unmasked, audit-logged, CSV rows", async () =
 
 it("merge: super_admin only; moves children, keeps chosen fields (§9.3)", async () => {
   const sql = db();
-  const ids = (
-    await sql`SELECT id FROM person WHERE deleted_at IS NULL ORDER BY created_at LIMIT 2`
-  ).map((r) => r.id as string);
+  // Its own two people, created inside the rolled-back transaction, rather
+  // than whichever two rows happen to be oldest: the dev database is seeded
+  // from more than one script, and borrowing rows made this depend on which.
+  // The source carries a deal, so "moves children" still has a child to move.
+  const made = await sql`
+    INSERT INTO person (full_name, email, preferred_language)
+    VALUES ('Merge Source', ${`merge-src-${crypto.randomUUID()}@lead.test`}, 'en'),
+           ('Merge Target', ${`merge-tgt-${crypto.randomUUID()}@lead.test`}, 'en')
+    RETURNING id`;
+  const ids = made.map((r) => r.id as string);
   const [a, b] = ids;
+  await sql`
+    INSERT INTO deal (pipeline, stage, person_id, owner_user_id)
+    VALUES ('individual', 'new', ${a}, ${SEED_USERS.weiPing})`;
   const bothDeals = async () =>
     (
       await sql`SELECT count(*)::int AS n FROM deal WHERE person_id IN ${sql(ids)}`
