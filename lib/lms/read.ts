@@ -32,6 +32,15 @@ export async function closeLms(): Promise<void> {
   await sql?.end();
 }
 
+// Ids of the HRDC-funded enrolments. scripts/sync-lms.ts gives CRM enrolments
+// the LMS id and never creates a deal, so `deal.funding_type` is empty for
+// every synced seat and the LMS is the only place that says which were HRDC.
+export async function lmsHrdcEnrollmentIds(): Promise<string[]> {
+  const rows = await lms()<{ id: string }[]>`
+    select id from public.enrollments where funding_type = 'hrdc'`;
+  return rows.map((r) => r.id);
+}
+
 export type LmsEnrollment = {
   enrollmentId: string;
   enrolledAt: Date;
