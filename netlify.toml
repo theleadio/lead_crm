@@ -8,3 +8,11 @@
 [build]
   command = "npm run build"
   publish = ".next"
+
+# Netlify's secrets scan failed the build (PR #19) on values that are not
+# secret or not published: NEXT_PUBLIC_* are inlined into the browser bundle
+# by design, and the Turbopack cache is build-time only. Every other key and
+# path is still scanned.
+[build.environment]
+  SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
+  SECRETS_SCAN_OMIT_PATHS = ".netlify/.next/cache/**"

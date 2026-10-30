@@ -14,13 +14,13 @@ function lms(): postgres.Sql {
     const url = process.env.LMS_DATABASE_URL;
     if (!url) throw new Error("LMS_DATABASE_URL is not set");
     // Cached on globalThis so dev hot-reload doesn't open a new pool each time.
-    // prepare: false because the LMS URL is the transaction pooler (port 6543),
-    // which hands each statement a different backend; a named prepared statement
-    // then fails with Postgres 26000 on parallel reads.
     globalForLms.__leadLmsSql = postgres(url, {
       ssl: "require",
       max: 3,
-      prepare: false,
+      // LMS_DATABASE_URL is on Supabase's transaction pooler (6543), which
+      // hands a different backend to every statement — a prepared statement
+      // is gone before it executes (Postgres 26000, FetchPreparedStatement).
+      prepare: !/:6543(\/|$)/.test(url),
     });
   }
   return globalForLms.__leadLmsSql;
@@ -70,4 +70,44 @@ export async function listLmsEnrollments(
      where ${email}::text is null or lower(p.email) = ${email}
      order by e.created_at desc
      limit ${limit}`;
+}
+
+// Seats by course, language and how they were funded. An aggregate rather
+// than a row list: the §9.18 who-pays panel counts 355 seats today and will
+// count more, and `listLmsEnrollments` caps at 500 rows by design.
+//
+// The LMS is the only place that records funding — the CRM's `deal` table is
+// where it belongs, but the import does not carry it yet.
+export type LmsFundingRow = {
+  courseName: string;
+  courseNameCn: string | null;
+  language: string | null;
+  durationDays: number;
+  seats: number;
+  hrdc: number;
+};
+
+// `from`/`to` are whole Kuala Lumpur days, both ends inclusive, matching the
+// rest of §9.18. Without them this counted every enrolment the LMS has ever
+// held while the screen said it was showing one month.
+export async function lmsFundingByCourse(
+  from: string,
+  to: string,
+): Promise<LmsFundingRow[]> {
+  return lms()<LmsFundingRow[]>`
+    select co.name as "courseName", co.name_cn as "courseNameCn",
+           c.language,
+           (coalesce(c.end_date, c.start_date) - c.start_date + 1)::int
+             as "durationDays",
+           count(e.id)::int as seats,
+           count(*) filter (where e.funding_type = 'hrdc')::int as hrdc
+      from public.enrollments e
+      join public.cohorts c on c.id = e.cohort_id
+      join public.courses co on co.id = c.course_id
+     where e.created_at >= (${from}::date::timestamp at time zone 'Asia/Kuala_Lumpur')
+       and e.created_at <  ((${to}::date + 1)::timestamp at time zone 'Asia/Kuala_Lumpur')
+     group by co.name, co.name_cn, c.language,
+              (coalesce(c.end_date, c.start_date) - c.start_date + 1)
+    having count(e.id) > 0
+     order by count(e.id) desc`;
 }

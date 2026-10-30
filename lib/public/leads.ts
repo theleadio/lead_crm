@@ -24,7 +24,8 @@ export type LeadContext = {
 
 // O14 fallback (decision calendar, 16 Oct): keep only the path and utm_*,
 // gclid, fbclid; drop other query parameters, credentials and the fragment.
-// Anything that is not http(s) is dropped.
+// Anything that is not http(s) is dropped. O61 (29 Oct) adds gbraid, wbraid,
+// li_fat_id and ttclid.
 export function cleanUrl(raw: string | null | undefined): string | null {
   if (!raw) return null;
   try {
@@ -34,7 +35,8 @@ export function cleanUrl(raw: string | null | undefined): string | null {
     u.password = "";
     u.hash = "";
     for (const k of [...u.searchParams.keys()])
-      if (!/^(utm_[a-z]+|gclid|fbclid)$/.test(k)) u.searchParams.delete(k);
+      if (!/^(utm_[a-z]+|gclid|fbclid|gbraid|wbraid|li_fat_id|ttclid)$/.test(k))
+        u.searchParams.delete(k);
     return u.toString().slice(0, 500);
   } catch {
     return null;
@@ -188,12 +190,15 @@ async function insertLead(
     const [tp] = await sql`
       INSERT INTO touchpoint (person_id, channel, utm_source, utm_medium,
                               utm_campaign, utm_content, utm_term, gclid, fbclid,
+                              gbraid, wbraid, li_fat_id, ttclid,
                               landing_url, referrer, form_name, is_first_touch,
                               external_ref)
       VALUES (${personId}, 'web_form', ${a?.utmSource ?? null},
               ${a?.utmMedium ?? null}, ${a?.utmCampaign ?? null},
               ${a?.utmContent ?? null}, ${a?.utmTerm ?? null},
-              ${a?.gclid ?? null}, ${a?.fbclid ?? null}, ${ctx.landingUrl},
+              ${a?.gclid ?? null}, ${a?.fbclid ?? null},
+              ${a?.gbraid ?? null}, ${a?.wbraid ?? null},
+              ${a?.liFatId ?? null}, ${a?.ttclid ?? null}, ${ctx.landingUrl},
               ${ctx.referrer}, ${input.formName},
               ${priorTouches === 0 && !cookieFirst}, ${input.idempotencyKey})
       RETURNING id`;

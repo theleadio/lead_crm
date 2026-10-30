@@ -17,6 +17,10 @@ export const metadata: Metadata = {
     "Upcoming LEAD classes: dates, language, venue, price and HRDC claimability.",
 };
 
+// Reads the database per request (cached five minutes in feed.ts), never at build:
+// a deploy with no DATABASE_URL, such as a Netlify preview, must still build.
+export const dynamic = "force-dynamic";
+
 export default async function SchedulePage() {
   const { classes, generatedAt } = await getSchedule();
 

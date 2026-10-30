@@ -49,6 +49,12 @@ export type Touch = {
   utmTerm: string | null;
   gclid: string | null;
   fbclid: string | null;
+  // O61. Google sends gbraid / wbraid instead of gclid for iOS clicks;
+  // li_fat_id is LinkedIn's, ttclid TikTok's.
+  gbraid: string | null;
+  wbraid: string | null;
+  liFatId: string | null;
+  ttclid: string | null;
   landingUrl: string | null;
   referrer: string | null;
   // ISO 8601. On the first touch this is the moment §8.2 places the earlier
@@ -57,7 +63,7 @@ export type Touch = {
 };
 
 // The O14 shape, kept deliberately identical to cleanUrl() in
-// lib/public/leads.ts: path plus utm_*, gclid and fbclid, no credentials and
+// lib/public/leads.ts: path plus utm_* and the click ids, no credentials and
 // no fragment. That module imports the database, so it cannot be pulled into
 // a client bundle — the rule is written twice and pinned by a test that runs
 // both over the same inputs (tests/public-lead-form.test.ts).
@@ -70,7 +76,8 @@ export function trimUrl(raw: string | null | undefined): string | null {
     u.password = "";
     u.hash = "";
     for (const k of [...u.searchParams.keys()])
-      if (!/^(utm_[a-z]+|gclid|fbclid)$/.test(k)) u.searchParams.delete(k);
+      if (!/^(utm_[a-z]+|gclid|fbclid|gbraid|wbraid|li_fat_id|ttclid)$/.test(k))
+        u.searchParams.delete(k);
     return u.toString().slice(0, 500);
   } catch {
     return null;
@@ -105,6 +112,10 @@ export function touchFrom(
     utmTerm: p("utm_term"),
     gclid: p("gclid"),
     fbclid: p("fbclid", 500),
+    gbraid: p("gbraid"),
+    wbraid: p("wbraid"),
+    liFatId: p("li_fat_id"),
+    ttclid: p("ttclid"),
     landingUrl: trimUrl(href),
     referrer: trimUrl(referrer),
     occurredAt: now.toISOString(),
@@ -155,6 +166,10 @@ export function parseTouch(raw: string | null | undefined): Touch | null {
       utmTerm: s("utmTerm"),
       gclid: s("gclid"),
       fbclid: s("fbclid", 500),
+      gbraid: s("gbraid"),
+      wbraid: s("wbraid"),
+      liFatId: s("liFatId"),
+      ttclid: s("ttclid"),
       landingUrl: trimUrl(s("landingUrl", 2000)),
       referrer: trimUrl(s("referrer", 2000)),
       occurredAt: o.occurredAt.slice(0, 40),
@@ -176,7 +191,11 @@ export const hasCampaign = (t: Touch): boolean =>
     t.utmContent ||
     t.utmTerm ||
     t.gclid ||
-    t.fbclid
+    t.fbclid ||
+    t.gbraid ||
+    t.wbraid ||
+    t.liFatId ||
+    t.ttclid
   );
 
 // Whether this page was reached from somewhere other than our own site. A
@@ -237,6 +256,10 @@ export function attributionPayload(
     utmTerm: current.utmTerm,
     gclid: current.gclid,
     fbclid: current.fbclid,
+    gbraid: current.gbraid,
+    wbraid: current.wbraid,
+    liFatId: current.liFatId,
+    ttclid: current.ttclid,
     landingUrl: current.landingUrl,
     referrer: current.referrer,
     firstTouch: first
