@@ -11,6 +11,7 @@ import {
 } from "@/lib/reports/funding";
 import { fundingFromLms } from "@/lib/reports/lms-funding";
 import { adSpendRows } from "@/lib/reports/ad-spend";
+import { CLASS_SIZES, SIZE_LABEL, SIZE_NOTE } from "@/lib/reports/class-size";
 import {
   byCampaign,
   efficiencyPoints,
@@ -80,6 +81,7 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
       <Shell
         from={searchParams.get("filter[from]") ?? ""}
         to={searchParams.get("filter[to]") ?? ""}
+        size={searchParams.get("filter[size]") ?? ""}
       >
         <p role="alert" className="text-danger text-sm">
           {parsed.error.issues[0]?.message ?? "That date range isn't valid."} No
@@ -182,7 +184,15 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
   // The panels in the order the agreed dashboard sets them, so this screen and
   // that page can be read side by side.
   return (
-    <Shell from={query.from} to={query.to}>
+    <Shell from={query.from} to={query.to} size={query.size ?? ""}>
+      {query.size && (
+        <p className="text-ink-muted text-sm">
+          Showing {SIZE_NOTE[query.size]}. Seats, funding and signups count only
+          these classes; ad spend is not split by class, so the spend panels
+          still cover every campaign.
+        </p>
+      )}
+
       {earliest.ok && earliest.data && (
         <p className="text-ink-muted text-sm">
           Attribution data starts {formatDate(earliest.data)}; a range reaching
@@ -290,10 +300,12 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
 function Shell({
   from,
   to,
+  size,
   children,
 }: {
   from: string;
   to: string;
+  size: string;
   children: React.ReactNode;
 }) {
   return (
@@ -322,6 +334,25 @@ function Shell({
             className="border-line focus-visible:outline-focus-ring rounded-md border px-3 py-2 focus-visible:outline-2"
           />
         </label>
+        {/* Size is a plain <select> inside the same GET form, so it shares
+            the Apply button and lands in the URL beside the dates — the view
+            stays shareable and needs no client JavaScript. */}
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium">Class size</span>
+          <select
+            name="filter[size]"
+            defaultValue={size}
+            className="border-line focus-visible:outline-focus-ring rounded-md border px-3 py-2 focus-visible:outline-2"
+          >
+            <option value="">Every size</option>
+            {CLASS_SIZES.map((s) => (
+              <option key={s} value={s}>
+                {SIZE_LABEL[s]}
+              </option>
+            ))}
+          </select>
+        </label>
+
         <button
           type="submit"
           className="bg-primary focus-visible:outline-focus-ring rounded-md px-4 py-2.5 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2"

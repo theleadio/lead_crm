@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CLASS_SIZES } from "../reports/class-size.ts";
 
 // §9.18 ads report: the date range is the whole query. Both dates live in the
 // URL under the §7 `filter[...]` convention, so a range can be shared and a
@@ -43,10 +44,18 @@ export const adsReportQuerySchema = z
   .object({
     from: z.iso.date().optional(),
     to: z.iso.date().optional(),
+    // Which size of class to count. Absent means every size, which is the
+    // default view — a report that started filtered would be read as the
+    // whole business.
+    size: z.enum(CLASS_SIZES).optional(),
   })
   .transform((q) => {
     const fallback = defaultRange();
-    return { from: q.from ?? fallback.from, to: q.to ?? fallback.to };
+    return {
+      from: q.from ?? fallback.from,
+      to: q.to ?? fallback.to,
+      size: q.size ?? null,
+    };
   })
   // A bad range is refused, never quietly widened or swapped: a corrected
   // range is a wrong number the viewer cannot see is wrong (§9.18).
@@ -63,5 +72,12 @@ export type AdsReportQuery = z.infer<typeof adsReportQuerySchema>;
 
 export function readAdsReportParams(sp: URLSearchParams) {
   const get = (k: string) => sp.get(k) ?? undefined;
-  return { from: get("filter[from]"), to: get("filter[to]") };
+  // An unknown size is dropped rather than refused: it comes from a URL, and
+  // the date range is the part worth refusing over.
+  const size = get("filter[size]");
+  return {
+    from: get("filter[from]"),
+    to: get("filter[to]"),
+    size: CLASS_SIZES.includes(size as never) ? size : undefined,
+  };
 }
