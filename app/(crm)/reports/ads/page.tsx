@@ -17,6 +17,7 @@ import {
   roasRows,
   spendByObjective,
   type AdSpendRow,
+  type CampaignRevenue,
   type ObjectiveSplit,
 } from "@/lib/reports/spend";
 import { SPEND_UNAVAILABLE } from "@/lib/reports/types";
@@ -126,7 +127,7 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
   // (migration 009) but only public intake sets it, so most deals carry no
   // campaign and a ratio built on the ones that do would read low by an
   // unknown amount. The panel is wired, not fed.
-  const campaignRevenue = new Map<string, { stripe: string; hrdc: string }>();
+  const campaignRevenue = new Map<string, CampaignRevenue>();
   const returns = roasRows(campaignSpend, campaignRevenue).map((r) => ({
     ...r,
     campaign: named(r.campaign),

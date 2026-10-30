@@ -247,9 +247,23 @@ export type RoasRow = {
   spend: string;
   stripeRevenue: string;
   hrdcRevenue: string;
+  // How many orders made that revenue, when the source counted them, and
+  // the grant share of the programme's signups — both shown beside the ratio
+  // so a high one on three orders is not read as a settled fact.
+  stripeOrders: number | null;
+  hrdcShare: { hrdc: number; signups: number } | null;
+  note: string | null;
   stripeRoas: number | null;
   totalRoas: number | null;
   band: RoasBand | null;
+};
+
+export type CampaignRevenue = {
+  stripe: string;
+  hrdc: string;
+  orders?: number;
+  hrdcShare?: { hrdc: number; signups: number };
+  note?: string;
 };
 
 // Panel 3. Banded on Stripe revenue, because that is the money that actually
@@ -257,28 +271,37 @@ export type RoasRow = {
 // programme is not read as a failure.
 export function roasRows(
   spend: Map<string, SpendTotals>,
-  revenue: Map<string, { stripe: string; hrdc: string }>,
+  revenue: Map<string, CampaignRevenue>,
 ): RoasRow[] {
-  return [...spend.keys()]
-    .map((campaign) => {
-      const money = spend.get(campaign)!.spend;
-      const earned = revenue.get(campaign) ?? { stripe: "0.00", hrdc: "0.00" };
-      const both = roasBothWays(earned, money);
-      return {
-        campaign,
-        spend: money,
-        stripeRevenue: earned.stripe,
-        hrdcRevenue: earned.hrdc,
-        stripeRoas: both.stripe,
-        totalRoas: both.total,
-        band: roasBand(both.stripe),
-      };
-    })
-    .sort(
-      (a, b) =>
-        (b.stripeRoas ?? -1) - (a.stripeRoas ?? -1) ||
-        a.campaign.localeCompare(b.campaign),
-    );
+  return (
+    [...spend.keys()]
+      // A campaign the revenue source says nothing about has no return — it
+      // has no figure. Defaulting it to zero earned would band every such
+      // campaign as "poor", which is an answer nobody measured.
+      .filter((campaign) => revenue.has(campaign))
+      .map((campaign) => {
+        const money = spend.get(campaign)!.spend;
+        const earned = revenue.get(campaign)!;
+        const both = roasBothWays(earned, money);
+        return {
+          campaign,
+          spend: money,
+          stripeRevenue: earned.stripe,
+          hrdcRevenue: earned.hrdc,
+          stripeOrders: earned.orders ?? null,
+          hrdcShare: earned.hrdcShare ?? null,
+          note: earned.note ?? null,
+          stripeRoas: both.stripe,
+          totalRoas: both.total,
+          band: roasBand(both.stripe),
+        };
+      })
+      .sort(
+        (a, b) =>
+          (b.stripeRoas ?? -1) - (a.stripeRoas ?? -1) ||
+          a.campaign.localeCompare(b.campaign),
+      )
+  );
 }
 
 export type AdRankRow = {

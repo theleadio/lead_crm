@@ -1,6 +1,4 @@
-import { PanelCard } from "./panel-card";
 import { TableCard } from "@/components/list-kit";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -10,79 +8,47 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatMoneyMyr } from "@/lib/format/money";
+import { ROAS_BANDS, type RoasBand, type RoasRow } from "@/lib/reports/spend";
 import { campaignLabel } from "./campaign-label";
-import {
-  axisCeiling,
-  ROAS_BANDS,
-  type RoasBand,
-  type RoasRow,
-} from "@/lib/reports/spend";
+import { PanelCard } from "./panel-card";
 
-// §9.18 panel 3: return on ad spend, one bar per campaign.
+// §9.18 panel 3: return on ad spend, one row per programme.
 //
-// A bar, because the question is which campaign returned most — a magnitude
-// ranked against its neighbours. Sorted by the figure the bar draws, so the
-// order and the length say the same thing.
+// A table, not a chart, which is what the agreed dashboard draws. Six
+// measures hang off each ratio — spend, orders, revenue, the ratio itself,
+// the grant share and a note saying what the ratio does not cover — and a bar
+// carries one of those. The ratio cell is tinted by its band, so the shape of
+// the column is still readable at a glance.
 //
-// The fill is a status and not a series: good / watch / poor is a judgement
-// about one number against ROAS_BANDS, so it may use the status tokens. It
-// never rests on colour — every row carries the ratio as text and a labelled
-// badge, and the table below repeats both without any colour at all.
-//
-// Banded on Stripe revenue, with the grant-inclusive figure beside it: HRDC
-// money never passes through the checkout, so a grant-heavy programme reads
-// as a failure on card revenue alone (O30 — see the caveat below the chart).
+// Banded on Stripe revenue, because that is the money that actually arrived
+// through the checkout. Grant money is invoiced to HRDC and never reaches
+// Stripe, so the grant share sits in the next column: a programme can read
+// poor here and still have been full.
 
 const BAND_LABEL: Record<RoasBand, string> = {
-  good: `${ROAS_BANDS.good}× or better`,
+  good: `${ROAS_BANDS.good}× or more`,
   watch: `${ROAS_BANDS.watch}× to ${ROAS_BANDS.good}×`,
   poor: `under ${ROAS_BANDS.watch}×`,
 };
 
-const BAND_FILL: Record<RoasBand, string> = {
-  good: "var(--success)",
-  watch: "var(--warning)",
-  poor: "var(--danger)",
+// Soft fills, so a tinted cell reads as a band while the figure on top keeps
+// its own ink. Status tokens, because this is a judgement about one number.
+const BAND_CELL: Record<RoasBand, { background: string; color: string }> = {
+  good: { background: "var(--success-soft)", color: "var(--success)" },
+  watch: { background: "var(--warning-soft)", color: "var(--warning)" },
+  poor: { background: "var(--danger-soft)", color: "var(--danger)" },
 };
-
-const BAND_VARIANT = {
-  good: "success",
-  watch: "warning",
-  poor: "destructive",
-} as const;
-
-function formatRoas(value: number | null): string {
-  return value === null ? "—" : `${value.toFixed(1)}×`;
-}
-
-// One campaign returning forty times what it cost and the rest returning two
-// would flatten every other bar to a sliver. So the axis stops at the rest of
-// the field when the best is far clear of it, and the bar that runs past the
-// end is cut — the ratio beside it is always the exact one, and the cut mark
-// says the length stopped being comparable there.
-const RUNAWAY = 3;
-
-function roasAxisTop(rows: RoasRow[]): number {
-  const ranked = rows
-    .map((r) => r.stripeRoas)
-    .filter((n): n is number => n !== null)
-    .sort((a, b) => b - a);
-  const [best = 0, next = 0] = ranked;
-  const top = next > 0 && best > next * RUNAWAY ? next : best;
-  // Never below the good band, or the thresholds would fall off the track.
-  return Math.max(top, ROAS_BANDS.good);
-}
 
 function Legend() {
   return (
-    <div className="text-ink-muted flex flex-wrap items-center gap-4 text-sm">
+    <div className="text-ink-muted flex flex-wrap items-center gap-2 text-sm">
+      <span>ROAS = Stripe revenue ÷ ad spend.</span>
       {(Object.keys(BAND_LABEL) as RoasBand[]).map((band) => (
-        <span key={band} className="flex items-center gap-1.5">
-          <span
-            aria-hidden="true"
-            className="size-3 rounded-sm"
-            style={{ backgroundColor: BAND_FILL[band] }}
-          />
+        <span
+          key={band}
+          className="rounded-md px-2 py-0.5 text-xs font-semibold"
+          style={BAND_CELL[band]}
+        >
           {BAND_LABEL[band]}
         </span>
       ))}
@@ -90,124 +56,93 @@ function Legend() {
   );
 }
 
-export function RoasPanel({ rows }: { rows: RoasRow[] }) {
-  const ceiling = axisCeiling(roasAxisTop(rows));
-  const percent = (roas: number) => `${Math.min(roas / ceiling, 1) * 100}%`;
+function share(part: number, whole: number): string {
+  return whole > 0 ? `${Math.round((part / whole) * 100)}%` : "—";
+}
 
+export function RoasPanel({ rows }: { rows: RoasRow[] }) {
   return (
     <PanelCard
       eyebrow="RETURN"
       title={<>Return on ad spend</>}
       description={
         <>
-          Stripe revenue divided by what the campaign spent. A campaign that
-          spent nothing has no return rather than an infinite one, and shows an
-          em dash. The bars run to {ceiling}×; one that goes further is drawn
-          cut, with its exact ratio beside it.
+          Stripe revenue against what each programme&apos;s campaigns cost. A
+          programme that took nothing through the checkout has no ratio rather
+          than a ratio of nothing, and shows n/a. The grant share sits beside it
+          because HRDC seats are invoiced and never reach Stripe.
         </>
       }
     >
       {rows.length === 0 ? (
         <div className="border-line bg-surface-raised rounded-md border p-5">
           <p className="text-ink-muted text-sm">
-            No campaign in this date range has both recorded spend and revenue.
+            No campaign in this date range has both recorded spend and recorded
+            revenue.
           </p>
         </div>
       ) : (
         <>
           <Legend />
 
-          <div className="border-line bg-surface-raised flex flex-col gap-3 rounded-md border p-4">
-            {rows.map((row) => (
-              <div key={row.campaign} className="flex flex-col gap-1">
-                <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
-                  <span className="font-medium" title={row.campaign}>
-                    {campaignLabel(row.campaign)}
-                  </span>
-                  <span className="text-ink-muted flex items-center gap-2">
-                    <span>{formatRoas(row.stripeRoas)} Stripe</span>
-                    {row.band && (
-                      <Badge variant={BAND_VARIANT[row.band]}>
-                        {BAND_LABEL[row.band]}
-                      </Badge>
-                    )}
-                  </span>
-                </div>
-
-                {/* The two thresholds are drawn across the track as solid
-                    hairlines, so a bar is read against the band it is in
-                    rather than against its neighbours alone. */}
-                <div className="bg-surface-raised relative h-5 w-full">
-                  {([ROAS_BANDS.watch, ROAS_BANDS.good] as const).map(
-                    (mark) => (
-                      <span
-                        key={mark}
-                        aria-hidden="true"
-                        className="absolute inset-y-0 w-px"
-                        style={{
-                          left: percent(mark),
-                          backgroundColor: "var(--line-strong)",
-                        }}
-                      />
-                    ),
-                  )}
-                  {row.stripeRoas !== null && row.band && (
-                    <span
-                      className="absolute inset-y-0 left-0 rounded-sm"
-                      style={{
-                        width: percent(row.stripeRoas),
-                        backgroundColor: BAND_FILL[row.band],
-                      }}
-                      title={`${row.campaign}: ${formatRoas(row.stripeRoas)} on ${formatMoneyMyr(row.spend)} spent`}
-                    />
-                  )}
-                  {/* The break mark: two surface slashes across the end of a
-                      bar the axis could not hold, so its length is read as
-                      cut rather than as the longest in the field. */}
-                  {(row.stripeRoas ?? 0) > ceiling && (
-                    <span
-                      aria-hidden="true"
-                      className="absolute inset-y-0 right-0 w-3"
-                      style={{
-                        background:
-                          "repeating-linear-gradient(115deg, transparent 0 3px, var(--surface-raised) 3px 5px)",
-                      }}
-                    />
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <p className="text-ink-muted text-sm">
-            Grant money is invoiced to HRDC rather than taken at the checkout,
-            so the Stripe figure understates a grant-heavy programme. The table
-            carries the grant-inclusive ratio beside it. Revenue is credited to
-            the campaign of the buyer&apos;s first touch, per person, because a
-            deal does not record the touchpoint that created it (O30).
-          </p>
-
           <TableCard>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Campaign</TableHead>
-                  <TableHead>Spend</TableHead>
+                  <TableHead>Programme</TableHead>
+                  <TableHead>Ad spend</TableHead>
+                  <TableHead>Stripe orders</TableHead>
                   <TableHead>Stripe revenue</TableHead>
-                  <TableHead>HRDC revenue</TableHead>
-                  <TableHead>Stripe ROAS</TableHead>
-                  <TableHead>Including HRDC</TableHead>
+                  <TableHead>ROAS</TableHead>
+                  <TableHead>HRDC share of signups</TableHead>
+                  <TableHead>Note</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {rows.map((row) => (
-                  <TableRow key={`t-${row.campaign}`}>
-                    <TableCell>{row.campaign}</TableCell>
+                  <TableRow key={row.campaign}>
+                    <TableCell title={row.campaign}>
+                      {campaignLabel(row.campaign)}
+                    </TableCell>
                     <TableCell>{formatMoneyMyr(row.spend)}</TableCell>
-                    <TableCell>{formatMoneyMyr(row.stripeRevenue)}</TableCell>
-                    <TableCell>{formatMoneyMyr(row.hrdcRevenue)}</TableCell>
-                    <TableCell>{formatRoas(row.stripeRoas)}</TableCell>
-                    <TableCell>{formatRoas(row.totalRoas)}</TableCell>
+                    <TableCell>
+                      {row.stripeOrders ?? (
+                        <span className="text-ink-muted">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {row.stripeRoas === null ? (
+                        <span className="text-ink-muted">—</span>
+                      ) : (
+                        formatMoneyMyr(row.stripeRevenue)
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {row.stripeRoas === null || row.band === null ? (
+                        <span className="text-ink-muted">n/a</span>
+                      ) : (
+                        <span
+                          className="inline-block rounded-md px-2 py-0.5 font-semibold tabular-nums"
+                          style={BAND_CELL[row.band]}
+                          title={`${BAND_LABEL[row.band]}${row.totalRoas === null ? "" : ` · ${row.totalRoas.toFixed(1)}× with HRDC revenue included`}`}
+                        >
+                          {row.stripeRoas.toFixed(1)}×
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {row.hrdcShare ? (
+                        <>
+                          {row.hrdcShare.hrdc} of {row.hrdcShare.signups} (
+                          {share(row.hrdcShare.hrdc, row.hrdcShare.signups)})
+                        </>
+                      ) : (
+                        <span className="text-ink-muted">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-ink-muted">
+                      {row.note ?? ""}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
