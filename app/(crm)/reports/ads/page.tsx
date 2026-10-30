@@ -164,12 +164,16 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
   // while none does — one decision, so the rings and the bars can never
   // disagree about where their numbers came from. Both are ranged on the
   // report's own dates.
+  // Funding comes from the CRM when a deal records any, and from the LMS
+  // while none does. If the LMS read failed, the deal rows are not a
+  // fallback: every seat in them reads as not-HRDC, which is a figure nobody
+  // measured. The panel shows its error instead.
   const whoPays =
     funding.ok && funding.data.some((r) => r.hrdc > 0)
       ? { rows: funding.data, source: "deal" as const }
       : lmsFunding.ok && lmsFunding.data.length > 0
         ? { rows: lmsFunding.data, source: "lms" as const }
-        : funding.ok
+        : lmsFunding.ok && funding.ok
           ? { rows: funding.data, source: "deal" as const }
           : null;
 

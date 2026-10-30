@@ -21,6 +21,12 @@ function lms(): postgres.Sql {
       // hands a different backend to every statement — a prepared statement
       // is gone before it executes (Postgres 26000, FetchPreparedStatement).
       prepare: !/:6543(\/|$)/.test(url),
+      // A report panel must not wait on the LMS indefinitely. Without these
+      // a stalled connection hangs the read until the request gives up, the
+      // panel is recorded as failed, and the page falls back to the deal
+      // source — which reports 0% HRDC and looks like an answer.
+      connect_timeout: 10,
+      idle_timeout: 20,
     });
   }
   return globalForLms.__leadLmsSql;
