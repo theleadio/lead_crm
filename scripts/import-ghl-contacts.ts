@@ -234,3 +234,6 @@ console.log(
   `${rows.length} rows, ${apply ? "APPLIED" : "DRY RUN (rolled back)"}`,
 );
 console.table(stats);
+console.log(
+  `ghl import: ${apply ? "applied" : "dry run"} ${rows.length} rows ${JSON.stringify(stats)}`,
+);

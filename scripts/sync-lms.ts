@@ -314,6 +314,9 @@ async function once() {
   );
   console.table(stats);
   for (const w of warnings) console.warn("warn:", w);
+  console.log(
+    `lms sync: ${apply ? "applied" : "dry run"} ${JSON.stringify(stats)}, ${warnings.length} warnings`,
+  );
 }
 
 try {
