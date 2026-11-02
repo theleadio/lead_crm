@@ -98,20 +98,28 @@ export async function campaignRows(
   requireReportReader(viewer);
   const sql = db();
 
+  // Grouped on `utm_campaign_id`, the id Meta and the lead both carry, so a
+  // row lines up with `meta_ad_insight` and can be shown beside what that
+  // campaign cost. The name is carried for the screen only: Meta cases it
+  // inconsistently and it is retyped per run.
+  //
+  // Leads with no campaign id are one row, not dropped, so the rows still sum
+  // to the total — and that row is the honest size of what cannot be
+  // attributed.
+  //
   // The windows run over every group, before LIMIT, so `total_leads` and
   // `group_count` describe the whole range rather than the page shown.
-  // utm_campaign NULL is its own group — the leads that carry no campaign
-  // are a row, never dropped, so the rows sum to the total.
   const rows = await sql`
     WITH meta AS (
-      SELECT t.utm_campaign, t.is_first_touch, t.person_id
+      SELECT t.utm_campaign_id, t.utm_campaign, t.is_first_touch, t.person_id
       FROM touchpoint t
       JOIN person p ON p.id = t.person_id
       WHERE ${metaTouchpointSql(sql)}
         AND ${rangeSql(sql, q)}
         AND ${livePersonSql(sql)}
     )
-    SELECT utm_campaign AS campaign,
+    SELECT utm_campaign_id AS campaign_id,
+           max(utm_campaign) AS campaign,
            count(*)::int AS leads,
            count(*) FILTER (WHERE is_first_touch)::int AS first_touch,
            count(*) FILTER (WHERE NOT is_first_touch)::int AS later_touch,
@@ -119,12 +127,13 @@ export async function campaignRows(
            (count(*) OVER ())::int AS group_count,
            (sum(count(*)) OVER ())::int AS total_leads
     FROM meta
-    GROUP BY utm_campaign
-    ORDER BY leads DESC, campaign ASC NULLS LAST
+    GROUP BY utm_campaign_id
+    ORDER BY leads DESC, campaign_id ASC NULLS LAST
     LIMIT ${ROWS_SHOWN}`;
 
   return {
     rows: rows.map((r) => ({
+      campaignId: r.campaign_id,
       campaign: r.campaign,
       leads: r.leads,
       firstTouch: r.first_touch,

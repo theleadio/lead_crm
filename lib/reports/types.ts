@@ -26,6 +26,9 @@ export const NO_SPEND: AdsSpend = {
 // campaign at all; they are a row of their own, never dropped, so the rows
 // sum to the total (§9.18).
 export type AdsCampaignRow = AdsSpend & {
+  // Meta's campaign id, which the ad rows carry too, so a lead count can sit
+  // beside that campaign's spend. Null for leads that carry no campaign.
+  campaignId: string | null;
   campaign: string | null;
   leads: number;
   firstTouch: number;

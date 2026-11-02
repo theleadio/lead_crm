@@ -2,7 +2,13 @@ import { notFound } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { permissionFor } from "@/lib/auth/permissions";
 import { formatDate } from "@/lib/format/date";
-import { earliestMetaTouchpoint, signupsPerCampaign } from "@/lib/reports/ads";
+import {
+  campaignRows,
+  earliestMetaTouchpoint,
+  leadsPerWeek,
+  signupsPerCampaign,
+  sourceRows,
+} from "@/lib/reports/ads";
 import {
   fundingBreakdowns,
   fundingSplit,
@@ -29,6 +35,8 @@ import {
 // The §9.0 panel error: a client component that retries the server render in
 // place. Imported where it lives rather than moved, so Home stays untouched.
 import { PanelError } from "../../dashboard/panel-kit";
+import { LeadsOverTimePanel } from "./panels/leads-over-time";
+import { CampaignTable, SourceTable } from "./tables";
 import { EfficiencyMapPanel } from "./panels/efficiency-map";
 import { FundingDonutsPanel } from "./panels/funding-donuts";
 import { PriceHrdcPanel } from "./panels/price-hrdc";
@@ -92,19 +100,32 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
   }
 
   const query = parsed.data;
-  const [earliest, funding, priceShare, signups, spend, lmsFunding] =
-    await Promise.all([
-      panel("earliest touchpoint", () => earliestMetaTouchpoint(user)),
-      panel("who pays", () => fundingSplit(user, query)),
-      panel("price against HRDC share", () =>
-        priceAgainstHrdcShare(user, query),
-      ),
-      panel("signups per campaign", () => signupsPerCampaign(user, query)),
-      panel("ad spend", () => adSpendRows(user, query)),
-      // Read whether or not the CRM has funding: which of the two the panel
-      // shows is decided below, and a failing LMS must not take the screen down.
-      panel("who pays, from the LMS", () => fundingFromLms(user, query)),
-    ]);
+  const [
+    earliest,
+    funding,
+    priceShare,
+    signups,
+    spend,
+    lmsFunding,
+    campaigns,
+    sources,
+    weekly,
+  ] = await Promise.all([
+    panel("earliest touchpoint", () => earliestMetaTouchpoint(user)),
+    panel("who pays", () => fundingSplit(user, query)),
+    panel("price against HRDC share", () => priceAgainstHrdcShare(user, query)),
+    panel("signups per campaign", () => signupsPerCampaign(user, query)),
+    panel("ad spend", () => adSpendRows(user, query)),
+    // Read whether or not the CRM has funding: which of the two the panel
+    // shows is decided below, and a failing LMS must not take the screen down.
+    panel("who pays, from the LMS", () => fundingFromLms(user, query)),
+    // The lead side: who arrived, from which campaign, over which weeks.
+    // 5,100 of these carry a campaign id once the SalesProcess import
+    // lands, which is far more than the handful that go on to enrol.
+    panel("leads by campaign", () => campaignRows(user, query)),
+    panel("leads by source", () => sourceRows(user, query)),
+    panel("leads per week", () => leadsPerWeek(user, query)),
+  ]);
 
   // The cost side of the report, from `meta_ad_insight` (migration 014). The
   // pull asks Meta for ad-level rows, so campaign totals are summed from
@@ -294,6 +315,26 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
           title="Where the spend went"
           waitingFor="recorded ad spend in this date range"
         />
+      )}
+      {weekly.ok ? (
+        <LeadsOverTimePanel data={weekly.data} />
+      ) : (
+        <PanelError what="leads per week" />
+      )}
+
+      {campaigns.ok ? (
+        <CampaignTable
+          table={campaigns.data}
+          spend={cost?.campaignSpend ?? new Map()}
+        />
+      ) : (
+        <PanelError what="leads by campaign" />
+      )}
+
+      {sources.ok ? (
+        <SourceTable table={sources.data} />
+      ) : (
+        <PanelError what="leads by source" />
       )}
     </Shell>
   );
