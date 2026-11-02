@@ -131,6 +131,9 @@ async function run(url: string) {
   if (process.exitCode !== 1) {
     console.log(apply ? "APPLIED" : "DRY RUN (rolled back)");
     console.table(stats);
+    console.log(
+      `ghl attribution: ${apply ? "applied" : "dry run"} ${JSON.stringify(stats)}`,
+    );
   }
 }
 
