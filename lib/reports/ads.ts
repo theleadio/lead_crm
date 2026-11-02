@@ -73,6 +73,11 @@ export function metaTouchpointSql(sql: postgres.Sql, alias = "t") {
 // the ad set, the lead arrived on. 3,242 touchpoints carry a campaign id
 // outright; 5,555 resolve this way, over 107 campaigns rather than 76.
 //
+// `utm_ad_id` is tried before `utm_content`: where the attribution import
+// stored an explicit ad id, `utm_content` holds the creative's name instead.
+// On 2 Nov every such row already carried its campaign id, so this adds no
+// leads today; it stops one being lost the day a row arrives without.
+//
 // The stored id is tried first and wins where both exist. Exactly one
 // touchpoint's ad disagrees with its stored id, and the id the lead itself
 // carried is the better evidence of where that lead came from.
@@ -81,32 +86,61 @@ export function metaTouchpointSql(sql: postgres.Sql, alias = "t") {
 // campaigns: no ad id and no ad set id in this account maps to more than one
 // campaign. If one ever did, the join would multiply rows and quietly inflate
 // every lead count on the page, which is the failure worth preventing.
+//
+// Scoped to META_AD_ACCOUNT_ID the same way the spend side is
+// (`adSpendRows`), so a lead is never resolved to a campaign whose spend the
+// report then leaves out.
 export function campaignMapSql(sql: postgres.Sql) {
+  const account = process.env.META_AD_ACCOUNT_ID?.trim().replace(/^act_/, "");
+  const inAccount = account ? sql`AND account_id = ${account}` : sql``;
   return sql`
     ad_campaign AS (
       SELECT ad_id, min(campaign_id) AS campaign_id
-      FROM meta_ad_insight WHERE ad_id IS NOT NULL GROUP BY ad_id
+      FROM meta_ad_insight WHERE ad_id IS NOT NULL ${inAccount}
+      GROUP BY ad_id
     ),
     adset_campaign AS (
       SELECT adset_id, min(campaign_id) AS campaign_id
-      FROM meta_ad_insight WHERE adset_id IS NOT NULL GROUP BY adset_id
+      FROM meta_ad_insight WHERE adset_id IS NOT NULL ${inAccount}
+      GROUP BY adset_id
     ),
     campaign_name AS (
       SELECT campaign_id, max(campaign_name) AS campaign_name
-      FROM meta_ad_insight WHERE campaign_name IS NOT NULL GROUP BY campaign_id
+      FROM meta_ad_insight WHERE campaign_name IS NOT NULL ${inAccount}
+      GROUP BY campaign_id
     )`;
 }
 
-// The two joins `campaignIdSql` reads from. Both are left joins: a touchpoint
+// The joins `campaignIdSql` reads from. All are left joins: a touchpoint
 // that resolves to no campaign at all is still a lead and still counted.
 export function campaignJoinSql(sql: postgres.Sql, alias = "t") {
   return sql`
+    LEFT JOIN ad_campaign ai ON ai.ad_id = ${sql(`${alias}.utm_ad_id`)}
     LEFT JOIN ad_campaign ac ON ac.ad_id = ${sql(`${alias}.utm_content`)}
     LEFT JOIN adset_campaign sc ON sc.adset_id = ${sql(`${alias}.utm_term`)}`;
 }
 
 export function campaignIdSql(sql: postgres.Sql, alias = "t") {
-  return sql`coalesce(${sql(`${alias}.utm_campaign_id`)}, ac.campaign_id, sc.campaign_id)`;
+  return sql`coalesce(${sql(`${alias}.utm_campaign_id`)}, ai.campaign_id, ac.campaign_id, sc.campaign_id)`;
+}
+
+// A grouped row's display name. `alias` is the grouped CTE, which carries
+// `campaign_id` and the lead's own `utm_campaign`; `campaign_name` must be
+// joined as `cn`. The lead's own name is preferred unless it is the id
+// retyped as a name, and Meta's name fills in where the lead carried none.
+//
+// The row with no campaign id gets no name. It pools every lead whose
+// campaign could not be resolved — 403 touchpoints under 31 different names
+// on 2 Nov — and borrowing one of those names would present the catch-all as
+// one real campaign. The screen labels a nameless row as missing.
+export function campaignNameSql(sql: postgres.Sql, alias: string) {
+  const id = sql(`${alias}.campaign_id`);
+  const name = sql(`${alias}.utm_campaign`);
+  return sql`CASE WHEN ${id} IS NULL THEN NULL ELSE coalesce(
+               max(${name}) FILTER (WHERE ${name} !~ '^[0-9]+$'),
+               max(cn.campaign_name),
+               max(${name})
+             ) END`;
 }
 
 // §9.18 first touch. `touchpoint.is_first_touch` is held to one row per
@@ -117,9 +151,18 @@ export function campaignIdSql(sql: postgres.Sql, alias = "t") {
 // instead with an `external_ref` of `ghl-attr:first:<contact>`, one per
 // person. Either mark counts as a first touch; without the second one the
 // column reads 0 on every row and leads equals later touch everywhere.
+//
+// Coalesced to false because `external_ref` is nullable: `false OR NULL` is
+// NULL, which neither `FILTER (WHERE first_touch)` nor `FILTER (WHERE NOT
+// first_touch)` counts, and which sorts ahead of true under `DESC`. No UTM
+// row has a NULL ref today; the first web-form lead would.
+//
+// Known gap: a person with a flagged lead-form row and a SalesProcess first
+// mark would count two first touches. Nobody does on 2 Nov — lead-form
+// intake does not exist yet — so it is left until there is a row to test.
 export function firstTouchSql(sql: postgres.Sql, alias = "t") {
-  return sql`(${sql(`${alias}.is_first_touch`)}
-              OR ${sql(`${alias}.external_ref`)} LIKE 'ghl-attr:first:%')`;
+  return sql`coalesce(${sql(`${alias}.is_first_touch`)}
+              OR ${sql(`${alias}.external_ref`)} LIKE 'ghl-attr:first:%', false)`;
 }
 
 // Spec §4: whole Kuala Lumpur days, both ends inclusive. A half-open upper
@@ -165,7 +208,7 @@ export async function campaignRows(
   //
   // Leads with no campaign id are one row, not dropped, so the rows still sum
   // to the total — and that row is the honest size of what cannot be
-  // attributed.
+  // attributed. It carries no name (`campaignNameSql`).
   //
   // The windows run over every group, before LIMIT, so `total_leads` and
   // `group_count` describe the whole range rather than the page shown.
@@ -184,11 +227,7 @@ export async function campaignRows(
         AND ${livePersonSql(sql)}
     )
     SELECT m.campaign_id,
-           coalesce(
-             max(m.utm_campaign) FILTER (WHERE m.utm_campaign !~ '^[0-9]+$'),
-             max(cn.campaign_name),
-             max(m.utm_campaign)
-           ) AS campaign,
+           ${campaignNameSql(sql, "m")} AS campaign,
            count(*)::int AS leads,
            count(*) FILTER (WHERE m.first_touch)::int AS first_touch,
            count(*) FILTER (WHERE NOT m.first_touch)::int AS later_touch,
@@ -428,11 +467,7 @@ export async function signupsPerCampaign(
       ORDER BY t.person_id, ${firstTouchSql(sql)} DESC, t.occurred_at ASC, t.id ASC
     )
     SELECT f.campaign_id AS campaign_id,
-           coalesce(
-             max(f.utm_campaign) FILTER (WHERE f.utm_campaign !~ '^[0-9]+$'),
-             max(cn.campaign_name),
-             max(f.utm_campaign)
-           ) AS campaign,
+           ${campaignNameSql(sql, "f")} AS campaign,
            count(*)::int AS signups,
            count(*) FILTER (
              WHERE d.funding_type = 'hrdc' OR e.id = ANY(${lmsHrdcIds}::uuid[])
