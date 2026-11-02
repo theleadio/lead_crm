@@ -18,8 +18,8 @@ export const metadata: Metadata = {
 };
 
 // Reads the database per request (cached five minutes in feed.ts), never at
-// build: a deploy with no DATABASE_URL, such as a Netlify preview, must still
-// build.
+// build: a deploy with no database credentials, such as a Netlify preview,
+// must still build.
 export const dynamic = "force-dynamic";
 
 export default function Page() {
