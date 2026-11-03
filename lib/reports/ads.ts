@@ -19,10 +19,10 @@ import {
   type CampaignSignups,
 } from "./types.ts";
 
-// Service layer for the §9.18 ads report. Three independent reads over
+// Service layer for the §9.18 ads report. Independent reads over
 // `touchpoint`, each permission-checked on its own, none of them writing.
-// No ad platform table is touched: §5 defers `campaign`, `ad` and
-// `ad_metric_daily` to January, so spend stays null (see types.ts).
+// `meta_ad_insight` (migration 014) is read only to resolve a lead's campaign
+// id from its ad or ad set; spend itself is summed in lib/reports/spend.ts.
 
 // §14 and §9.18: a hundred report rows, plus the count of what was left out.
 const ROWS_SHOWN = 100;
