@@ -119,6 +119,16 @@ Paid live orders 20 Sep – 25 Oct for mapped products: 158. The buyer's CRM per
 - `daily-sync.yml`, `ghl` job: add `node scripts/import-salesprocess-enrolments.ts --apply` after `sync-salesprocess-payments.ts`.
 - The `ghl` and `lms` jobs run in parallel. Both scripts take `pg_advisory_xact_lock(<shared constant>)` at the start of their transaction so the two never create the same class at the same moment. Manual runs get the same protection.
 
+## Lifespan
+
+A bridge until the CRM goes live (14 Dec 2026). After launch a buyer pays through the CRM's own checkout, which creates the enrolment in the CRM first; the CRM then pushes it to the LMS (that push is Shawn's §11 work, not built yet). From then on:
+
+- The import only matters while SalesProcess funnels still sell. When they stop, remove its step from `daily-sync.yml`. Left on, it writes nothing once no new paid orders arrive.
+- CRM checkout (Stripe) enrolments are never adopted or cancelled by either script, so the two models do not collide.
+- The LMS sync's adoption stays useful only while Ops still creates cohorts in the LMS by hand.
+
+Decided after the final review (3 Nov): the LMS takes over the day **after** a class starts (`start_date < KL today`), not on the start day — the 03:00 MYT cron runs before Ops adds same-day attendees.
+
 ## Tests
 
 - `parseClassSlot`: every string quoted above, plus no-date, no-year near New Year, and conflicting price vs item name (price wins).
