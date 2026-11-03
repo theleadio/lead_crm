@@ -2,7 +2,11 @@ import { notFound } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { permissionFor } from "@/lib/auth/permissions";
 import { formatDate } from "@/lib/format/date";
-import { earliestMetaTouchpoint, signupsPerCampaign } from "@/lib/reports/ads";
+import {
+  earliestMetaTouchpoint,
+  revenuePerCampaign,
+  signupsPerCampaign,
+} from "@/lib/reports/ads";
 import {
   fundingBreakdowns,
   fundingSplit,
@@ -92,7 +96,7 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
   }
 
   const query = parsed.data;
-  const [earliest, funding, priceShare, signups, spend, lmsFunding] =
+  const [earliest, funding, priceShare, signups, spend, lmsFunding, revenue] =
     await Promise.all([
       panel("earliest touchpoint", () => earliestMetaTouchpoint(user)),
       panel("who pays", () => fundingSplit(user, query)),
@@ -104,6 +108,7 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
       // Read whether or not the CRM has funding: which of the two the panel
       // shows is decided below, and a failing LMS must not take the screen down.
       panel("who pays, from the LMS", () => fundingFromLms(user, query)),
+      panel("revenue per campaign", () => revenuePerCampaign(user, query)),
     ]);
 
   // The cost side of the report, from `meta_ad_insight` (migration 014). The
@@ -128,11 +133,13 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
             displayFor.set(s.campaignId, s.campaign ?? s.campaignId);
       const named = (key: string) => displayFor.get(key) ?? key;
 
-      // Revenue per campaign stays empty: `deal.source_touchpoint_id` exists
-      // (migration 009) but only public intake sets it, so most deals carry
-      // no campaign and a ratio built on the ones that do would read low by
-      // an unknown amount. The panel is wired, not fed.
-      const campaignRevenue = new Map<string, CampaignRevenue>();
+      // Revenue per campaign: SalesProcess payments credited to the buyer's
+      // first campaign (revenuePerCampaign). CRM deals stay out of it:
+      // `deal.source_touchpoint_id` is set by public intake only, so most
+      // deals carry no campaign. A failed read shows the waiting panel.
+      const campaignRevenue: Map<string, CampaignRevenue> = revenue.ok
+        ? revenue.data
+        : new Map();
 
       return {
         campaignSpend,
@@ -236,7 +243,7 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
       ) : (
         <WaitingPanel
           title="Return on ad spend"
-          waitingFor="revenue. Ad spend is recorded, but `payment` is empty and the LMS records no amount either, so there is no money to divide it into. Tying each payment back to a campaign is the second half (O30)"
+          waitingFor="revenue tied to a campaign in this date range. Revenue is SalesProcess payments credited to the buyer's first Meta campaign; none of this range's payments reached a campaign with recorded spend"
         />
       )}
 
