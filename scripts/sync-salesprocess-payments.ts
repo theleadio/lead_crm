@@ -42,7 +42,18 @@ const sql = postgres(process.env.DATABASE_URL, {
 
 try {
   const txns = await fetchTransactions<Transaction>();
-  const rows = [];
+  const rows: {
+    id: string;
+    order_id: string | null;
+    ghl_contact_id: string;
+    status: string;
+    amount_myr: number;
+    refunded_myr: number;
+    currency: string;
+    product: string | null;
+    live_mode: boolean;
+    paid_at: Date;
+  }[] = [];
   for (const t of txns) {
     // A transaction with no contact can't be tied to a buyer or a campaign.
     if (!t.contactId) {
