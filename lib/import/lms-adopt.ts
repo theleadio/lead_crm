@@ -91,20 +91,22 @@ export function adoptEnrolment(seat: ImportSeat, endedOn: Date | null, matched: 
 }
 
 // Import enrolments to cancel: still cancellable (never attended or completed),
-// in a class the LMS owns this run that has started, and not matched to an LMS
-// enrollment this run.
+// in a class the LMS owns this run that started before today (Kuala Lumpur),
+// and not matched to an LMS enrollment this run. Not on the start day itself:
+// the 03:00 MYT cron runs before Ops adds that day's attendees to the LMS.
 export function cutOverCancels(
   importEnrols: { id: string; class_id: string; status: string }[],
   lmsMappedClassIds: Set<string>,
   matchedIds: Set<string>,
-  startedClassIds: Set<string>,
+  classStarts: Map<string, string>, // class id → start_date
+  today: string,
 ): string[] {
   return importEnrols
     .filter(
       (e) =>
         CANCELLABLE_STATUSES.includes(e.status) &&
         lmsMappedClassIds.has(e.class_id) &&
-        startedClassIds.has(e.class_id) &&
+        (classStarts.get(e.class_id) ?? today) < today &&
         !matchedIds.has(e.id),
     )
     .map((e) => e.id);

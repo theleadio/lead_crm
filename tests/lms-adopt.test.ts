@@ -104,12 +104,18 @@ test("cohortsOnCancelledClass: only cohorts mapped to a cancelled import class",
 
 test("cutOverCancels", () => {
   const e = (id: string, class_id: string, status = "confirmed") => ({ id, class_id, status });
-  const mapped = new Set(["started", "later"]);
-  const started = new Set(["started", "unmapped"]);
+  const mapped = new Set(["started", "today", "later"]);
+  const starts = new Map([
+    ["started", "2026-11-27"],
+    ["today", "2026-11-28"],
+    ["later", "2026-11-29"],
+    ["unmapped", "2026-11-27"],
+  ]);
   const run = (rows: ReturnType<typeof e>[], matched: string[] = []) =>
-    cutOverCancels(rows, mapped, new Set(matched), started);
+    cutOverCancels(rows, mapped, new Set(matched), starts, "2026-11-28");
   assert.deepEqual(run([e("a", "started")]), ["a"]);
   assert.deepEqual(run([e("a", "started")], ["a"]), []);
+  assert.deepEqual(run([e("a", "today")]), [], "not on the start day");
   assert.deepEqual(run([e("a", "later")]), []);
   assert.deepEqual(run([e("a", "unmapped")]), []);
   assert.deepEqual(run([e("a", "started", "refunded")]), []);

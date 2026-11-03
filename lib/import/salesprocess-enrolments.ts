@@ -65,3 +65,9 @@ export function pickClass(candidates: ClassCandidate[], language: "en" | "zh" | 
 export function classCodeFor(courseCode: string, start: string, language: "en" | "zh"): string {
   return `${courseCode.replace(/^lms-/, "")}-${start}-${language}`;
 }
+
+// The 006/007 seat trigger refusing an over-capacity seat.
+export const isNoSeats = (e: unknown) => {
+  const err = e as { code?: string; message?: string };
+  return err.code === "P0001" && !!err.message?.includes("no_seats");
+};

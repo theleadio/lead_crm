@@ -31,6 +31,7 @@ import {
   IMPORT_CLASS_NOTE,
   SYNC_LOCK_KEY,
   enrolmentIdFor,
+  isNoSeats,
 } from "../lib/import/salesprocess-enrolments.ts";
 
 const apply = process.argv.includes("--apply");
@@ -89,19 +90,39 @@ async function once() {
           JSON.stringify(Object.values(r).slice(1)),
         ]),
       );
+    // With `refused`, a chunk the seat trigger refuses (no_seats) is retried row
+    // by row; each refused row goes to `refused` instead of failing the sync.
     const upsert = async (
       table: string,
       rows: Record<string, unknown>[],
       conflict: string,
       update: string[],
+      refused?: (row: Record<string, unknown>) => void,
     ) => {
-      for (let i = 0; i < rows.length; i += 200) {
-        const chunk = rows.slice(i, i + 200);
-        await tx`INSERT INTO ${tx(table)} ${tx(chunk)} ON CONFLICT (${tx(conflict)}) DO UPDATE SET ${tx(
+      const write = (s: postgres.TransactionSql, r: Record<string, unknown>[]) =>
+        s`INSERT INTO ${s(table)} ${s(r)} ON CONFLICT (${s(conflict)}) DO UPDATE SET ${s(
           Object.fromEntries(
-            update.map((c) => [c, tx`EXCLUDED.${tx(c)}`]),
+            update.map((c) => [c, s`EXCLUDED.${s(c)}`]),
           ) as never,
         )}`;
+      for (let i = 0; i < rows.length; i += 200) {
+        const chunk = rows.slice(i, i + 200);
+        if (!refused) {
+          await write(tx, chunk);
+          continue;
+        }
+        try {
+          await tx.savepoint((s) => write(s, chunk));
+        } catch (e) {
+          if (!isNoSeats(e)) throw e;
+          for (const row of chunk)
+            try {
+              await tx.savepoint((s) => write(s, [row]));
+            } catch (e) {
+              if (!isNoSeats(e)) throw e;
+              refused(row);
+            }
+        }
       }
     };
 
@@ -385,19 +406,29 @@ async function once() {
       });
       bump("enrolment", seen ? "update" : "insert");
     }
-    await upsert("enrolment", enrols, "id", ["price_paid_myr"]);
-    for (const a of adopt)
-      await tx`UPDATE enrolment SET status = ${a.status}, completed_at = ${a.completed_at} WHERE id = ${a.id}`;
-
-    // From the class start date (Kuala Lumpur) the LMS owns the seats.
-    const started = ids(
-      await tx`SELECT id FROM class WHERE id = ANY(${[...ownedClassIds]})
-        AND start_date <= (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date`,
+    // From the day after the class start (Kuala Lumpur) the LMS owns the seats.
+    // Cut over first, so the seats it frees are there for the LMS inserts below.
+    const [{ kl_today }] =
+      await tx`SELECT (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date::text AS kl_today`;
+    const classStarts = new Map(
+      (
+        await tx`SELECT id, start_date::text AS start FROM class WHERE id = ANY(${[...ownedClassIds]})`
+      ).map((r) => [r.id as string, r.start as string]),
     );
-    const cut = cutOverCancels(importEnrols, ownedClassIds, matched, started);
+    const cut = cutOverCancels(importEnrols, ownedClassIds, matched, classStarts, kl_today);
     if (cut.length)
       await tx`UPDATE enrolment SET status = 'cancelled', cancelled_reason = 'Not in the LMS at class start' WHERE id = ANY(${cut}) AND status = ANY(${CANCELLABLE_STATUSES})`;
     for (const _ of cut) bump("enrolment: cut over", "update");
+
+    // A full class refuses the seat (no_seats): skip that row, not the whole sync.
+    const codeOf = new Map(src.cohorts.map((k) => [classOf.get(k.id), k.slug]));
+    await upsert("enrolment", enrols, "id", ["price_paid_myr"], (row) => {
+      stats.enrolment[haveEnrol.has(row.id as string) ? "update" : "insert"]--;
+      bump("enrolment: class full", "same");
+      warnings.push(`enrolment refused, class full: ${codeOf.get(row.class_id as string) ?? "(unknown class)"}`);
+    });
+    for (const a of adopt)
+      await tx`UPDATE enrolment SET status = ${a.status}, completed_at = ${a.completed_at} WHERE id = ${a.id} AND status = 'confirmed'`;
 
     if (!apply) throw new Error("dry-run"); // roll back
   };
