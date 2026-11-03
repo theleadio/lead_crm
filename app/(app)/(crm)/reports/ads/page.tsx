@@ -2,10 +2,14 @@ import { notFound } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { permissionFor } from "@/lib/auth/permissions";
 import { formatDate } from "@/lib/format/date";
+import { sumMyr } from "@/lib/format/money";
 import {
+  campaignRows,
   earliestMetaTouchpoint,
+  leadsPerWeek,
   revenuePerCampaign,
   signupsPerCampaign,
+  sourceRows,
 } from "@/lib/reports/ads";
 import {
   fundingBreakdowns,
@@ -33,6 +37,8 @@ import {
 // The §9.0 panel error: a client component that retries the server render in
 // place. Imported where it lives rather than moved, so Home stays untouched.
 import { PanelError } from "../../dashboard/panel-kit";
+import { LeadsOverTimePanel } from "./panels/leads-over-time";
+import { CampaignTable, SourceTable } from "./tables";
 import { EfficiencyMapPanel } from "./panels/efficiency-map";
 import { FundingDonutsPanel } from "./panels/funding-donuts";
 import { PriceHrdcPanel } from "./panels/price-hrdc";
@@ -47,7 +53,7 @@ import { WhoPaysPanel } from "./panels/who-pays";
 // wait for, because §5 defers the ad tables and O30 blocks any return-on-spend
 // figure. Read-only: nothing here writes.
 const META_DEFINITION =
-  "A Meta lead is a touchpoint from Lead Ads or click-to-WhatsApp, or one carrying an fbclid or ctwa_clid, or one tagged facebook, instagram, fb, ig or meta.";
+  "A Meta lead is a touchpoint from Lead Ads or click-to-WhatsApp, or one carrying an fbclid or ctwa_clid, or one tagged facebook, instagram, fb, ig, meta or fb_ad.";
 
 // Each read loads on its own: one failing query leaves the rest of the report
 // usable (§13), and the reason is logged rather than swallowed. The §9.0 Home
@@ -96,20 +102,34 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
   }
 
   const query = parsed.data;
-  const [earliest, funding, priceShare, signups, spend, lmsFunding, revenue] =
-    await Promise.all([
-      panel("earliest touchpoint", () => earliestMetaTouchpoint(user)),
-      panel("who pays", () => fundingSplit(user, query)),
-      panel("price against HRDC share", () =>
-        priceAgainstHrdcShare(user, query),
-      ),
-      panel("signups per campaign", () => signupsPerCampaign(user, query)),
-      panel("ad spend", () => adSpendRows(user, query)),
-      // Read whether or not the CRM has funding: which of the two the panel
-      // shows is decided below, and a failing LMS must not take the screen down.
-      panel("who pays, from the LMS", () => fundingFromLms(user, query)),
-      panel("revenue per campaign", () => revenuePerCampaign(user, query)),
-    ]);
+  const [
+    earliest,
+    funding,
+    priceShare,
+    signups,
+    spend,
+    lmsFunding,
+    campaigns,
+    sources,
+    weekly,
+    paid,
+  ] = await Promise.all([
+    panel("earliest touchpoint", () => earliestMetaTouchpoint(user)),
+    panel("who pays", () => fundingSplit(user, query)),
+    panel("price against HRDC share", () => priceAgainstHrdcShare(user, query)),
+    panel("signups per campaign", () => signupsPerCampaign(user, query)),
+    panel("ad spend", () => adSpendRows(user, query)),
+    // Read whether or not the CRM has funding: which of the two the panel
+    // shows is decided below, and a failing LMS must not take the screen down.
+    panel("who pays, from the LMS", () => fundingFromLms(user, query)),
+    // The lead side: who arrived, from which campaign, over which weeks.
+    // 5,100 of these carry a campaign id once the SalesProcess import
+    // lands, which is far more than the handful that go on to enrol.
+    panel("leads by campaign", () => campaignRows(user, query)),
+    panel("leads by source", () => sourceRows(user, query)),
+    panel("leads per week", () => leadsPerWeek(user, query)),
+    panel("revenue per campaign", () => revenuePerCampaign(user, query)),
+  ]);
 
   // The cost side of the report, from `meta_ad_insight` (migration 014). The
   // pull asks Meta for ad-level rows, so campaign totals are summed from
@@ -133,21 +153,36 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
             displayFor.set(s.campaignId, s.campaign ?? s.campaignId);
       const named = (key: string) => displayFor.get(key) ?? key;
 
-      // Revenue per campaign: SalesProcess payments credited to the buyer's
-      // first campaign (revenuePerCampaign). CRM deals stay out of it:
-      // `deal.source_touchpoint_id` is set by public intake only, so most
-      // deals carry no campaign. A failed read shows the waiting panel.
-      const campaignRevenue: Map<string, CampaignRevenue> = revenue.ok
-        ? revenue.data
-        : new Map();
+      // Revenue is SalesProcess payments credited to each buyer's first
+      // campaign. Grant money is not in SalesProcess, so `hrdc` is unknown
+      // (null), not zero; the grant share of signups sits beside it instead.
+      const hrdcShare = new Map(
+        (signups.ok ? signups.data : []).map((s) => [
+          s.campaignId,
+          { hrdc: s.hrdcSignups, signups: s.signups },
+        ]),
+      );
+      const campaignRevenue = new Map<string, CampaignRevenue>(
+        (paid.ok ? paid.data : []).map((p) => [
+          p.campaignId,
+          {
+            stripe: p.revenue,
+            hrdc: null,
+            orders: p.orders,
+            hrdcShare: hrdcShare.get(p.campaignId),
+          },
+        ]),
+      );
 
       return {
         campaignSpend,
         named,
         returns: roasRows(campaignSpend, campaignRevenue).map((r) => ({
           ...r,
+          campaignId: r.campaign,
           campaign: named(r.campaign),
         })),
+        allSpend: sumMyr([...campaignSpend.values()].map((s) => s.spend)),
         whatsappAds: rankAds(adSpend, "messages").map((r) => ({
           ...r,
           campaign: named(r.campaign),
@@ -199,8 +234,8 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
       {query.size && (
         <p className="text-ink-muted text-sm">
           Showing {SIZE_NOTE[query.size]}. Seats, funding and signups count only
-          these classes; ad spend is not split by class, so the spend panels
-          still cover every campaign.
+          these classes. Leads, revenue and ad spend are not split by class, so
+          the lead, spend and return panels still cover every campaign.
         </p>
       )}
 
@@ -238,13 +273,14 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
         <PanelError what="course price against HRDC share" />
       )}
 
-      {cost && cost.returns.length > 0 ? (
-        <RoasPanel rows={cost.returns} />
-      ) : (
-        <WaitingPanel
-          title="Return on ad spend"
-          waitingFor="revenue tied to a campaign in this date range. Revenue is SalesProcess payments credited to the buyer's first Meta campaign; none of this range's payments reached a campaign with recorded spend"
+      {cost && spend.ok && paid.ok ? (
+        <RoasPanel
+          rows={cost.returns}
+          allSpend={cost.allSpend}
+          hrdcUnread={!signups.ok}
         />
+      ) : (
+        <PanelError what="return on ad spend" />
       )}
 
       {cost && cost.whatsappAds.length > 0 ? (
@@ -301,6 +337,26 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
           title="Where the spend went"
           waitingFor="recorded ad spend in this date range"
         />
+      )}
+      {weekly.ok ? (
+        <LeadsOverTimePanel data={weekly.data} />
+      ) : (
+        <PanelError what="leads per week" />
+      )}
+
+      {campaigns.ok ? (
+        <CampaignTable
+          table={campaigns.data}
+          spend={spend.ok && cost ? cost.campaignSpend : null}
+        />
+      ) : (
+        <PanelError what="leads by campaign" />
+      )}
+
+      {sources.ok ? (
+        <SourceTable table={sources.data} />
+      ) : (
+        <PanelError what="leads by source" />
       )}
     </Shell>
   );

@@ -30,13 +30,18 @@ test("ads report: the default range is the last 30 Kuala Lumpur days", () => {
 
   const parsed = range();
   assert.ok(parsed.success);
-  assert.deepEqual(parsed.data, defaultRange());
+  // `size` is the class-size filter, null when the view is unfiltered.
+  assert.deepEqual(parsed.data, { ...defaultRange(), size: null });
 });
 
 test("ads report: a valid range is taken as given", () => {
   const parsed = range("2026-10-01", "2026-10-07");
   assert.ok(parsed.success);
-  assert.deepEqual(parsed.data, { from: "2026-10-01", to: "2026-10-07" });
+  assert.deepEqual(parsed.data, {
+    from: "2026-10-01",
+    to: "2026-10-07",
+    size: null,
+  });
 });
 
 test("ads report: one date given, the other falls back to the default", () => {
@@ -81,7 +86,7 @@ test("ads report: the Meta allow-lists are the O63 definition", () => {
   assert.deepEqual([...META_CHANNELS], ["lead_form", "ctwa"]);
   assert.deepEqual(
     [...META_SOURCES],
-    ["facebook", "instagram", "fb", "ig", "meta"],
+    ["facebook", "instagram", "fb", "ig", "meta", "fb_ad"],
   );
 });
 

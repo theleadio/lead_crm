@@ -16,14 +16,14 @@ import {
   type AdsTable,
   type AdsWeekRow,
   type AdsWeeks,
+  type CampaignPaid,
   type CampaignSignups,
 } from "./types.ts";
-import type { CampaignRevenue } from "./spend.ts";
 
-// Service layer for the §9.18 ads report. Three independent reads over
+// Service layer for the §9.18 ads report. Independent reads over
 // `touchpoint`, each permission-checked on its own, none of them writing.
-// No ad platform table is touched: §5 defers `campaign`, `ad` and
-// `ad_metric_daily` to January, so spend stays null (see types.ts).
+// `meta_ad_insight` (migration 014) is read only to resolve a lead's campaign
+// id from its ad or ad set; spend itself is summed in lib/reports/spend.ts.
 
 // §14 and §9.18: a hundred report rows, plus the count of what was left out.
 const ROWS_SHOWN = 100;
@@ -40,6 +40,8 @@ export const META_SOURCES = [
   "fb",
   "ig",
   "meta",
+  // Hand-typed in some ads' URL tags; 4 of 313 such leads carry no fbclid.
+  "fb_ad",
 ] as const;
 
 // §9.18 class size: big, middle and small are bands on the course's own list
@@ -65,6 +67,122 @@ export function metaTouchpointSql(sql: postgres.Sql, alias = "t") {
               OR ${fbclid} IS NOT NULL
               OR ${ctwaClid} IS NOT NULL
               OR lower(btrim(${source})) IN ${sql(META_SOURCES)})`;
+}
+
+// O63 for the campaign id. SalesProcess does not always fill
+// `utm_campaign_id`, but it does fill `utm_content` with the Meta ad id and
+// `utm_term` with the ad set id, and `meta_ad_insight` carries all three. An
+// id that is missing can therefore be looked up from the ad, or failing that
+// the ad set, the lead arrived on. 3,242 touchpoints carry a campaign id
+// outright; 5,555 resolve this way, over 107 campaigns rather than 76.
+//
+// `utm_ad_id` is tried before `utm_content`: where the attribution import
+// stored an explicit ad id, `utm_content` holds the creative's name instead.
+// On 2 Nov every such row already carried its campaign id, so this adds no
+// leads today; it stops one being lost the day a row arrives without.
+//
+// The stored id is tried first and wins where both exist. Exactly one
+// touchpoint's ad disagrees with its stored id, and the id the lead itself
+// carried is the better evidence of where that lead came from.
+//
+// `min(campaign_id)` is a one-row-per-key guard rather than a choice between
+// campaigns: no ad id and no ad set id in this account maps to more than one
+// campaign. If one ever did, the join would multiply rows and quietly inflate
+// every lead count on the page, which is the failure worth preventing.
+//
+// Scoped to META_AD_ACCOUNT_ID the same way the spend side is
+// (`adSpendRows`), so a lead is never resolved to a campaign whose spend the
+// report then leaves out.
+export function campaignMapSql(sql: postgres.Sql) {
+  const account = process.env.META_AD_ACCOUNT_ID?.trim().replace(/^act_/, "");
+  const inAccount = account ? sql`AND account_id = ${account}` : sql``;
+  return sql`
+    ad_campaign AS (
+      SELECT ad_id, min(campaign_id) AS campaign_id
+      FROM meta_ad_insight WHERE ad_id IS NOT NULL ${inAccount}
+      GROUP BY ad_id
+    ),
+    adset_campaign AS (
+      SELECT adset_id, min(campaign_id) AS campaign_id
+      FROM meta_ad_insight WHERE adset_id IS NOT NULL ${inAccount}
+      GROUP BY adset_id
+    ),
+    campaign_name AS (
+      SELECT campaign_id, max(campaign_name) AS campaign_name
+      FROM meta_ad_insight WHERE campaign_name IS NOT NULL ${inAccount}
+      GROUP BY campaign_id
+    )`;
+}
+
+// The joins `campaignIdSql` reads from. All are left joins: a touchpoint
+// that resolves to no campaign at all is still a lead and still counted.
+export function campaignJoinSql(sql: postgres.Sql, alias = "t") {
+  return sql`
+    LEFT JOIN ad_campaign ai ON ai.ad_id = ${sql(`${alias}.utm_ad_id`)}
+    LEFT JOIN ad_campaign ac ON ac.ad_id = ${sql(`${alias}.utm_content`)}
+    LEFT JOIN adset_campaign sc ON sc.adset_id = ${sql(`${alias}.utm_term`)}`;
+}
+
+export function campaignIdSql(sql: postgres.Sql, alias = "t") {
+  return sql`coalesce(${sql(`${alias}.utm_campaign_id`)}, ai.campaign_id, ac.campaign_id, sc.campaign_id)`;
+}
+
+// A grouped row's display name. `alias` is the grouped CTE, which carries
+// `campaign_id` and the lead's own `utm_campaign`; `campaign_name` must be
+// joined as `cn`. The lead's own name is preferred unless it is the id
+// retyped as a name, and Meta's name fills in where the lead carried none.
+//
+// The row with no campaign id gets no name. It pools every lead whose
+// campaign could not be resolved — 403 touchpoints under 31 different names
+// on 2 Nov — and borrowing one of those names would present the catch-all as
+// one real campaign. The screen labels a nameless row as missing.
+export function campaignNameSql(sql: postgres.Sql, alias: string) {
+  const id = sql(`${alias}.campaign_id`);
+  const name = sql(`${alias}.utm_campaign`);
+  return sql`CASE WHEN ${id} IS NULL THEN NULL ELSE coalesce(
+               max(${name}) FILTER (WHERE ${name} !~ '^[0-9]+$'),
+               max(cn.campaign_name),
+               max(${name})
+             ) END`;
+}
+
+// §9.18 first touch. `touchpoint.is_first_touch` is held to one row per
+// person by an index, and `ghl:import` had already claimed it for each
+// imported person's bare import row, so every attribution row carrying a UTM
+// went in false — all 3,242 of them. Touchpoints are append-only, so the flag
+// cannot be moved after the fact. The attribution import marks the real first
+// instead with an `external_ref` of `ghl-attr:first:<contact>`, one per
+// person. Either mark counts as a first touch; without the second one the
+// column reads 0 on every row and leads equals later touch everywhere.
+//
+// Coalesced to false because `external_ref` is nullable: `false OR NULL` is
+// NULL, which neither `FILTER (WHERE first_touch)` nor `FILTER (WHERE NOT
+// first_touch)` counts, and which sorts ahead of true under `DESC`. No UTM
+// row has a NULL ref today; the first web-form lead would.
+//
+// Known gap: a person with a flagged lead-form row and a SalesProcess first
+// mark would count two first touches. Nobody does on 2 Nov — lead-form
+// intake does not exist yet — so it is left until there is a row to test.
+export function firstTouchSql(sql: postgres.Sql, alias = "t") {
+  return sql`coalesce(${sql(`${alias}.is_first_touch`)}
+              OR ${sql(`${alias}.external_ref`)} LIKE 'ghl-attr:first:%', false)`;
+}
+
+// `utm_source` is free text: some ads were tagged "facebook" or "fb_ad" by
+// hand, others take Meta's {{site_source_name}} macro (fb, ig, an, msg, th).
+// All name a Meta placement, so they fold into the platform; any other value
+// is shown as typed, and NULL stays NULL.
+function platformSql(sql: postgres.Sql, alias = "t") {
+  const source = sql`lower(btrim(${sql(`${alias}.utm_source`)}))`;
+  return sql`CASE
+    WHEN ${source} IN ('facebook', 'fb', 'fb_ad') THEN 'Facebook'
+    WHEN ${source} IN ('instagram', 'ig') THEN 'Instagram'
+    WHEN ${source} = 'an' THEN 'Audience Network'
+    WHEN ${source} = 'msg' THEN 'Messenger'
+    WHEN ${source} = 'th' THEN 'Threads'
+    WHEN ${source} = 'meta' THEN 'Meta'
+    ELSE ${sql(`${alias}.utm_source`)}
+  END`;
 }
 
 // Spec §4: whole Kuala Lumpur days, both ends inclusive. A half-open upper
@@ -99,33 +217,52 @@ export async function campaignRows(
   requireReportReader(viewer);
   const sql = db();
 
+  // Grouped on the campaign id — stored where the lead carried one, else
+  // resolved from its ad or ad set (`campaignIdSql`) — so a row lines up with
+  // `meta_ad_insight` and can be shown beside what that campaign cost. The
+  // name is carried for the screen only: Meta cases it inconsistently and it
+  // is retyped per run. Where a lead carried an id but no name — 21 rows do —
+  // or carried the id again in place of the name, which older SalesProcess
+  // rows do, the name comes from `meta_ad_insight`, so a row is never
+  // labelled with a number or shown as a campaign we cannot name.
+  //
+  // Leads with no campaign id are one row, not dropped, so the rows still sum
+  // to the total — and that row is the honest size of what cannot be
+  // attributed. It carries no name (`campaignNameSql`).
+  //
   // The windows run over every group, before LIMIT, so `total_leads` and
   // `group_count` describe the whole range rather than the page shown.
-  // utm_campaign NULL is its own group — the leads that carry no campaign
-  // are a row, never dropped, so the rows sum to the total.
   const rows = await sql`
-    WITH meta AS (
-      SELECT t.utm_campaign, t.is_first_touch, t.person_id
+    WITH ${campaignMapSql(sql)},
+    meta AS (
+      SELECT ${campaignIdSql(sql)} AS campaign_id,
+             t.utm_campaign,
+             ${firstTouchSql(sql)} AS first_touch,
+             t.person_id
       FROM touchpoint t
       JOIN person p ON p.id = t.person_id
+      ${campaignJoinSql(sql)}
       WHERE ${metaTouchpointSql(sql)}
         AND ${rangeSql(sql, q)}
         AND ${livePersonSql(sql)}
     )
-    SELECT utm_campaign AS campaign,
+    SELECT m.campaign_id,
+           ${campaignNameSql(sql, "m")} AS campaign,
            count(*)::int AS leads,
-           count(*) FILTER (WHERE is_first_touch)::int AS first_touch,
-           count(*) FILTER (WHERE NOT is_first_touch)::int AS later_touch,
-           count(DISTINCT person_id)::int AS people,
+           count(*) FILTER (WHERE m.first_touch)::int AS first_touch,
+           count(*) FILTER (WHERE NOT m.first_touch)::int AS later_touch,
+           count(DISTINCT m.person_id)::int AS people,
            (count(*) OVER ())::int AS group_count,
            (sum(count(*)) OVER ())::int AS total_leads
-    FROM meta
-    GROUP BY utm_campaign
-    ORDER BY leads DESC, campaign ASC NULLS LAST
+    FROM meta m
+    LEFT JOIN campaign_name cn ON cn.campaign_id = m.campaign_id
+    GROUP BY m.campaign_id
+    ORDER BY leads DESC, campaign_id ASC NULLS LAST
     LIMIT ${ROWS_SHOWN}`;
 
   return {
     rows: rows.map((r) => ({
+      campaignId: r.campaign_id,
       campaign: r.campaign,
       leads: r.leads,
       firstTouch: r.first_touch,
@@ -151,7 +288,8 @@ export async function sourceRows(
   // its own group, which `=` would drop.
   const rows = await sql`
     WITH meta AS (
-      SELECT t.utm_source, t.channel
+      SELECT ${platformSql(sql)} AS utm_source,
+             t.channel
       FROM touchpoint t
       JOIN person p ON p.id = t.person_id
       WHERE ${metaTouchpointSql(sql)}
@@ -188,7 +326,6 @@ export async function sourceRows(
       source: r.source,
       leads: r.leads,
       byChannel: [],
-      ...NO_SPEND,
     };
     row.byChannel.push({ channel: r.channel, leads: r.channel_leads });
     if (!existing) bySource.set(r.source, row);
@@ -235,14 +372,17 @@ export async function leadsPerWeek(
     SELECT to_char(date_trunc('week',
              t.occurred_at AT TIME ZONE 'Asia/Kuala_Lumpur'),
              'YYYY-MM-DD') AS week_start,
-           t.channel,
+           -- Faceted by platform: every SalesProcess row has channel
+           -- 'import', so a channel facet was one chart. Lead Ads and
+           -- click-to-WhatsApp rows carry no source and keep their channel.
+           coalesce(${platformSql(sql)}, t.channel) AS channel,
            count(*)::int AS leads
     FROM touchpoint t
     JOIN person p ON p.id = t.person_id
     WHERE ${metaTouchpointSql(sql)}
       AND ${rangeSql(sql, q)}
       AND ${livePersonSql(sql)}
-    GROUP BY week_start, t.channel
+    GROUP BY week_start, 2
     ORDER BY week_start ASC, leads DESC`;
 
   const totals = new Map<string, number>();
@@ -307,38 +447,82 @@ export function fillWeeks(
   return out;
 }
 
-// Each person's first Meta campaign: the earliest Meta touchpoint that names
-// one. The campaign is the touchpoint's `utm_campaign_id`, else the campaign
-// of the Meta ad (`utm_content`) or ad set (`utm_term`) it carries:
-// SalesProcess stores the ad and ad set ids there, and many of its leads have
-// no campaign id of their own. "First" is `occurred_at`, not the
-// `is_first_touch` flag, which the SalesProcess imports leave false; the id
-// breaks a tie so the answer is stable. Shared by signups and revenue so the
-// two always credit the same campaign. Used as a CTE body.
-function firstCampaignSql(sql: postgres.Sql) {
-  return sql`
-    WITH ad AS (SELECT DISTINCT ad_id, campaign_id FROM meta_ad_insight),
-    adset AS (SELECT DISTINCT adset_id, campaign_id FROM meta_ad_insight)
-    SELECT DISTINCT ON (t.person_id)
-           t.person_id,
-           coalesce(t.utm_campaign_id, ad.campaign_id, adset.campaign_id) AS campaign_id,
-           t.utm_campaign
-    FROM touchpoint t
-    JOIN person p ON p.id = t.person_id
-    LEFT JOIN ad ON ad.ad_id = t.utm_content
-    LEFT JOIN adset ON adset.adset_id = t.utm_term
-    WHERE coalesce(t.utm_campaign_id, ad.campaign_id, adset.campaign_id) IS NOT NULL
-      AND ${metaTouchpointSql(sql)}
-      AND ${livePersonSql(sql)}
-    ORDER BY t.person_id, t.occurred_at ASC, t.id ASC`;
-}
-
 // §9.18 efficiency map, the half that needs no ad tables: seat-holding
 // enrolments (§12.1) credited to the campaign of the buyer's first touch.
 //
 // First touch per person, not per deal: O30 means a deal does not record the
 // touchpoint that created it, so this is the honest model available, and the
 // panel states it. A person who bought twice credits one campaign twice.
+// The `first_touch` CTE: each live person's first Meta touchpoint that
+// resolves to a campaign, one row per person. Needs `campaignMapSql` earlier
+// in the same WITH. Shared by signups and revenue, so both panels credit the
+// same campaign for the same buyer.
+function firstCampaignSql(sql: postgres.Sql) {
+  return sql`
+    first_touch AS (
+      SELECT DISTINCT ON (t.person_id)
+             t.person_id, ${campaignIdSql(sql)} AS campaign_id, t.utm_campaign,
+             t.occurred_at
+      FROM touchpoint t
+      JOIN person p ON p.id = t.person_id
+      ${campaignJoinSql(sql)}
+      WHERE ${campaignIdSql(sql)} IS NOT NULL
+        AND ${metaTouchpointSql(sql)}
+        AND ${livePersonSql(sql)}
+      ORDER BY t.person_id, ${firstTouchSql(sql)} DESC, t.occurred_at ASC, t.id ASC
+    )`;
+}
+
+// §9.18 ROAS revenue: SalesProcess payments (migration 016, Shawn's PR #34)
+// credited to the buyer's first campaign, the same model as signups.
+//
+// Revenue is `amount_myr - refunded_myr` on live, succeeded or partially
+// refunded payments, ranged on `paid_at` in Kuala Lumpur days. A payment
+// reaches its buyer through the bare import touchpoint
+// (`external_ref = 'ghl:' || ghl_contact_id`), which follows merges.
+//
+// Not split by class size: a payment names a SalesProcess product, not a CRM
+// course, so there is no price band to filter on.
+export async function revenuePerCampaign(
+  viewer: Viewer,
+  q: AdsReportQuery,
+): Promise<CampaignPaid[]> {
+  requireReportReader(viewer);
+  const sql = db();
+
+  const rows = await sql`
+    WITH ${campaignMapSql(sql)},
+    ${firstCampaignSql(sql)},
+    paid AS (
+      SELECT DISTINCT b.person_id, sp.id, coalesce(sp.order_id, sp.id) AS order_key,
+             sp.paid_at, sp.amount_myr - sp.refunded_myr AS net
+      FROM salesprocess_payment sp
+      -- The bare import row only: it carries the contact id, uses the
+      -- (channel, external_ref) index, and is one per person.
+      JOIN touchpoint b ON b.channel = 'import'
+                       AND b.external_ref = 'ghl:' || sp.ghl_contact_id
+      WHERE sp.live_mode
+        AND sp.status IN ('succeeded', 'partially_refunded')
+        AND sp.currency = 'MYR'
+        AND sp.paid_at >= (${q.from}::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
+        AND sp.paid_at < ((${q.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
+    )
+    -- An ad cannot have sold what was paid before it was seen. An order
+    -- paid in instalments counts once.
+    SELECT f.campaign_id, sum(p.net)::text AS revenue,
+           count(DISTINCT p.order_key)::int AS orders
+    FROM paid p
+    JOIN first_touch f ON f.person_id = p.person_id
+                      AND f.occurred_at <= p.paid_at
+    GROUP BY f.campaign_id`;
+
+  return rows.map((r) => ({
+    campaignId: r.campaign_id,
+    revenue: r.revenue,
+    orders: r.orders,
+  }));
+}
+
 export async function signupsPerCampaign(
   viewer: Viewer,
   q: AdsReportQuery,
@@ -349,28 +533,34 @@ export async function signupsPerCampaign(
   // Credited to the campaign that first found the buyer, per person — the
   // model the panel names (O30 is what stops it being per deal).
   //
-  // "First" and the campaign are firstCampaignSql's.
-  //
-  // A signup is a seat-holding enrolment, or a paid SalesProcess order from a
-  // buyer who holds no seat in the range: most courses are sold through
-  // SalesProcess funnels and many buyers never reach the LMS, so enrolments
-  // alone missed most of them. A buyer with a seat is counted by the seat
-  // only, never twice. Orders carry no class, so a class-size filter counts
-  // seats alone.
+  // "First" is the row the attribution import marked first (`firstTouchSql`),
+  // falling back to the earliest by `occurred_at` for a person it did not
+  // mark. The id breaks a tie so the answer is stable between runs.
   //
   // The join is on the campaign id, not the campaign name. Names vary in
   // Meta's own data ("WhatsApp" against "Whatsapp") and are retyped per run;
-  // the id is the thing Meta and the lead both carry.
+  // the id is the thing Meta and the lead both carry, and where the lead did
+  // not carry one it is resolved from its ad or ad set.
+  //
+  // A signup is a seat-holding enrolment, or a paid SalesProcess order from a
+  // buyer who holds no seat in the range (Shawn's PR #37): most courses are
+  // sold through SalesProcess funnels and many buyers never reach the LMS, so
+  // seats alone missed most of them. A buyer with a seat is counted by the
+  // seat only, never twice; an order paid in instalments counts once, and
+  // only if paid after the first touch, as revenue is. Orders carry no class,
+  // so a class-size filter counts seats alone.
+  //
   // A synced seat has no deal, so the deal alone reports 0 HRDC however many
   // grant seats the LMS holds. The LMS ids top it up; an LMS that cannot be
   // reached leaves the deal-only count rather than failing the report.
   const lmsHrdcIds = await lmsHrdcEnrollmentIds().catch(() => [] as string[]);
 
   const rows = await sql`
-    WITH first_touch AS (${firstCampaignSql(sql)}),
+    WITH ${campaignMapSql(sql)},
+    ${firstCampaignSql(sql)},
     seats AS (
       SELECT f.campaign_id, f.utm_campaign, f.person_id,
-             (d.funding_type = 'hrdc' OR e.id = ANY(${lmsHrdcIds}::uuid[])) AS hrdc
+             coalesce(d.funding_type = 'hrdc' OR e.id = ANY(${lmsHrdcIds}::uuid[]), false) AS hrdc
       FROM first_touch f
       JOIN enrolment e ON e.person_id = f.person_id
       JOIN class cl ON cl.id = e.class_id
@@ -382,24 +572,33 @@ export async function signupsPerCampaign(
         AND e.created_at < ((${q.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
     ),
     orders AS (
-      SELECT f.campaign_id, f.utm_campaign, f.person_id, false AS hrdc
+      SELECT DISTINCT f.campaign_id, f.utm_campaign, f.person_id,
+             coalesce(sp.order_id, sp.id) AS order_key, false AS hrdc
       FROM salesprocess_payment sp
-      JOIN touchpoint g ON g.external_ref = 'ghl:' || sp.ghl_contact_id
-      JOIN first_touch f ON f.person_id = g.person_id
+      JOIN touchpoint b ON b.channel = 'import'
+                       AND b.external_ref = 'ghl:' || sp.ghl_contact_id
+      JOIN first_touch f ON f.person_id = b.person_id
+                        AND f.occurred_at <= sp.paid_at
       WHERE ${q.size ? sql`false` : sql`true`}
         AND sp.live_mode
         AND sp.status IN ('succeeded', 'partially_refunded')
+        AND sp.currency = 'MYR'
         AND sp.paid_at >= (${q.from}::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
         AND sp.paid_at < ((${q.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
         AND f.person_id NOT IN (SELECT person_id FROM seats)
     ),
-    signup AS (SELECT * FROM seats UNION ALL SELECT * FROM orders)
-    SELECT campaign_id,
-           max(utm_campaign) AS campaign,
+    signup AS (
+      SELECT campaign_id, utm_campaign, hrdc FROM seats
+      UNION ALL
+      SELECT campaign_id, utm_campaign, hrdc FROM orders
+    )
+    SELECT s.campaign_id,
+           ${campaignNameSql(sql, "s")} AS campaign,
            count(*)::int AS signups,
-           count(*) FILTER (WHERE hrdc)::int AS hrdc_signups
-    FROM signup
-    GROUP BY campaign_id
+           count(*) FILTER (WHERE s.hrdc)::int AS hrdc_signups
+    FROM signup s
+    LEFT JOIN campaign_name cn ON cn.campaign_id = s.campaign_id
+    GROUP BY s.campaign_id
     ORDER BY signups DESC, campaign_id ASC
     LIMIT ${ROWS_SHOWN}`;
 
@@ -409,42 +608,4 @@ export async function signupsPerCampaign(
     signups: r.signups,
     hrdcSignups: r.hrdc_signups,
   }));
-}
-
-// §9.18 panel 3's revenue: SalesProcess payments (migration 016), credited to
-// the buyer's first Meta campaign (firstCampaignSql), as signups are. A
-// payment reaches its buyer through the `ghl:` touchpoint the contact import
-// wrote. Net of refunds, live charges only, paid in the date range.
-// SalesProcess sells by card through Stripe, so it is all `stripe`; grant
-// money is not in it.
-export async function revenuePerCampaign(
-  viewer: Viewer,
-  q: AdsReportQuery,
-): Promise<Map<string, CampaignRevenue>> {
-  requireReportReader(viewer);
-  const sql = db();
-  const rows = await sql`
-    WITH first_campaign AS (${firstCampaignSql(sql)})
-    SELECT f.campaign_id,
-           sum(sp.amount_myr - sp.refunded_myr)::numeric(12,2)::text AS net,
-           count(*)::int AS orders
-    FROM salesprocess_payment sp
-    JOIN touchpoint g ON g.external_ref = 'ghl:' || sp.ghl_contact_id
-    JOIN first_campaign f ON f.person_id = g.person_id
-    WHERE sp.live_mode
-      AND sp.status IN ('succeeded', 'partially_refunded')
-      AND sp.paid_at >= (${q.from}::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
-      AND sp.paid_at < ((${q.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
-    GROUP BY f.campaign_id`;
-  return new Map(
-    rows.map((r) => [
-      r.campaign_id as string,
-      {
-        stripe: r.net as string,
-        hrdc: "0.00",
-        orders: r.orders as number,
-        note: "SalesProcess payments to the buyer's first campaign; HRDC grants not included",
-      },
-    ]),
-  );
 }

@@ -62,3 +62,16 @@ export function PanelCard({
     </details>
   );
 }
+
+// The figures table under a chart, folded shut so the chart leads. Native
+// <details> for the same reasons as the panel itself.
+export function Figures({ children }: { children: React.ReactNode }) {
+  return (
+    <details>
+      <summary className="text-ink-muted cursor-pointer text-sm">
+        Figures
+      </summary>
+      <div className="mt-2">{children}</div>
+    </details>
+  );
+}

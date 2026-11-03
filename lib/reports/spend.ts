@@ -120,14 +120,18 @@ export function roas(revenue: string, spend: string): number | null {
 // Grant money never passes through Stripe, so a programme with many HRDC
 // seats looks poor on card revenue alone — the caveat the reference page
 // carries in its notes. Both figures are returned so neither reading can be
-// presented as the only one.
+// presented as the only one. Unknown grant money (null) gives no total rather
+// than a total that silently equals the card figure.
 export function roasBothWays(
-  revenue: { stripe: string; hrdc: string },
+  revenue: { stripe: string; hrdc: string | null },
   spend: string,
 ): { stripe: number | null; total: number | null } {
   return {
     stripe: roas(revenue.stripe, spend),
-    total: roas(sumMyr([revenue.stripe, revenue.hrdc]), spend),
+    total:
+      revenue.hrdc === null
+        ? null
+        : roas(sumMyr([revenue.stripe, revenue.hrdc]), spend),
   };
 }
 
@@ -249,9 +253,12 @@ export function efficiencyPoints(
 
 export type RoasRow = {
   campaign: string;
+  // Meta's id, kept when `campaign` is swapped for a display name: two
+  // campaigns can share a name.
+  campaignId?: string;
   spend: string;
   stripeRevenue: string;
-  hrdcRevenue: string;
+  hrdcRevenue: string | null;
   // How many orders made that revenue, when the source counted them, and
   // the grant share of the programme's signups — both shown beside the ratio
   // so a high one on three orders is not read as a settled fact.
@@ -265,7 +272,7 @@ export type RoasRow = {
 
 export type CampaignRevenue = {
   stripe: string;
-  hrdc: string;
+  hrdc: string | null;
   orders?: number;
   hrdcShare?: { hrdc: number; signups: number };
   note?: string;

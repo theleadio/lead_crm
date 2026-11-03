@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/table";
 import { formatMoneyMyr } from "@/lib/format/money";
 import type { PriceShareRow } from "@/lib/reports/funding";
-import { PanelCard } from "./panel-card";
+import { Figures, PanelCard } from "./panel-card";
 
 // §9.18 price against HRDC share: the question is where a programme sits, not
 // which is biggest, so a scatter. One series, so one hue and no legend — the
@@ -175,28 +175,30 @@ export function PriceHrdcPanel({ rows }: { rows: PriceShareRow[] }) {
             </svg>
           </div>
 
-          <TableCard>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Programme</TableHead>
-                  <TableHead>List price</TableHead>
-                  <TableHead>HRDC share</TableHead>
-                  <TableHead>Seats</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((row) => (
-                  <TableRow key={`t-${row.course}`}>
-                    <TableCell>{row.course}</TableCell>
-                    <TableCell>{formatMoneyMyr(row.listPriceMyr)}</TableCell>
-                    <TableCell>{Math.round(row.hrdcShare * 100)}%</TableCell>
-                    <TableCell>{row.seats}</TableCell>
+          <Figures>
+            <TableCard>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Programme</TableHead>
+                    <TableHead>List price</TableHead>
+                    <TableHead>HRDC share</TableHead>
+                    <TableHead>Seats</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableCard>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((row) => (
+                    <TableRow key={`t-${row.course}`}>
+                      <TableCell>{row.course}</TableCell>
+                      <TableCell>{formatMoneyMyr(row.listPriceMyr)}</TableCell>
+                      <TableCell>{Math.round(row.hrdcShare * 100)}%</TableCell>
+                      <TableCell>{row.seats}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableCard>
+          </Figures>
         </>
       )}
     </PanelCard>

@@ -26,6 +26,9 @@ export const NO_SPEND: AdsSpend = {
 // campaign at all; they are a row of their own, never dropped, so the rows
 // sum to the total (§9.18).
 export type AdsCampaignRow = AdsSpend & {
+  // Meta's campaign id, which the ad rows carry too, so a lead count can sit
+  // beside that campaign's spend. Null for leads that carry no campaign.
+  campaignId: string | null;
   campaign: string | null;
   leads: number;
   firstTouch: number;
@@ -35,7 +38,7 @@ export type AdsCampaignRow = AdsSpend & {
 
 export type AdsChannelCount = { channel: string; leads: number };
 
-export type AdsSourceRow = AdsSpend & {
+export type AdsSourceRow = {
   source: string | null;
   leads: number;
   byChannel: AdsChannelCount[];
@@ -75,6 +78,13 @@ export type AdsWeeks = {
 // touch per person (`touchpoint.is_first_touch`): a buyer with two purchases
 // credits the campaign that first found them. O30 is what stops this being
 // per deal, and the panel says which model it used.
+// What a campaign's first-touch buyers paid through SalesProcess, in range.
+export type CampaignPaid = {
+  campaignId: string;
+  revenue: string;
+  orders: number;
+};
+
 export type CampaignSignups = {
   // Meta's own campaign id, which both the ad rows and the attributed lead
   // carry. The name is for the screen only — it varies in Meta's own data.
