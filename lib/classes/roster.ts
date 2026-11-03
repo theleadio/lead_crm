@@ -22,8 +22,9 @@ export async function listRoster(
   if (!isUuid(classId)) return [];
   const sql = db();
   // Synced CRM enrolments carry the LMS id, so the LMS ids match here. An LMS
-  // that cannot be reached leaves LC unknown (null), not "nobody".
-  const lcIds = await lmsLeadersClubEnrollmentIds().catch(() => null);
+  // that cannot be reached leaves LC unknown (null), not "nobody". Started
+  // before the CRM read and awaited after, so the two run side by side.
+  const lcPending = lmsLeadersClubEnrollmentIds().catch(() => null);
   const rows = await sql`
     SELECT e.id, e.person_id, e.status, e.payer_type, e.price_paid_myr,
            e.seat_reserved_until, e.created_at,
@@ -32,9 +33,8 @@ export async function listRoster(
            p.full_name, p.phone, b.full_name AS booker_full_name, b.phone AS booker_phone,
            ${seatTakenSql(sql)} AS holds_seat,
            prior.any_track, prior.mastery, prior.certification,
-           EXISTS (SELECT 1 FROM enrolment x
-                   WHERE x.person_id = e.person_id
-                     AND x.id = ANY(${lcIds ?? []}::uuid[])) AS leaders_club
+           ARRAY(SELECT x.id FROM enrolment x
+                 WHERE x.person_id = e.person_id) AS person_seat_ids
     FROM enrolment e
     JOIN class k ON k.id = e.class_id
     JOIN person p ON p.id = e.person_id
@@ -54,6 +54,9 @@ export async function listRoster(
     WHERE e.class_id = ${classId}
     -- Seat-holders first (§9.10), then by name so the list is stable.
     ORDER BY (${seatTakenSql(sql)}) DESC, lower(coalesce(p.full_name, '')), e.id`;
+
+  const lcList = await lcPending;
+  const lcIds = lcList === null ? null : new Set(lcList);
 
   return rows.map((r) => ({
     id: r.id as string,
@@ -79,6 +82,9 @@ export async function listRoster(
     firstTimer: !(r.any_track as boolean),
     priorMastery: r.mastery as boolean,
     priorCertification: r.certification as boolean,
-    leadersClub: lcIds === null ? null : (r.leaders_club as boolean),
+    leadersClub:
+      lcIds === null
+        ? null
+        : (r.person_seat_ids as string[]).some((id) => lcIds.has(id)),
   }));
 }

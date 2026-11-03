@@ -127,7 +127,7 @@ export function RosterTab({
                     {!row.firstTimer &&
                       !row.priorMastery &&
                       !row.priorCertification && (
-                        <Badge variant="secondary">Workshop</Badge>
+                        <Badge variant="secondary">Returning</Badge>
                       )}
                   </span>
                 </TableCell>
