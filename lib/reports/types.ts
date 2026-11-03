@@ -38,7 +38,7 @@ export type AdsCampaignRow = AdsSpend & {
 
 export type AdsChannelCount = { channel: string; leads: number };
 
-export type AdsSourceRow = AdsSpend & {
+export type AdsSourceRow = {
   source: string | null;
   leads: number;
   byChannel: AdsChannelCount[];

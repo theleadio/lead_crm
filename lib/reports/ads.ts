@@ -40,6 +40,8 @@ export const META_SOURCES = [
   "fb",
   "ig",
   "meta",
+  // Hand-typed in some ads' URL tags; 4 of 313 such leads carry no fbclid.
+  "fb_ad",
 ] as const;
 
 // §9.18 class size: big, middle and small are bands on the course's own list
@@ -267,9 +269,23 @@ export async function sourceRows(
   // channel split rides along, so `lead_form` and `ctwa` can be told apart
   // without a second screen. `IS NOT DISTINCT FROM` joins the NULL source to
   // its own group, which `=` would drop.
+  // `utm_source` is free text: some ads were tagged "facebook" or "fb_ad" by
+  // hand, others take Meta's {{site_source_name}} macro (fb, ig, an, msg, th).
+  // All name a Meta placement, so they are folded into the platform; any
+  // other value is shown as typed.
   const rows = await sql`
     WITH meta AS (
-      SELECT t.utm_source, t.channel
+      SELECT CASE
+               WHEN lower(btrim(t.utm_source)) IN ('facebook', 'fb', 'fb_ad')
+                 THEN 'Facebook'
+               WHEN lower(btrim(t.utm_source)) IN ('instagram', 'ig')
+                 THEN 'Instagram'
+               WHEN lower(btrim(t.utm_source)) = 'an' THEN 'Audience Network'
+               WHEN lower(btrim(t.utm_source)) = 'msg' THEN 'Messenger'
+               WHEN lower(btrim(t.utm_source)) = 'th' THEN 'Threads'
+               ELSE t.utm_source
+             END AS utm_source,
+             t.channel
       FROM touchpoint t
       JOIN person p ON p.id = t.person_id
       WHERE ${metaTouchpointSql(sql)}
@@ -306,7 +322,6 @@ export async function sourceRows(
       source: r.source,
       leads: r.leads,
       byChannel: [],
-      ...NO_SPEND,
     };
     row.byChannel.push({ channel: r.channel, leads: r.channel_leads });
     if (!existing) bySource.set(r.source, row);

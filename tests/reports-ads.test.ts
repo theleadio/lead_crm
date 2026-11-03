@@ -86,7 +86,7 @@ test("ads report: the Meta allow-lists are the O63 definition", () => {
   assert.deepEqual([...META_CHANNELS], ["lead_form", "ctwa"]);
   assert.deepEqual(
     [...META_SOURCES],
-    ["facebook", "instagram", "fb", "ig", "meta"],
+    ["facebook", "instagram", "fb", "ig", "meta", "fb_ad"],
   );
 });
 

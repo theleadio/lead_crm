@@ -20,17 +20,6 @@ import { PanelCard } from "./panels/panel-card";
 // §9.18: the two report tables. Plain counts, no chart — a chart would be the
 // §9.0 reasoning (dashboards live in the BI tool) for far more code.
 
-// A spend cell is an em dash until the ad data exists, never a zero: a zero
-// spend reads as a free campaign, and a cost per lead divided from it would
-// be a number nobody typed.
-function Unavailable() {
-  return (
-    <TableCell className="text-ink-muted" aria-label="not available yet">
-      —
-    </TableCell>
-  );
-}
-
 // The leads that carry no campaign or source are a row of their own, so the
 // rows add up to the total. Saying so beats an empty cell that reads as a bug.
 function Missing({ what }: { what: string }) {
@@ -152,7 +141,7 @@ export function CampaignTable({
   );
 }
 
-const SOURCE_COLUMNS = 6;
+const SOURCE_COLUMNS = 3;
 
 export function SourceTable({ table }: { table: AdsTable<AdsSourceRow> }) {
   return (
@@ -168,9 +157,9 @@ export function SourceTable({ table }: { table: AdsTable<AdsSourceRow> }) {
       }
       description={
         <>
-          The same leads by where they came from rather than which campaign —
-          Lead Ads and click-to-WhatsApp arrive through the channel, a paid
-          click through its click id, a tagged link through its source.
+          The same leads by the Meta platform they came from rather than which
+          campaign. Meta reports spend per campaign, not per platform, so spend
+          is in the campaign table above.
         </>
       }
     >
@@ -181,9 +170,6 @@ export function SourceTable({ table }: { table: AdsTable<AdsSourceRow> }) {
               <TableHead>Source</TableHead>
               <TableHead>Leads</TableHead>
               <TableHead>By channel</TableHead>
-              <TableHead>Spend</TableHead>
-              <TableHead>Impressions</TableHead>
-              <TableHead>Clicks</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -203,9 +189,6 @@ export function SourceTable({ table }: { table: AdsTable<AdsSourceRow> }) {
                       .map((c) => `${c.channel} ${c.leads}`)
                       .join(", ")}
                   </TableCell>
-                  <Unavailable />
-                  <Unavailable />
-                  <Unavailable />
                 </TableRow>
               ))
             )}
