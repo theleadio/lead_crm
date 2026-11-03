@@ -1,4 +1,4 @@
-import { PanelCard } from "./panel-card";
+import { Figures, PanelCard } from "./panel-card";
 import { TableCard } from "@/components/list-kit";
 import {
   Table,
@@ -150,34 +150,36 @@ export function SpendSplitPanel({ rows }: { rows: ObjectiveSplit[] }) {
             ))}
           </div>
 
-          <TableCard>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Campaign</TableHead>
-                  {AD_OBJECTIVES.map((objective) => (
-                    <TableHead key={objective}>
-                      {OBJECTIVE_LABEL[objective]}
-                    </TableHead>
-                  ))}
-                  <TableHead>Total</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((row) => (
-                  <TableRow key={`t-${row.campaign}`}>
-                    <TableCell>{row.campaign}</TableCell>
+          <Figures>
+            <TableCard>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Campaign</TableHead>
                     {AD_OBJECTIVES.map((objective) => (
-                      <TableCell key={objective}>
-                        {formatMoneyMyr(row.byObjective[objective])}
-                      </TableCell>
+                      <TableHead key={objective}>
+                        {OBJECTIVE_LABEL[objective]}
+                      </TableHead>
                     ))}
-                    <TableCell>{formatMoneyMyr(row.total)}</TableCell>
+                    <TableHead>Total</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableCard>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((row) => (
+                    <TableRow key={`t-${row.campaign}`}>
+                      <TableCell>{row.campaign}</TableCell>
+                      {AD_OBJECTIVES.map((objective) => (
+                        <TableCell key={objective}>
+                          {formatMoneyMyr(row.byObjective[objective])}
+                        </TableCell>
+                      ))}
+                      <TableCell>{formatMoneyMyr(row.total)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableCard>
+          </Figures>
         </>
       )}
     </PanelCard>

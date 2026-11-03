@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/table";
 import { formatDate } from "@/lib/format/date";
 import type { AdsWeeks } from "@/lib/reports/types";
-import { PanelCard } from "./panel-card";
+import { Figures, PanelCard } from "./panel-card";
 
 // §9.18 leads over time: the page's only time axis. Small multiples — one
 // column chart per channel on a shared y scale — rather than one stacked
@@ -143,32 +143,34 @@ export function LeadsOverTimePanel({ data }: { data: AdsWeeks }) {
             ))}
           </div>
 
-          <TableCard>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Week of</TableHead>
-                  {channels.map((c) => (
-                    <TableHead key={c}>{CHANNEL_LABEL[c] ?? c}</TableHead>
-                  ))}
-                  <TableHead>Total</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {weeks.map((w) => (
-                  <TableRow key={w.weekStart}>
-                    <TableCell>
-                      {formatDate(`${w.weekStart}T00:00:00Z`)}
-                    </TableCell>
+          <Figures>
+            <TableCard>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Week of</TableHead>
                     {channels.map((c) => (
-                      <TableCell key={c}>{w.byChannel[c] ?? 0}</TableCell>
+                      <TableHead key={c}>{CHANNEL_LABEL[c] ?? c}</TableHead>
                     ))}
-                    <TableCell>{w.total}</TableCell>
+                    <TableHead>Total</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableCard>
+                </TableHeader>
+                <TableBody>
+                  {weeks.map((w) => (
+                    <TableRow key={w.weekStart}>
+                      <TableCell>
+                        {formatDate(`${w.weekStart}T00:00:00Z`)}
+                      </TableCell>
+                      {channels.map((c) => (
+                        <TableCell key={c}>{w.byChannel[c] ?? 0}</TableCell>
+                      ))}
+                      <TableCell>{w.total}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableCard>
+          </Figures>
         </>
       )}
     </PanelCard>

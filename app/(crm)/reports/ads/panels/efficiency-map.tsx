@@ -1,4 +1,4 @@
-import { PanelCard } from "./panel-card";
+import { Figures, PanelCard } from "./panel-card";
 import { TableCard } from "@/components/list-kit";
 import {
   Table,
@@ -266,44 +266,46 @@ export function EfficiencyMapPanel({ points }: { points: EfficiencyPoint[] }) {
         </div>
       )}
 
-      <TableCard>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Campaign</TableHead>
-              <TableHead>Signups</TableHead>
-              <TableHead>HRDC</TableHead>
-              <TableHead>Spend</TableHead>
-              <TableHead>Cost per signup</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {points.map((p) => (
-              <TableRow key={`t-${p.campaign}`}>
-                <TableCell title={p.campaign}>
-                  {p.displayName ?? p.campaign}
-                </TableCell>
-                <TableCell>{p.signups}</TableCell>
-                <TableCell>{p.hrdcSignups}</TableCell>
-                <TableCell>
-                  {Number(p.spend) > 0 ? (
-                    formatMoneyMyr(p.spend)
-                  ) : (
-                    <span className="text-ink-muted">—</span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  {p.costPerSignup ? (
-                    formatMoneyMyr(p.costPerSignup)
-                  ) : (
-                    <span className="text-ink-muted">—</span>
-                  )}
-                </TableCell>
+      <Figures>
+        <TableCard>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Campaign</TableHead>
+                <TableHead>Signups</TableHead>
+                <TableHead>HRDC</TableHead>
+                <TableHead>Spend</TableHead>
+                <TableHead>Cost per signup</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableCard>
+            </TableHeader>
+            <TableBody>
+              {points.map((p) => (
+                <TableRow key={`t-${p.campaign}`}>
+                  <TableCell title={p.campaign}>
+                    {p.displayName ?? p.campaign}
+                  </TableCell>
+                  <TableCell>{p.signups}</TableCell>
+                  <TableCell>{p.hrdcSignups}</TableCell>
+                  <TableCell>
+                    {Number(p.spend) > 0 ? (
+                      formatMoneyMyr(p.spend)
+                    ) : (
+                      <span className="text-ink-muted">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {p.costPerSignup ? (
+                      formatMoneyMyr(p.costPerSignup)
+                    ) : (
+                      <span className="text-ink-muted">—</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableCard>
+      </Figures>
     </PanelCard>
   );
 }

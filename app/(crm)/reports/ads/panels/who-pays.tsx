@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/table";
 import { priceTier, type FundingRow } from "@/lib/reports/funding";
 import { formatMoneyMyr } from "@/lib/format/money";
-import { PanelCard } from "./panel-card";
+import { Figures, PanelCard } from "./panel-card";
 
 // §9.18 who pays: part-to-whole per programme, so a horizontal stacked bar —
 // the names are long and the question is a share, not a magnitude.
@@ -130,42 +130,44 @@ export function WhoPaysPanel({
             ))}
           </div>
 
-          <TableCard>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Programme</TableHead>
-                  <TableHead>Language</TableHead>
-                  <TableHead>Tier</TableHead>
-                  <TableHead>List price</TableHead>
-                  <TableHead>HRDC</TableHead>
-                  <TableHead>Not HRDC</TableHead>
-                  <TableHead>Seats</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((row) => (
-                  <TableRow key={`t-${row.course}-${row.language}`}>
-                    <TableCell>{row.course}</TableCell>
-                    <TableCell>
-                      {LANGUAGE_LABEL[row.language] ?? row.language}
-                    </TableCell>
-                    <TableCell>{priceTier(row.durationDays)}</TableCell>
-                    <TableCell>
-                      {row.listPriceMyr ? (
-                        formatMoneyMyr(row.listPriceMyr)
-                      ) : (
-                        <span className="text-ink-muted">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell>{row.hrdc}</TableCell>
-                    <TableCell>{row.notHrdc}</TableCell>
-                    <TableCell>{row.hrdc + row.notHrdc}</TableCell>
+          <Figures>
+            <TableCard>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Programme</TableHead>
+                    <TableHead>Language</TableHead>
+                    <TableHead>Tier</TableHead>
+                    <TableHead>List price</TableHead>
+                    <TableHead>HRDC</TableHead>
+                    <TableHead>Not HRDC</TableHead>
+                    <TableHead>Seats</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableCard>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((row) => (
+                    <TableRow key={`t-${row.course}-${row.language}`}>
+                      <TableCell>{row.course}</TableCell>
+                      <TableCell>
+                        {LANGUAGE_LABEL[row.language] ?? row.language}
+                      </TableCell>
+                      <TableCell>{priceTier(row.durationDays)}</TableCell>
+                      <TableCell>
+                        {row.listPriceMyr ? (
+                          formatMoneyMyr(row.listPriceMyr)
+                        ) : (
+                          <span className="text-ink-muted">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>{row.hrdc}</TableCell>
+                      <TableCell>{row.notHrdc}</TableCell>
+                      <TableCell>{row.hrdc + row.notHrdc}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableCard>
+          </Figures>
         </>
       )}
     </PanelCard>

@@ -15,7 +15,7 @@ import {
   type RoasRow,
 } from "@/lib/reports/spend";
 import { campaignLabel } from "./campaign-label";
-import { PanelCard } from "./panel-card";
+import { Figures, PanelCard } from "./panel-card";
 
 // §9.18 panel 3: return on ad spend, one row per programme.
 //
@@ -161,77 +161,71 @@ export function RoasPanel({ rows }: { rows: RoasRow[] }) {
 
           <Notes rows={rows} />
 
-          <details className="group">
-            <summary className="text-ink-muted cursor-pointer text-sm">
-              Figures
-            </summary>
-            <div className="mt-2">
-              <TableCard>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Programme</TableHead>
-                      <TableHead>Ad spend</TableHead>
-                      <TableHead>Orders</TableHead>
-                      <TableHead>Revenue</TableHead>
-                      <TableHead>ROAS</TableHead>
-                      <TableHead>HRDC share of signups</TableHead>
-                      <TableHead>Note</TableHead>
+          <Figures>
+            <TableCard>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Programme</TableHead>
+                    <TableHead>Ad spend</TableHead>
+                    <TableHead>Orders</TableHead>
+                    <TableHead>Revenue</TableHead>
+                    <TableHead>ROAS</TableHead>
+                    <TableHead>HRDC share of signups</TableHead>
+                    <TableHead>Note</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((row) => (
+                    <TableRow key={row.campaign}>
+                      <TableCell title={row.campaign}>
+                        {campaignLabel(row.campaign)}
+                      </TableCell>
+                      <TableCell>{formatMoneyMyr(row.spend)}</TableCell>
+                      <TableCell>
+                        {row.stripeOrders ?? (
+                          <span className="text-ink-muted">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {row.stripeRoas === null ? (
+                          <span className="text-ink-muted">—</span>
+                        ) : (
+                          formatMoneyMyr(row.stripeRevenue)
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {row.stripeRoas === null || row.band === null ? (
+                          <span className="text-ink-muted">n/a</span>
+                        ) : (
+                          <span
+                            className="inline-block rounded-md px-2 py-0.5 font-semibold tabular-nums"
+                            style={BAND_CELL[row.band]}
+                            title={`${BAND_LABEL[row.band]}${row.totalRoas === null ? "" : ` · ${row.totalRoas.toFixed(1)}× with HRDC revenue included`}`}
+                          >
+                            {row.stripeRoas.toFixed(1)}×
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {row.hrdcShare ? (
+                          <>
+                            {row.hrdcShare.hrdc} of {row.hrdcShare.signups} (
+                            {share(row.hrdcShare.hrdc, row.hrdcShare.signups)})
+                          </>
+                        ) : (
+                          <span className="text-ink-muted">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-ink-muted">
+                        {row.note ?? ""}
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rows.map((row) => (
-                      <TableRow key={row.campaign}>
-                        <TableCell title={row.campaign}>
-                          {campaignLabel(row.campaign)}
-                        </TableCell>
-                        <TableCell>{formatMoneyMyr(row.spend)}</TableCell>
-                        <TableCell>
-                          {row.stripeOrders ?? (
-                            <span className="text-ink-muted">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {row.stripeRoas === null ? (
-                            <span className="text-ink-muted">—</span>
-                          ) : (
-                            formatMoneyMyr(row.stripeRevenue)
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {row.stripeRoas === null || row.band === null ? (
-                            <span className="text-ink-muted">n/a</span>
-                          ) : (
-                            <span
-                              className="inline-block rounded-md px-2 py-0.5 font-semibold tabular-nums"
-                              style={BAND_CELL[row.band]}
-                              title={`${BAND_LABEL[row.band]}${row.totalRoas === null ? "" : ` · ${row.totalRoas.toFixed(1)}× with HRDC revenue included`}`}
-                            >
-                              {row.stripeRoas.toFixed(1)}×
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {row.hrdcShare ? (
-                            <>
-                              {row.hrdcShare.hrdc} of {row.hrdcShare.signups} (
-                              {share(row.hrdcShare.hrdc, row.hrdcShare.signups)}
-                              )
-                            </>
-                          ) : (
-                            <span className="text-ink-muted">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-ink-muted">
-                          {row.note ?? ""}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableCard>
-            </div>
-          </details>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableCard>
+          </Figures>
         </>
       )}
     </PanelCard>
