@@ -18,6 +18,7 @@ import {
   classCodeFor,
   classIdFor,
   enrolmentIdFor,
+  isNoSeats,
   orderState,
   pickClass,
   type ClassCandidate,
@@ -139,19 +140,25 @@ try {
       note("order fetch failed", label);
       continue;
     }
-    const item = order.items?.[0];
     const paidAt = new Date(
       Math.min(...o.txns.map((t) => t.paid_at.getTime())),
     );
-    const slot = parseClassSlot(
-      [item?.price?.name, item?.name, item?.product?.description],
-      paidAt,
-    );
+    // The first item that names a date.
+    const slot =
+      (order.items ?? [])
+        .map((item) =>
+          parseClassSlot(
+            [item.price?.name, item.name, item.product?.description],
+            paidAt,
+          ),
+        )
+        .find(Boolean) ?? null;
     if (!slot) {
       bump("skip: no date");
       note("no date", label);
       continue;
     }
+    // shortcut: orders for ended classes are re-fetched every run (~300 calls, ~140s/day); cache settled order ids if the window or volume grows.
     if (slot.end < today) {
       bump("skip: class ended");
       continue;
@@ -186,6 +193,14 @@ try {
     }
     const enrolById = new Set<string>();
     const active = new Map<string, string>(); // person|class → enrolment id
+    // person|class with a row the import did not make, in any status: staff
+    // cancelled, transferred or refunded that buyer, so the import stays out.
+    const handled = new Set<string>();
+    const importIds = new Set(
+      (
+        await tx`SELECT DISTINCT order_id FROM salesprocess_payment WHERE order_id IS NOT NULL`
+      ).map((r) => enrolmentIdFor(r.order_id)),
+    );
     for (const r of await tx`
       SELECT id, person_id, class_id, status FROM enrolment
       WHERE class_id = ANY(${classIds})
@@ -193,6 +208,7 @@ try {
       enrolById.add(r.id);
       if (!["cancelled", "refunded", "transferred"].includes(r.status))
         active.set(`${r.person_id}|${r.class_id}`, r.id);
+      if (!importIds.has(r.id)) handled.add(`${r.person_id}|${r.class_id}`);
     }
     const person = new Map<string, string>(
       (
@@ -230,7 +246,7 @@ try {
       if (!classId && state === "paid") {
         classId = classIdFor(courseCode, slot.start, lang);
         classCode = classCodeFor(courseCode, slot.start, lang);
-        await tx`
+        const made = await tx`
           INSERT INTO class ${tx({
             id: classId,
             course_id: courseIds.get(courseCode)!,
@@ -249,7 +265,12 @@ try {
               ? IMPORT_CLASS_NOTE
               : `${IMPORT_CLASS_NOTE} Venue address and city still TBC.`,
           })}
-          ON CONFLICT (id) DO NOTHING`;
+          ON CONFLICT (id) DO NOTHING RETURNING id`;
+        // The id exists but not under this key: the LMS adopted and moved it, or staff cancelled it.
+        if (!made.length) {
+          bump("skip: class unavailable");
+          continue;
+        }
         classesByKey.set(key, [{ id: classId, code: classCode, language: lang }]);
         bump("insert class");
         note("new class", classCode);
@@ -271,6 +292,11 @@ try {
           bump("already enrolled");
           continue;
         }
+        if (handled.has(`${p}|${classId}`)) {
+          bump("skip: handled in CRM");
+          note("handled in CRM", classCode);
+          continue;
+        }
         try {
           await tx.savepoint(
             (s) => s`
@@ -285,8 +311,7 @@ try {
               })}`,
           );
         } catch (e) {
-          const err = e as { code?: string; message?: string };
-          if (err.code === "P0001" && err.message?.includes("no_seats")) {
+          if (isNoSeats(e)) {
             bump("skip: class full");
             note("class full", classCode);
             continue;
