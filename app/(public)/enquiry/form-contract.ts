@@ -6,8 +6,13 @@
 // accessibility tree. One `if` in the action and the cheapest bots are gone.
 export const HONEYPOT_FIELD = "company_website";
 
+// No "success": both forms leave the page when the action succeeds — the
+// enquiry to its thank-you, a registration to Stripe or to the HRDC answer
+// (§10.3, §10.4). An answer held in state did not survive the language
+// control, which is a full navigation (§10.5), so the only states a form can
+// be in are the two it can still be in after one.
 export type EnquiryState = {
-  status: "idle" | "error" | "success";
+  status: "idle" | "error";
   // §13 wording for the whole form. Never a message from the §8.2 route:
   // those are written for an API caller.
   message: string | null;

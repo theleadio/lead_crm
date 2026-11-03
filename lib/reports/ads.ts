@@ -541,6 +541,15 @@ export async function signupsPerCampaign(
   // Meta's own data ("WhatsApp" against "Whatsapp") and are retyped per run;
   // the id is the thing Meta and the lead both carry, and where the lead did
   // not carry one it is resolved from its ad or ad set.
+  //
+  // A signup is a seat-holding enrolment, or a paid SalesProcess order from a
+  // buyer who holds no seat in the range (Shawn's PR #37): most courses are
+  // sold through SalesProcess funnels and many buyers never reach the LMS, so
+  // seats alone missed most of them. A buyer with a seat is counted by the
+  // seat only, never twice; an order paid in instalments counts once, and
+  // only if paid after the first touch, as revenue is. Orders carry no class,
+  // so a class-size filter counts seats alone.
+  //
   // A synced seat has no deal, so the deal alone reports 0 HRDC however many
   // grant seats the LMS holds. The LMS ids top it up; an LMS that cannot be
   // reached leaves the deal-only count rather than failing the report.
@@ -548,24 +557,48 @@ export async function signupsPerCampaign(
 
   const rows = await sql`
     WITH ${campaignMapSql(sql)},
-    ${firstCampaignSql(sql)}
-    SELECT f.campaign_id AS campaign_id,
-           ${campaignNameSql(sql, "f")} AS campaign,
+    ${firstCampaignSql(sql)},
+    seats AS (
+      SELECT f.campaign_id, f.utm_campaign, f.person_id,
+             coalesce(d.funding_type = 'hrdc' OR e.id = ANY(${lmsHrdcIds}::uuid[]), false) AS hrdc
+      FROM first_touch f
+      JOIN enrolment e ON e.person_id = f.person_id
+      JOIN class cl ON cl.id = e.class_id
+      JOIN course co ON co.id = cl.course_id
+      LEFT JOIN deal d ON d.id = e.deal_id
+      WHERE ${seatTakenSql(sql)}
+        ${sizeSql(sql, q)}
+        AND e.created_at >= (${q.from}::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
+        AND e.created_at < ((${q.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
+    ),
+    orders AS (
+      SELECT DISTINCT f.campaign_id, f.utm_campaign, f.person_id,
+             coalesce(sp.order_id, sp.id) AS order_key, false AS hrdc
+      FROM salesprocess_payment sp
+      JOIN touchpoint b ON b.channel = 'import'
+                       AND b.external_ref = 'ghl:' || sp.ghl_contact_id
+      JOIN first_touch f ON f.person_id = b.person_id
+                        AND f.occurred_at <= sp.paid_at
+      WHERE ${q.size ? sql`false` : sql`true`}
+        AND sp.live_mode
+        AND sp.status IN ('succeeded', 'partially_refunded')
+        AND sp.currency = 'MYR'
+        AND sp.paid_at >= (${q.from}::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
+        AND sp.paid_at < ((${q.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
+        AND f.person_id NOT IN (SELECT person_id FROM seats)
+    ),
+    signup AS (
+      SELECT campaign_id, utm_campaign, hrdc FROM seats
+      UNION ALL
+      SELECT campaign_id, utm_campaign, hrdc FROM orders
+    )
+    SELECT s.campaign_id,
+           ${campaignNameSql(sql, "s")} AS campaign,
            count(*)::int AS signups,
-           count(*) FILTER (
-             WHERE d.funding_type = 'hrdc' OR e.id = ANY(${lmsHrdcIds}::uuid[])
-           )::int AS hrdc_signups
-    FROM first_touch f
-    LEFT JOIN campaign_name cn ON cn.campaign_id = f.campaign_id
-    JOIN enrolment e ON e.person_id = f.person_id
-    JOIN class cl ON cl.id = e.class_id
-    JOIN course co ON co.id = cl.course_id
-    LEFT JOIN deal d ON d.id = e.deal_id
-    WHERE ${seatTakenSql(sql)}
-      ${sizeSql(sql, q)}
-      AND e.created_at >= (${q.from}::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
-      AND e.created_at < ((${q.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
-    GROUP BY f.campaign_id
+           count(*) FILTER (WHERE s.hrdc)::int AS hrdc_signups
+    FROM signup s
+    LEFT JOIN campaign_name cn ON cn.campaign_id = s.campaign_id
+    GROUP BY s.campaign_id
     ORDER BY signups DESC, campaign_id ASC
     LIMIT ${ROWS_SHOWN}`;
 

@@ -3,6 +3,8 @@
 //
 //   npm run ghl:import -- <export.md>            dry run: counts, rolled back
 //   npm run ghl:import -- <export.md> --apply    write
+//   npm run ghl:import -- --from-api [--apply]   read the SalesProcess API
+//                                                instead of an export file
 //
 // The export is a markdown table: Contact Id, First Name, Last Name, Phone,
 // Email, Business Name, Created, Last Activity, Tags. Rules:
@@ -17,30 +19,59 @@
 import { readFileSync } from "node:fs";
 import postgres from "postgres";
 import { normalizePhoneE164 } from "../lib/format/phone.ts";
+import { fetchContacts } from "../lib/import/salesprocess-api.ts";
 
 const file = process.argv.find((a, i) => i > 1 && !a.startsWith("--"));
+const fromApi = process.argv.includes("--from-api");
 const apply = process.argv.includes("--apply");
-if (!file || !process.env.DATABASE_URL) {
+if ((!file && !fromApi) || !process.env.DATABASE_URL) {
   console.error(
-    "usage: node --env-file=.env.local scripts/import-ghl-contacts.ts <export.md> [--apply]",
+    "usage: node --env-file=.env.local scripts/import-ghl-contacts.ts <export.md> | --from-api [--apply]",
   );
   process.exit(1);
 }
 
-// --- parse the markdown table
-const lines = readFileSync(file, "utf8")
-  .split("\n")
-  .filter((l) => l.trim());
-const cells = (l: string) =>
-  l
-    .trim()
-    .replace(/^\||\|$/g, "")
-    .split("|")
-    .map((c) => c.trim());
-const header = cells(lines[0]);
-const rows = lines
-  .slice(2)
-  .map((l) => Object.fromEntries(cells(l).map((c, i) => [header[i], c])));
+type ApiContact = {
+  id: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  companyName?: string | null;
+  dateAdded?: string | null;
+  tags?: string[];
+};
+
+// --- read the export, or the API mapped onto the export's columns
+async function loadRows(): Promise<Record<string, string>[]> {
+  if (fromApi)
+    return (await fetchContacts<ApiContact>()).map((c) => ({
+      "Contact Id": c.id,
+      "First Name": c.firstName ?? "",
+      "Last Name": c.lastName ?? "",
+      Phone: c.phone ?? "",
+      Email: c.email ?? "",
+      "Business Name": c.companyName ?? "",
+      Created: c.dateAdded ?? "",
+      Tags: (c.tags ?? [])
+        .map((t) => (t.includes(",") ? `"${t}"` : t))
+        .join(","),
+    }));
+  const lines = readFileSync(file!, "utf8")
+    .split("\n")
+    .filter((l) => l.trim());
+  const cells = (l: string) =>
+    l
+      .trim()
+      .replace(/^\||\|$/g, "")
+      .split("|")
+      .map((c) => c.trim());
+  const header = cells(lines[0]);
+  return lines
+    .slice(2)
+    .map((l) => Object.fromEntries(cells(l).map((c, i) => [header[i], c])));
+}
+const rows = await loadRows();
 // GHL escapes "|" inside a tag as &#124;; tags are comma separated, quoted when they hold a comma.
 const tagsOf = (s: string): string[] =>
   s
@@ -203,3 +234,6 @@ console.log(
   `${rows.length} rows, ${apply ? "APPLIED" : "DRY RUN (rolled back)"}`,
 );
 console.table(stats);
+console.log(
+  `ghl import: ${apply ? "applied" : "dry run"} ${rows.length} rows ${JSON.stringify(stats)}`,
+);

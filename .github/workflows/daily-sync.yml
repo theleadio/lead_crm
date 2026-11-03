@@ -1,0 +1,69 @@
+# Daily data syncs into the CRM, so they no longer depend on a laptop session
+# (on 2 Nov the data was 3 days stale). Each script is safe to re-run.
+#
+# Why GitHub Actions, not a Netlify Scheduled Function: those stop at 30
+# seconds, and on 2 Nov the GHL import and attribution took 2m10s each
+# (15,880 contacts, paged at 100) and the Meta sync 28s. The repo is public,
+# so Actions minutes are free; the job limit is 6 hours.
+#
+# Secrets (repo Settings > Secrets and variables > Actions): DATABASE_URL,
+# LMS_DATABASE_URL, META_ACCESS_TOKEN, META_AD_ACCOUNT_ID,
+# SALESPROCESS_API_TOKEN, SALESPROCESS_LOCATION_ID.
+#
+# Logs are public: scripts print counts only, and scripts/ci-errors.mjs keeps
+# an uncaught error to its message.
+name: daily-sync
+
+on:
+  schedule:
+    - cron: "0 19 * * *" # 03:00 MYT
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  NODE_OPTIONS: --import=./scripts/ci-errors.mjs
+
+jobs:
+  ads:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - run: npm ci --ignore-scripts
+      - run: node scripts/sync-meta-ads.ts
+        env:
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
+
+  lms:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - run: npm ci --ignore-scripts
+      - run: node scripts/sync-lms.ts --apply
+        env:
+          LMS_DATABASE_URL: ${{ secrets.LMS_DATABASE_URL }}
+
+  ghl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SALESPROCESS_API_TOKEN: ${{ secrets.SALESPROCESS_API_TOKEN }}
+      SALESPROCESS_LOCATION_ID: ${{ secrets.SALESPROCESS_LOCATION_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - run: npm ci --ignore-scripts
+      # Attribution matches only people the import has already created.
+      - run: node scripts/import-ghl-contacts.ts --from-api --apply
+      - run: node scripts/import-ghl-attribution.ts --apply --accept-approx-dates
+      - run: node scripts/sync-salesprocess-payments.ts --apply
