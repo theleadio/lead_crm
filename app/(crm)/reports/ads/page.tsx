@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { permissionFor } from "@/lib/auth/permissions";
 import { formatDate } from "@/lib/format/date";
+import { sumMyr } from "@/lib/format/money";
 import {
   campaignRows,
   earliestMetaTouchpoint,
@@ -52,7 +53,7 @@ import { WhoPaysPanel } from "./panels/who-pays";
 // wait for, because §5 defers the ad tables and O30 blocks any return-on-spend
 // figure. Read-only: nothing here writes.
 const META_DEFINITION =
-  "A Meta lead is a touchpoint from Lead Ads or click-to-WhatsApp, or one carrying an fbclid or ctwa_clid, or one tagged facebook, instagram, fb, ig or meta.";
+  "A Meta lead is a touchpoint from Lead Ads or click-to-WhatsApp, or one carrying an fbclid or ctwa_clid, or one tagged facebook, instagram, fb, ig, meta or fb_ad.";
 
 // Each read loads on its own: one failing query leaves the rest of the report
 // usable (§13), and the reason is logged rather than swallowed. The §9.0 Home
@@ -178,8 +179,10 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
         named,
         returns: roasRows(campaignSpend, campaignRevenue).map((r) => ({
           ...r,
+          campaignId: r.campaign,
           campaign: named(r.campaign),
         })),
+        allSpend: sumMyr([...campaignSpend.values()].map((s) => s.spend)),
         whatsappAds: rankAds(adSpend, "messages").map((r) => ({
           ...r,
           campaign: named(r.campaign),
@@ -231,8 +234,8 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
       {query.size && (
         <p className="text-ink-muted text-sm">
           Showing {SIZE_NOTE[query.size]}. Seats, funding and signups count only
-          these classes. Leads and ad spend are not split by class, so the lead
-          and spend panels still cover every campaign.
+          these classes. Leads, revenue and ad spend are not split by class, so
+          the lead, spend and return panels still cover every campaign.
         </p>
       )}
 
@@ -270,8 +273,12 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
         <PanelError what="course price against HRDC share" />
       )}
 
-      {cost && paid.ok ? (
-        <RoasPanel rows={cost.returns} />
+      {cost && spend.ok && paid.ok ? (
+        <RoasPanel
+          rows={cost.returns}
+          allSpend={cost.allSpend}
+          hrdcUnread={!signups.ok}
+        />
       ) : (
         <PanelError what="return on ad spend" />
       )}

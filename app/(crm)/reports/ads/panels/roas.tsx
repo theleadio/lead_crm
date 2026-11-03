@@ -74,7 +74,7 @@ function RoasBars({ rows }: { rows: RoasRow[] }) {
     <ul className="border-line bg-surface-raised flex flex-col gap-2 rounded-md border p-4">
       {charted.map((row) => (
         <li
-          key={row.campaign}
+          key={row.campaignId ?? row.campaign}
           className="grid grid-cols-[minmax(0,14rem)_1fr] items-center gap-3 sm:grid-cols-[minmax(0,20rem)_1fr]"
           title={`${row.campaign}\n${row.stripeRoas!.toFixed(1)}× · ${formatMoneyMyr(row.stripeRevenue)} revenue on ${formatMoneyMyr(row.spend)} spend${row.stripeOrders === null ? "" : ` · ${row.stripeOrders} orders`}`}
         >
@@ -107,10 +107,21 @@ function share(part: number, whole: number): string {
 
 // What the bars cannot say: the total across them, and what the ratio leaves
 // out. Plain text, so it carries no colour of its own.
-function Notes({ rows }: { rows: RoasRow[] }) {
+function Notes({
+  rows,
+  allSpend,
+  hrdcUnread,
+}: {
+  rows: RoasRow[];
+  allSpend: string;
+  hrdcUnread: boolean;
+}) {
   const revenue = sumMyr(rows.map((r) => r.stripeRevenue));
   const spend = sumMyr(rows.map((r) => r.spend));
   const overall = roas(revenue, spend);
+  // The listed campaigns are only those that sold something, so their
+  // ratio flatters; the one over every campaign's spend is the honest floor.
+  const overAll = roas(revenue, allSpend);
   return (
     <ul className="text-ink-muted list-disc space-y-1 pl-5 text-sm">
       {overall !== null && (
@@ -118,6 +129,15 @@ function Notes({ rows }: { rows: RoasRow[] }) {
           Across these campaigns: {formatMoneyMyr(revenue)} revenue on{" "}
           {formatMoneyMyr(spend)} spend = {overall.toFixed(1)}×.
         </li>
+      )}
+      {overAll !== null && allSpend !== spend && (
+        <li>
+          Against all Meta spend in range ({formatMoneyMyr(allSpend)}), the same
+          revenue is {overAll.toFixed(1)}×.
+        </li>
+      )}
+      {hrdcUnread && (
+        <li>Signups could not be read, so the HRDC share column is blank.</li>
       )}
       <li>
         HRDC seats are paid by the grant, not through SalesProcess, so that
@@ -132,7 +152,15 @@ function Notes({ rows }: { rows: RoasRow[] }) {
   );
 }
 
-export function RoasPanel({ rows }: { rows: RoasRow[] }) {
+export function RoasPanel({
+  rows,
+  allSpend,
+  hrdcUnread,
+}: {
+  rows: RoasRow[];
+  allSpend: string;
+  hrdcUnread: boolean;
+}) {
   return (
     <PanelCard
       eyebrow="RETURN"
@@ -159,7 +187,7 @@ export function RoasPanel({ rows }: { rows: RoasRow[] }) {
 
           <RoasBars rows={rows} />
 
-          <Notes rows={rows} />
+          <Notes rows={rows} allSpend={allSpend} hrdcUnread={hrdcUnread} />
 
           <Figures>
             <TableCard>
@@ -177,7 +205,7 @@ export function RoasPanel({ rows }: { rows: RoasRow[] }) {
                 </TableHeader>
                 <TableBody>
                   {rows.map((row) => (
-                    <TableRow key={row.campaign}>
+                    <TableRow key={row.campaignId ?? row.campaign}>
                       <TableCell title={row.campaign}>
                         {campaignLabel(row.campaign)}
                       </TableCell>

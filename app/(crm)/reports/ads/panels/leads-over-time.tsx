@@ -35,13 +35,10 @@ const CHANNEL_LABEL: Record<string, string> = {
 // so a short range is not a cluster of slivers in an empty box.
 const CHART_H = 160;
 
-// "6 Oct" under a column. Week starts are plain dates, so read them in UTC.
+// "06 Oct" under a column: the page's own date format without the year, so
+// September reads "Sep" as everywhere else.
 function shortDay(weekStart: string): string {
-  return new Date(`${weekStart}T00:00:00Z`).toLocaleDateString("en-MY", {
-    day: "numeric",
-    month: "short",
-    timeZone: "UTC",
-  });
+  return formatDate(`${weekStart}T00:00:00Z`).slice(0, 6);
 }
 
 function Facet({
@@ -137,8 +134,8 @@ export function LeadsOverTimePanel({ data }: { data: AdsWeeks }) {
       }
       description={
         <>
-          Kuala Lumpur weeks, starting Monday (§4). One chart per channel, all
-          on the same scale, so a tall column means the same number in each.
+          Kuala Lumpur weeks, starting Monday (§4). One chart per Meta platform,
+          all on the same scale, so a tall column means the same number in each.
         </>
       }
     >

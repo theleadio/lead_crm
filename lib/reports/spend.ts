@@ -253,6 +253,9 @@ export function efficiencyPoints(
 
 export type RoasRow = {
   campaign: string;
+  // Meta's id, kept when `campaign` is swapped for a display name: two
+  // campaigns can share a name.
+  campaignId?: string;
   spend: string;
   stripeRevenue: string;
   hrdcRevenue: string | null;

@@ -168,6 +168,23 @@ export function firstTouchSql(sql: postgres.Sql, alias = "t") {
               OR ${sql(`${alias}.external_ref`)} LIKE 'ghl-attr:first:%', false)`;
 }
 
+// `utm_source` is free text: some ads were tagged "facebook" or "fb_ad" by
+// hand, others take Meta's {{site_source_name}} macro (fb, ig, an, msg, th).
+// All name a Meta placement, so they fold into the platform; any other value
+// is shown as typed, and NULL stays NULL.
+function platformSql(sql: postgres.Sql, alias = "t") {
+  const source = sql`lower(btrim(${sql(`${alias}.utm_source`)}))`;
+  return sql`CASE
+    WHEN ${source} IN ('facebook', 'fb', 'fb_ad') THEN 'Facebook'
+    WHEN ${source} IN ('instagram', 'ig') THEN 'Instagram'
+    WHEN ${source} = 'an' THEN 'Audience Network'
+    WHEN ${source} = 'msg' THEN 'Messenger'
+    WHEN ${source} = 'th' THEN 'Threads'
+    WHEN ${source} = 'meta' THEN 'Meta'
+    ELSE ${sql(`${alias}.utm_source`)}
+  END`;
+}
+
 // Spec §4: whole Kuala Lumpur days, both ends inclusive. A half-open upper
 // bound rather than `<= end of day`, so nothing late on the last day is
 // lost. Copied from the §9.5 deals list, which ranges the same way.
@@ -269,22 +286,9 @@ export async function sourceRows(
   // channel split rides along, so `lead_form` and `ctwa` can be told apart
   // without a second screen. `IS NOT DISTINCT FROM` joins the NULL source to
   // its own group, which `=` would drop.
-  // `utm_source` is free text: some ads were tagged "facebook" or "fb_ad" by
-  // hand, others take Meta's {{site_source_name}} macro (fb, ig, an, msg, th).
-  // All name a Meta placement, so they are folded into the platform; any
-  // other value is shown as typed.
   const rows = await sql`
     WITH meta AS (
-      SELECT CASE
-               WHEN lower(btrim(t.utm_source)) IN ('facebook', 'fb', 'fb_ad')
-                 THEN 'Facebook'
-               WHEN lower(btrim(t.utm_source)) IN ('instagram', 'ig')
-                 THEN 'Instagram'
-               WHEN lower(btrim(t.utm_source)) = 'an' THEN 'Audience Network'
-               WHEN lower(btrim(t.utm_source)) = 'msg' THEN 'Messenger'
-               WHEN lower(btrim(t.utm_source)) = 'th' THEN 'Threads'
-               ELSE t.utm_source
-             END AS utm_source,
+      SELECT ${platformSql(sql)} AS utm_source,
              t.channel
       FROM touchpoint t
       JOIN person p ON p.id = t.person_id
@@ -368,14 +372,17 @@ export async function leadsPerWeek(
     SELECT to_char(date_trunc('week',
              t.occurred_at AT TIME ZONE 'Asia/Kuala_Lumpur'),
              'YYYY-MM-DD') AS week_start,
-           t.channel,
+           -- Faceted by platform: every SalesProcess row has channel
+           -- 'import', so a channel facet was one chart. Lead Ads and
+           -- click-to-WhatsApp rows carry no source and keep their channel.
+           coalesce(${platformSql(sql)}, t.channel) AS channel,
            count(*)::int AS leads
     FROM touchpoint t
     JOIN person p ON p.id = t.person_id
     WHERE ${metaTouchpointSql(sql)}
       AND ${rangeSql(sql, q)}
       AND ${livePersonSql(sql)}
-    GROUP BY week_start, t.channel
+    GROUP BY week_start, 2
     ORDER BY week_start ASC, leads DESC`;
 
   const totals = new Map<string, number>();
@@ -454,7 +461,8 @@ function firstCampaignSql(sql: postgres.Sql) {
   return sql`
     first_touch AS (
       SELECT DISTINCT ON (t.person_id)
-             t.person_id, ${campaignIdSql(sql)} AS campaign_id, t.utm_campaign
+             t.person_id, ${campaignIdSql(sql)} AS campaign_id, t.utm_campaign,
+             t.occurred_at
       FROM touchpoint t
       JOIN person p ON p.id = t.person_id
       ${campaignJoinSql(sql)}
@@ -486,18 +494,26 @@ export async function revenuePerCampaign(
     WITH ${campaignMapSql(sql)},
     ${firstCampaignSql(sql)},
     paid AS (
-      SELECT DISTINCT b.person_id, sp.id, sp.amount_myr - sp.refunded_myr AS net
+      SELECT DISTINCT b.person_id, sp.id, coalesce(sp.order_id, sp.id) AS order_key,
+             sp.paid_at, sp.amount_myr - sp.refunded_myr AS net
       FROM salesprocess_payment sp
-      JOIN touchpoint b ON b.external_ref = 'ghl:' || sp.ghl_contact_id
+      -- The bare import row only: it carries the contact id, uses the
+      -- (channel, external_ref) index, and is one per person.
+      JOIN touchpoint b ON b.channel = 'import'
+                       AND b.external_ref = 'ghl:' || sp.ghl_contact_id
       WHERE sp.live_mode
         AND sp.status IN ('succeeded', 'partially_refunded')
         AND sp.currency = 'MYR'
         AND sp.paid_at >= (${q.from}::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
         AND sp.paid_at < ((${q.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
     )
-    SELECT f.campaign_id, sum(p.net)::text AS revenue, count(*)::int AS orders
+    -- An ad cannot have sold what was paid before it was seen. An order
+    -- paid in instalments counts once.
+    SELECT f.campaign_id, sum(p.net)::text AS revenue,
+           count(DISTINCT p.order_key)::int AS orders
     FROM paid p
     JOIN first_touch f ON f.person_id = p.person_id
+                      AND f.occurred_at <= p.paid_at
     GROUP BY f.campaign_id`;
 
   return rows.map((r) => ({
