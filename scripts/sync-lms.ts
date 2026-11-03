@@ -16,11 +16,15 @@
 // Switch to a Supabase Realtime / LISTEN trigger on the LMS if it grows.
 import postgres from "postgres";
 import { normalizePhoneE164 } from "../lib/format/phone.ts";
+import { CANCELLABLE_STATUSES } from "../lib/classes/seats.ts";
 import {
+  adoptEnrolment,
   classIdForCohort,
   cutOverCancels,
+  importSeatsByKey,
   type Cohort,
   type ImportClass,
+  type ImportSeat,
 } from "../lib/import/lms-adopt.ts";
 import {
   IMPORT_CLASS_NOTE,
@@ -170,7 +174,7 @@ async function once() {
     );
     const importClasses = await tx<ImportClass[]>`
       SELECT id, code, course_id, start_date::text AS start_date, language FROM class
-      WHERE notes LIKE ${IMPORT_CLASS_NOTE + "%"}`;
+      WHERE notes LIKE ${IMPORT_CLASS_NOTE + "%"} AND status <> 'cancelled'`;
     const cohorts: Cohort[] = src.cohorts.map((k) => ({
       id: k.id,
       slug: k.slug,
@@ -308,24 +312,15 @@ async function once() {
       ).map((r) => [`${r.person_id}|${r.class_id}`, r.id]),
     );
     const cohortEnd = new Map(src.cohorts.map((k) => [k.id, k.end_date]));
-    // Enrolments the SalesProcess import made, by person|class; an active one wins over a refunded one.
-    const importEnrols = await tx<
-      { id: string; person_id: string; class_id: string; status: string }[]
-    >`
+    // Enrolments the SalesProcess import made.
+    const importEnrols = await tx<ImportSeat[]>`
       SELECT id, person_id, class_id, status FROM enrolment
       WHERE id = ANY(${(
         await tx`SELECT DISTINCT order_id FROM salesprocess_payment WHERE order_id IS NOT NULL`
       ).map((r) => enrolmentIdFor(r.order_id))})`;
-    const importOf = new Map<string, { id: string; status: string }>();
-    for (const r of importEnrols) {
-      const key = `${r.person_id}|${r.class_id}`;
-      if (!["cancelled", "refunded", "transferred"].includes(r.status))
-        importOf.set(key, { id: r.id, status: r.status });
-      else if (r.status === "refunded" && !importOf.has(key))
-        importOf.set(key, { id: r.id, status: r.status });
-    }
+    const importOf = importSeatsByKey(importEnrols);
     const matched = new Set<string>();
-    const adopt: { id: string; status: string; completed_at: Date | null }[] = [];
+    const adopt: { id: string; status: string; completed_at: Date }[] = [];
     const enrols: Record<string, unknown>[] = [];
     for (const e of src.enrols) {
       const personId = personOf.get(e.participant_id);
@@ -340,25 +335,18 @@ async function once() {
       const finished = done.has(e.cohort_id);
       const mine = haveEnrol.has(e.id) ? undefined : importOf.get(key);
       if (mine) {
-        importOf.delete(key);
-        // A SalesProcess refund wins: the seat does not come back while Ops catches up in the LMS.
-        if (mine.status === "refunded") {
+        const d = adoptEnrolment(
+          mine,
+          finished ? cohortEnd.get(e.cohort_id) : null,
+          matched,
+        );
+        if (d.action === "skip-refunded") {
           bump("enrolment: refunded in SalesProcess", "same");
           continue;
         }
-        matched.add(mine.id);
-        const status = finished ? "completed" : "confirmed";
-        // Only the two statuses the sync sets are moved; a status staff set stays.
-        if (mine.status === status || !["confirmed", "completed"].includes(mine.status)) {
-          bump("enrolment: adopted", "same");
-          continue;
-        }
-        adopt.push({
-          id: mine.id,
-          status,
-          completed_at: finished ? cohortEnd.get(e.cohort_id) : null,
-        });
-        bump("enrolment: adopted", "update");
+        matched.add(d.id);
+        if (d.action === "update") adopt.push(d);
+        bump("enrolment: adopted", d.action);
         continue;
       }
       const holder = active.get(key);
@@ -397,7 +385,7 @@ async function once() {
     );
     const cut = cutOverCancels(importEnrols, lmsClassIds, matched, started);
     if (cut.length)
-      await tx`UPDATE enrolment SET status = 'cancelled', cancelled_reason = 'Not in the LMS at class start' WHERE id = ANY(${cut})`;
+      await tx`UPDATE enrolment SET status = 'cancelled', cancelled_reason = 'Not in the LMS at class start' WHERE id = ANY(${cut}) AND status = ANY(${CANCELLABLE_STATUSES})`;
     for (const _ of cut) bump("enrolment: cut over", "update");
 
     if (!apply) throw new Error("dry-run"); // roll back

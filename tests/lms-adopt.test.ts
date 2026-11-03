@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { classIdForCohort, cutOverCancels, type Cohort, type ImportClass } from "../lib/import/lms-adopt.ts";
+import {
+  adoptEnrolment,
+  classIdForCohort,
+  cutOverCancels,
+  importSeatsByKey,
+  type Cohort,
+  type ImportClass,
+} from "../lib/import/lms-adopt.ts";
 
 const cohort = (over: Partial<Cohort> = {}): Cohort => ({
   id: "k1",
@@ -85,5 +92,43 @@ test("cutOverCancels", () => {
   assert.deepEqual(run([e("a", "unmapped")]), []);
   assert.deepEqual(run([e("a", "started", "refunded")]), []);
   assert.deepEqual(run([e("a", "started", "cancelled")]), []);
-  assert.deepEqual(run([e("a", "started", "completed")]), ["a"]);
+  assert.deepEqual(run([e("a", "started", "onboarded")]), ["a"]);
+  assert.deepEqual(run([e("a", "started", "completed")]), []);
+  assert.deepEqual(run([e("a", "started", "attended")]), []);
+});
+
+const seat = (status: string, id = "s1") => ({ id, person_id: "p", class_id: "c", status });
+const ended = new Date("2026-11-29");
+
+test("importSeatsByKey: active wins over refunded, cancelled and transferred are ignored", () => {
+  assert.equal(importSeatsByKey([seat("refunded", "r"), seat("confirmed", "a")]).get("p|c")?.id, "a");
+  assert.equal(importSeatsByKey([seat("confirmed", "a"), seat("refunded", "r")]).get("p|c")?.id, "a");
+  assert.equal(importSeatsByKey([seat("refunded", "r")]).get("p|c")?.id, "r");
+  assert.equal(importSeatsByKey([seat("cancelled"), seat("transferred", "t")]).size, 0);
+});
+
+test("adoptEnrolment: a refunded seat skips the LMS row, every time", () => {
+  assert.deepEqual(adoptEnrolment(seat("refunded"), null, new Set()), { action: "skip-refunded" });
+  assert.deepEqual(adoptEnrolment(seat("refunded"), ended, new Set(["s1"])), { action: "skip-refunded" });
+});
+
+test("adoptEnrolment: confirmed moves to completed only once the class has ended", () => {
+  assert.deepEqual(adoptEnrolment(seat("confirmed"), null, new Set()), { action: "same", id: "s1" });
+  assert.deepEqual(adoptEnrolment(seat("confirmed"), ended, new Set()), {
+    action: "update",
+    id: "s1",
+    status: "completed",
+    completed_at: ended,
+  });
+});
+
+test("adoptEnrolment: any status other than confirmed is left as is, never moved back", () => {
+  for (const status of ["completed", "attended", "onboarded", "no_show"]) {
+    assert.deepEqual(adoptEnrolment(seat(status), null, new Set()), { action: "same", id: "s1" });
+    assert.deepEqual(adoptEnrolment(seat(status), ended, new Set()), { action: "same", id: "s1" });
+  }
+});
+
+test("adoptEnrolment: a second LMS row for the same seat counts as same", () => {
+  assert.deepEqual(adoptEnrolment(seat("confirmed"), ended, new Set(["s1"])), { action: "same", id: "s1" });
 });

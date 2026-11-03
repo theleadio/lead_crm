@@ -1,3 +1,4 @@
+import { CANCELLABLE_STATUSES } from "../classes/seats.ts";
 import { pickClass } from "./salesprocess-enrolments.ts";
 
 export type Cohort = { id: string; slug: string; course_id: string; start_date: string; language: "en" | "zh" };
@@ -40,8 +41,39 @@ export function classIdForCohort(
   return found ?? cohort.id;
 }
 
-// Import enrolments to cancel: active, in a class the LMS owns this run that
-// has started, and not matched to an LMS enrollment this run.
+export type ImportSeat = { id: string; person_id: string; class_id: string; status: string };
+
+// person|class → the import enrolment there; an active one wins over a refunded one.
+export function importSeatsByKey(rows: ImportSeat[]): Map<string, ImportSeat> {
+  const seats = new Map<string, ImportSeat>();
+  for (const r of rows) {
+    const key = `${r.person_id}|${r.class_id}`;
+    if (!INACTIVE.includes(r.status)) seats.set(key, r);
+    else if (r.status === "refunded" && !seats.has(key)) seats.set(key, r);
+  }
+  return seats;
+}
+
+export type Adoption =
+  | { action: "skip-refunded" }
+  | { action: "same"; id: string }
+  | { action: "update"; id: string; status: "completed"; completed_at: Date };
+
+// What an LMS enrollment does to the import seat of its person and class.
+// endedOn: the cohort end date once the class has finished, else null.
+// matched: import seats already adopted this run.
+export function adoptEnrolment(seat: ImportSeat, endedOn: Date | null, matched: ReadonlySet<string>): Adoption {
+  // A SalesProcess refund wins: the seat does not come back while Ops catches up in the LMS.
+  if (seat.status === "refunded") return { action: "skip-refunded" };
+  // Only confirmed moves, and only forward; a status staff set stays.
+  if (endedOn && seat.status === "confirmed" && !matched.has(seat.id))
+    return { action: "update", id: seat.id, status: "completed", completed_at: endedOn };
+  return { action: "same", id: seat.id };
+}
+
+// Import enrolments to cancel: still cancellable (never attended or completed),
+// in a class the LMS owns this run that has started, and not matched to an LMS
+// enrollment this run.
 export function cutOverCancels(
   importEnrols: { id: string; class_id: string; status: string }[],
   lmsMappedClassIds: Set<string>,
@@ -51,7 +83,7 @@ export function cutOverCancels(
   return importEnrols
     .filter(
       (e) =>
-        !INACTIVE.includes(e.status) &&
+        CANCELLABLE_STATUSES.includes(e.status) &&
         lmsMappedClassIds.has(e.class_id) &&
         startedClassIds.has(e.class_id) &&
         !matchedIds.has(e.id),
