@@ -101,3 +101,39 @@ test("a status the screen doesn't know shows as plain text", () => {
     variant: "secondary",
   });
 });
+
+test("level mix counts seat-holders only, a person in every group they fit", async () => {
+  const { levelMix } = await import("../lib/classes/types.ts");
+  const row = (over: Partial<import("../lib/classes/types.ts").RosterRow>) => ({
+    id: "e",
+    personId: "p",
+    personName: "n",
+    status: "confirmed",
+    payerType: "self",
+    bookerName: null,
+    pricePaidMyr: null,
+    seatReservedUntil: null,
+    createdAt: "",
+    holdsSeat: true,
+    firstTimer: false,
+    priorMastery: false,
+    priorCertification: false,
+    leadersClub: false,
+    ...over,
+  });
+  const rows = [
+    row({ firstTimer: true }),
+    row({ priorMastery: true, priorCertification: true, leadersClub: true }),
+    row({}), // workshop alum: no group, still a seat
+    row({ holdsSeat: false, firstTimer: true }), // cancelled: not in the room
+  ];
+  assert.deepEqual(levelMix(rows), {
+    seats: 3,
+    firstTimers: 1,
+    mastery: 1,
+    certification: 1,
+    leadersClub: 1,
+  });
+  // LMS unreachable: LC is unknown, not 0.
+  assert.equal(levelMix([row({ leadersClub: null })]).leadersClub, null);
+});

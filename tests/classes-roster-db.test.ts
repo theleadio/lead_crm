@@ -188,3 +188,55 @@ it("an unknown or malformed class id is an empty roster, not an error", async ()
     [],
   );
 });
+
+it("marks what each person finished before this class started", async () => {
+  const viewer = await newUser();
+  const track = async (t: string, startOffset: number) => {
+    const [co] = await db()`
+      INSERT INTO course (code, name_en, track, duration_days)
+      VALUES (${`T-${crypto.randomUUID()}`}, 'Test course', ${t}, 1)
+      RETURNING id`;
+    const [k] = await db()`
+      INSERT INTO class (course_id, code, start_date, end_date, language, mode,
+                         venue_name, venue_address, city, capacity, status)
+      VALUES (${co.id}, ${`C-${crypto.randomUUID()}`},
+              current_date + ${startOffset}::int, current_date + ${startOffset}::int,
+              'en', 'in_person', 'LEAD', '1 Jalan Test', 'Kuala Lumpur', 10, 'open')
+      RETURNING id`;
+    return k.id as string;
+  };
+  const classId = await newClass(); // starts in 7 days
+  const alum = await newPerson("Alum");
+  const workshopOnly = await newPerson("Workshop only");
+  const seat = (p: string, k: string, s: string) => db()`
+    INSERT INTO enrolment (person_id, class_id, status, completed_at)
+    VALUES (${p}, ${k}, ${s}, ${s === "completed" ? new Date() : null})`;
+  await seat(alum, await track("mastery", -30), "completed");
+  await seat(alum, await track("certification", -10), "attended");
+  await seat(alum, await track("certification", 30), "completed"); // later: ignored
+  await seat(workshopOnly, await track("workshop", -5), "completed");
+  await seat(alum, classId, "confirmed");
+  await seat(workshopOnly, classId, "confirmed");
+  await enrol(classId, "confirmed", { name: "New face" });
+  const cancelledMastery = await newPerson("No-show Mastery");
+  await seat(cancelledMastery, await track("mastery", -3), "cancelled");
+  await seat(cancelledMastery, classId, "confirmed");
+
+  const by = Object.fromEntries(
+    (await listRoster(classId, viewer)).map((r) => [r.personName, r]),
+  );
+  assert.deepEqual(
+    [
+      by["Alum"].firstTimer,
+      by["Alum"].priorMastery,
+      by["Alum"].priorCertification,
+    ],
+    [false, true, true],
+  );
+  assert.equal(by["Workshop only"].firstTimer, false);
+  assert.equal(by["Workshop only"].priorMastery, false);
+  assert.equal(by["New face"].firstTimer, true);
+  // A cancelled seat is not attendance.
+  assert.equal(by["No-show Mastery"].firstTimer, true);
+  assert.equal(by["No-show Mastery"].priorMastery, false);
+});

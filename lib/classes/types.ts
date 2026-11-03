@@ -101,7 +101,40 @@ export type RosterRow = {
   // §12.1, decided by the one seat predicate rather than by reading `status`
   // again on screen (design 3).
   holdsSeat: boolean;
+  // Level mix: what this person finished before this class started. A
+  // workshop counts, so a workshop alum is not a first-timer.
+  firstTimer: boolean;
+  priorMastery: boolean;
+  priorCertification: boolean;
+  // LEADER Club, read from the LMS; null when the LMS could not be reached.
+  leadersClub: boolean | null;
 };
+
+export type LevelMix = {
+  seats: number;
+  firstTimers: number;
+  mastery: number;
+  certification: number;
+  // null when the LMS could not be reached, so 0 is never shown as an answer.
+  leadersClub: number | null;
+};
+
+// Counts the seat-holders only: who will be in the room. One person can fall
+// in several groups (Mastery and Certification alum, and LC), so the groups
+// do not add up to `seats`; only first-timer excludes the others.
+export function levelMix(rows: RosterRow[]): LevelMix {
+  const seated = rows.filter((r) => r.holdsSeat);
+  const count = (f: (r: RosterRow) => boolean) => seated.filter(f).length;
+  return {
+    seats: seated.length,
+    firstTimers: count((r) => r.firstTimer),
+    mastery: count((r) => r.priorMastery),
+    certification: count((r) => r.priorCertification),
+    leadersClub: rows.some((r) => r.leadersClub === null)
+      ? null
+      : count((r) => r.leadersClub === true),
+  };
+}
 
 // One notice on the 9.10 Notices tab (§5 `class_notice`, §7.1). `sentAt` and
 // `sendError` are Shawn's worker's columns (§12.11) — read here, never written.

@@ -10,7 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { enumLabel, type RosterRow } from "@/lib/classes/types";
+import { enumLabel, levelMix, type RosterRow } from "@/lib/classes/types";
 import { formatDate, formatDateTime } from "@/lib/format/date";
 import { AddEnrolment } from "./add-enrolment";
 
@@ -42,10 +42,13 @@ export function RosterTab({
       className="space-y-4"
     >
       <div className="flex items-center justify-between gap-4">
-        <p className="text-ink-muted text-sm">
-          {rows.length} {rows.length === 1 ? "enrolment" : "enrolments"}, every
-          status included.
-        </p>
+        <div className="space-y-1">
+          <p className="text-ink-muted text-sm">
+            {rows.length} {rows.length === 1 ? "enrolment" : "enrolments"},
+            every status included.
+          </p>
+          <LevelMixLine rows={rows} />
+        </div>
         <span className="flex flex-wrap gap-2">
           {canWriteEnrolment && <AddEnrolment classId={classId} />}
           {canExport && (
@@ -70,6 +73,7 @@ export function RosterTab({
               <TableHead>Enrolment</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Seat</TableHead>
+              <TableHead>Level</TableHead>
               <TableHead>Payer</TableHead>
               <TableHead>Booked by</TableHead>
               <TableHead>Price paid</TableHead>
@@ -79,7 +83,7 @@ export function RosterTab({
           </TableHeader>
           <TableBody>
             {rows.length === 0 && (
-              <EmptyRow columns={9}>
+              <EmptyRow columns={10}>
                 Nobody is enrolled in this class yet.
               </EmptyRow>
             )}
@@ -110,6 +114,23 @@ export function RosterTab({
                     {row.holdsSeat ? "Holding" : "No seat"}
                   </Badge>
                 </TableCell>
+                <TableCell>
+                  <span className="flex flex-wrap gap-1">
+                    {row.firstTimer && <Badge>First-timer</Badge>}
+                    {row.priorMastery && (
+                      <Badge variant="secondary">Mastery</Badge>
+                    )}
+                    {row.priorCertification && (
+                      <Badge variant="secondary">Certification</Badge>
+                    )}
+                    {row.leadersClub && <Badge variant="success">LC</Badge>}
+                    {!row.firstTimer &&
+                      !row.priorMastery &&
+                      !row.priorCertification && (
+                        <Badge variant="secondary">Workshop</Badge>
+                      )}
+                  </span>
+                </TableCell>
                 <TableCell className="text-ink-muted">
                   {enumLabel(row.payerType)}
                 </TableCell>
@@ -133,5 +154,25 @@ export function RosterTab({
         </Table>
       </TableCard>
     </div>
+  );
+}
+
+// The level mix before the class runs, so the trainer can pitch the pace.
+// Seat-holders only; one person can count in more than one group.
+function LevelMixLine({ rows }: { rows: RosterRow[] }) {
+  const mix = levelMix(rows);
+  if (mix.seats === 0) return null;
+  return (
+    <p className="text-ink text-sm">
+      <span className="font-semibold">
+        {mix.seats} {mix.seats === 1 ? "seat" : "seats"}:
+      </span>{" "}
+      {mix.firstTimers} first-timer{mix.firstTimers === 1 ? "" : "s"} ·{" "}
+      {mix.mastery} attended Mastery · {mix.certification} attended
+      Certification ·{" "}
+      {mix.leadersClub === null
+        ? "LC unknown (LMS unreachable)"
+        : `${mix.leadersClub} LC`}
+    </p>
   );
 }
