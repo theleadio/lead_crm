@@ -14,6 +14,11 @@ export const metadata: Metadata = {
   robots: { index: false, follow: true },
 };
 
+// Rendered per request, not at build: a prerendered page writes the
+// metadataBase origin into the build output, and Netlify's secrets scan fails
+// any build whose output holds an env var's value, APP_BASE_URL included.
+export const dynamic = "force-dynamic";
+
 export default function Page() {
   return <EnquiryThankYouPage locale="en" />;
 }
