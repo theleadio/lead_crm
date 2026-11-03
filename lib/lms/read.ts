@@ -47,6 +47,15 @@ export async function lmsHrdcEnrollmentIds(): Promise<string[]> {
   return rows.map((r) => r.id);
 }
 
+// Ids of the seats paid through LEADER Club. The LMS has no membership table,
+// so a person counts as LC when any of their seats was funded this way. The
+// value only appears on seats from 14 Oct 2026, so earlier members are missed.
+export async function lmsLeadersClubEnrollmentIds(): Promise<string[]> {
+  const rows = await lms()<{ id: string }[]>`
+    select id from public.enrollments where funding_type = 'leaders_club'`;
+  return rows.map((r) => r.id);
+}
+
 export type LmsEnrollment = {
   enrollmentId: string;
   enrolledAt: Date;
