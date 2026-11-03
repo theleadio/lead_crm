@@ -20,10 +20,10 @@ import { PanelCard } from "./panel-card";
 // carries one of those. The ratio cell is tinted by its band, so the shape of
 // the column is still readable at a glance.
 //
-// Banded on Stripe revenue, because that is the money that actually arrived
-// through the checkout. Grant money is invoiced to HRDC and never reaches
-// Stripe, so the grant share sits in the next column: a programme can read
-// poor here and still have been full.
+// Banded on revenue paid through SalesProcess (its checkout), net of refunds
+// and credited to each buyer's first campaign. Grant money is invoiced to
+// HRDC and never passes through it, so the grant share sits in the next
+// column: a programme can read poor here and still have been full.
 
 const BAND_LABEL: Record<RoasBand, string> = {
   good: `${ROAS_BANDS.good}× or more`,
@@ -42,7 +42,7 @@ const BAND_CELL: Record<RoasBand, { background: string; color: string }> = {
 function Legend() {
   return (
     <div className="text-ink-muted flex flex-wrap items-center gap-2 text-sm">
-      <span>ROAS = Stripe revenue ÷ ad spend.</span>
+      <span>ROAS = SalesProcess revenue ÷ ad spend.</span>
       {(Object.keys(BAND_LABEL) as RoasBand[]).map((band) => (
         <span
           key={band}
@@ -67,10 +67,10 @@ export function RoasPanel({ rows }: { rows: RoasRow[] }) {
       title={<>Return on ad spend</>}
       description={
         <>
-          Stripe revenue against what each programme&apos;s campaigns cost. A
-          programme that took nothing through the checkout has no ratio rather
-          than a ratio of nothing, and shows n/a. The grant share sits beside it
-          because HRDC seats are invoiced and never reach Stripe.
+          What buyers paid through SalesProcess, net of refunds, against what
+          the campaign that first found them cost. Only campaigns with both
+          spend and revenue in range are listed. The grant share sits beside it
+          because HRDC seats are invoiced and never pass through SalesProcess.
         </>
       }
     >
@@ -91,8 +91,8 @@ export function RoasPanel({ rows }: { rows: RoasRow[] }) {
                 <TableRow>
                   <TableHead>Programme</TableHead>
                   <TableHead>Ad spend</TableHead>
-                  <TableHead>Stripe orders</TableHead>
-                  <TableHead>Stripe revenue</TableHead>
+                  <TableHead>Orders</TableHead>
+                  <TableHead>Revenue</TableHead>
                   <TableHead>ROAS</TableHead>
                   <TableHead>HRDC share of signups</TableHead>
                   <TableHead>Note</TableHead>

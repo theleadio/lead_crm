@@ -16,6 +16,7 @@ import {
   type AdsTable,
   type AdsWeekRow,
   type AdsWeeks,
+  type CampaignPaid,
   type CampaignSignups,
 } from "./types.ts";
 
@@ -430,6 +431,67 @@ export function fillWeeks(
 // First touch per person, not per deal: O30 means a deal does not record the
 // touchpoint that created it, so this is the honest model available, and the
 // panel states it. A person who bought twice credits one campaign twice.
+// The `first_touch` CTE: each live person's first Meta touchpoint that
+// resolves to a campaign, one row per person. Needs `campaignMapSql` earlier
+// in the same WITH. Shared by signups and revenue, so both panels credit the
+// same campaign for the same buyer.
+function firstCampaignSql(sql: postgres.Sql) {
+  return sql`
+    first_touch AS (
+      SELECT DISTINCT ON (t.person_id)
+             t.person_id, ${campaignIdSql(sql)} AS campaign_id, t.utm_campaign
+      FROM touchpoint t
+      JOIN person p ON p.id = t.person_id
+      ${campaignJoinSql(sql)}
+      WHERE ${campaignIdSql(sql)} IS NOT NULL
+        AND ${metaTouchpointSql(sql)}
+        AND ${livePersonSql(sql)}
+      ORDER BY t.person_id, ${firstTouchSql(sql)} DESC, t.occurred_at ASC, t.id ASC
+    )`;
+}
+
+// §9.18 ROAS revenue: SalesProcess payments (migration 016, Shawn's PR #34)
+// credited to the buyer's first campaign, the same model as signups.
+//
+// Revenue is `amount_myr - refunded_myr` on live, succeeded or partially
+// refunded payments, ranged on `paid_at` in Kuala Lumpur days. A payment
+// reaches its buyer through the bare import touchpoint
+// (`external_ref = 'ghl:' || ghl_contact_id`), which follows merges.
+//
+// Not split by class size: a payment names a SalesProcess product, not a CRM
+// course, so there is no price band to filter on.
+export async function revenuePerCampaign(
+  viewer: Viewer,
+  q: AdsReportQuery,
+): Promise<CampaignPaid[]> {
+  requireReportReader(viewer);
+  const sql = db();
+
+  const rows = await sql`
+    WITH ${campaignMapSql(sql)},
+    ${firstCampaignSql(sql)},
+    paid AS (
+      SELECT DISTINCT b.person_id, sp.id, sp.amount_myr - sp.refunded_myr AS net
+      FROM salesprocess_payment sp
+      JOIN touchpoint b ON b.external_ref = 'ghl:' || sp.ghl_contact_id
+      WHERE sp.live_mode
+        AND sp.status IN ('succeeded', 'partially_refunded')
+        AND sp.currency = 'MYR'
+        AND sp.paid_at >= (${q.from}::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
+        AND sp.paid_at < ((${q.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
+    )
+    SELECT f.campaign_id, sum(p.net)::text AS revenue, count(*)::int AS orders
+    FROM paid p
+    JOIN first_touch f ON f.person_id = p.person_id
+    GROUP BY f.campaign_id`;
+
+  return rows.map((r) => ({
+    campaignId: r.campaign_id,
+    revenue: r.revenue,
+    orders: r.orders,
+  }));
+}
+
 export async function signupsPerCampaign(
   viewer: Viewer,
   q: AdsReportQuery,
@@ -455,17 +517,7 @@ export async function signupsPerCampaign(
 
   const rows = await sql`
     WITH ${campaignMapSql(sql)},
-    first_touch AS (
-      SELECT DISTINCT ON (t.person_id)
-             t.person_id, ${campaignIdSql(sql)} AS campaign_id, t.utm_campaign
-      FROM touchpoint t
-      JOIN person p ON p.id = t.person_id
-      ${campaignJoinSql(sql)}
-      WHERE ${campaignIdSql(sql)} IS NOT NULL
-        AND ${metaTouchpointSql(sql)}
-        AND ${livePersonSql(sql)}
-      ORDER BY t.person_id, ${firstTouchSql(sql)} DESC, t.occurred_at ASC, t.id ASC
-    )
+    ${firstCampaignSql(sql)}
     SELECT f.campaign_id AS campaign_id,
            ${campaignNameSql(sql, "f")} AS campaign,
            count(*)::int AS signups,

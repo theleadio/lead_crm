@@ -78,6 +78,13 @@ export type AdsWeeks = {
 // touch per person (`touchpoint.is_first_touch`): a buyer with two purchases
 // credits the campaign that first found them. O30 is what stops this being
 // per deal, and the panel says which model it used.
+// What a campaign's first-touch buyers paid through SalesProcess, in range.
+export type CampaignPaid = {
+  campaignId: string;
+  revenue: string;
+  orders: number;
+};
+
 export type CampaignSignups = {
   // Meta's own campaign id, which both the ad rows and the attributed lead
   // carry. The name is for the screen only — it varies in Meta's own data.

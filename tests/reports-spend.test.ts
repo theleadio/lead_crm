@@ -90,6 +90,13 @@ test("roasBothWays: grant money shows beside card money, never instead of it", (
   assert.ok(both.total! > both.stripe!, "the total can only be the larger");
 });
 
+// SalesProcess carries no grant money, so HRDC revenue is unknown, not zero.
+test("roasBothWays: unknown grant money gives no total", () => {
+  const both = roasBothWays({ stripe: "31104.00", hrdc: null }, "11415.00");
+  assert.equal(both.stripe?.toFixed(1), "2.7");
+  assert.equal(both.total, null);
+});
+
 test("ctr: clicks over impressions, and no impressions is null", () => {
   assert.equal(ctr(50, 1000), 0.05);
   assert.equal(ctr(0, 1000), 0);

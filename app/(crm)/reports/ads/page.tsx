@@ -6,6 +6,7 @@ import {
   campaignRows,
   earliestMetaTouchpoint,
   leadsPerWeek,
+  revenuePerCampaign,
   signupsPerCampaign,
   sourceRows,
 } from "@/lib/reports/ads";
@@ -110,6 +111,7 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
     campaigns,
     sources,
     weekly,
+    paid,
   ] = await Promise.all([
     panel("earliest touchpoint", () => earliestMetaTouchpoint(user)),
     panel("who pays", () => fundingSplit(user, query)),
@@ -125,6 +127,7 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
     panel("leads by campaign", () => campaignRows(user, query)),
     panel("leads by source", () => sourceRows(user, query)),
     panel("leads per week", () => leadsPerWeek(user, query)),
+    panel("revenue per campaign", () => revenuePerCampaign(user, query)),
   ]);
 
   // The cost side of the report, from `meta_ad_insight` (migration 014). The
@@ -149,11 +152,26 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
             displayFor.set(s.campaignId, s.campaign ?? s.campaignId);
       const named = (key: string) => displayFor.get(key) ?? key;
 
-      // Revenue per campaign stays empty: `deal.source_touchpoint_id` exists
-      // (migration 009) but only public intake sets it, so most deals carry
-      // no campaign and a ratio built on the ones that do would read low by
-      // an unknown amount. The panel is wired, not fed.
-      const campaignRevenue = new Map<string, CampaignRevenue>();
+      // Revenue is SalesProcess payments credited to each buyer's first
+      // campaign. Grant money is not in SalesProcess, so `hrdc` is unknown
+      // (null), not zero; the grant share of signups sits beside it instead.
+      const hrdcShare = new Map(
+        (signups.ok ? signups.data : []).map((s) => [
+          s.campaignId,
+          { hrdc: s.hrdcSignups, signups: s.signups },
+        ]),
+      );
+      const campaignRevenue = new Map<string, CampaignRevenue>(
+        (paid.ok ? paid.data : []).map((p) => [
+          p.campaignId,
+          {
+            stripe: p.revenue,
+            hrdc: null,
+            orders: p.orders,
+            hrdcShare: hrdcShare.get(p.campaignId),
+          },
+        ]),
+      );
 
       return {
         campaignSpend,
@@ -252,13 +270,10 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
         <PanelError what="course price against HRDC share" />
       )}
 
-      {cost && cost.returns.length > 0 ? (
+      {cost && paid.ok ? (
         <RoasPanel rows={cost.returns} />
       ) : (
-        <WaitingPanel
-          title="Return on ad spend"
-          waitingFor="revenue. Ad spend is recorded, but `payment` is empty and the LMS records no amount either, so there is no money to divide it into. Tying each payment back to a campaign is the second half (O30)"
-        />
+        <PanelError what="return on ad spend" />
       )}
 
       {cost && cost.whatsappAds.length > 0 ? (
