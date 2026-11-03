@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   adoptEnrolment,
   classIdForCohort,
+  cohortsOnCancelledClass,
   cutOverCancels,
   importSeatsByKey,
   type Cohort,
@@ -23,6 +24,7 @@ const imp = (over: Partial<ImportClass> = {}): ImportClass => ({
   course_id: "c1",
   start_date: "2026-11-28",
   language: "en",
+  status: "open",
   ...over,
 });
 const pick = (k: Cohort, crm: string[], classes: ImportClass[], cohorts = [k]) => {
@@ -78,6 +80,26 @@ test("classIdForCohort: two cohorts of one course, date and language adopt nothi
   const r = pick(a, [], [imp()], [a, b]);
   assert.equal(r.id, "k-a");
   assert.equal(r.warnings.length, 1);
+});
+
+test("classIdForCohort: a cancelled import class still maps, by date and by code", () => {
+  assert.equal(pick(cohort(), [], [imp({ status: "cancelled" })]).id, "i-en");
+  const adopted = imp({ code: "lms-slug", start_date: "2026-11-21", status: "cancelled" });
+  assert.equal(pick(cohort(), [], [adopted]).id, "i-en");
+});
+
+test("cohortsOnCancelledClass: only cohorts mapped to a cancelled import class", () => {
+  const gone = imp({ id: "i-gone", code: "gone", status: "cancelled" });
+  const live = imp({ id: "i-live", code: "live" });
+  const classOf = new Map([
+    ["k-gone", "i-gone"],
+    ["k-live", "i-live"],
+    ["k-own", "k-own"],
+  ]);
+  const r = cohortsOnCancelledClass(classOf, [gone, live]);
+  assert.deepEqual([...r.keys()], ["k-gone"]);
+  assert.equal(r.get("k-gone")?.code, "gone");
+  assert.equal(cohortsOnCancelledClass(classOf, []).size, 0);
 });
 
 test("cutOverCancels", () => {

@@ -2,7 +2,14 @@ import { CANCELLABLE_STATUSES } from "../classes/seats.ts";
 import { pickClass } from "./salesprocess-enrolments.ts";
 
 export type Cohort = { id: string; slug: string; course_id: string; start_date: string; language: "en" | "zh" };
-export type ImportClass = { id: string; code: string; course_id: string; start_date: string; language: "en" | "zh" };
+export type ImportClass = {
+  id: string;
+  code: string;
+  course_id: string;
+  start_date: string;
+  language: "en" | "zh";
+  status: string;
+};
 
 const INACTIVE = ["cancelled", "refunded", "transferred"];
 
@@ -39,6 +46,18 @@ export function classIdForCohort(
     return cohort.id;
   }
   return found ?? cohort.id;
+}
+
+// Cohorts mapped to an import class staff cancelled: the sync leaves the class
+// and its seats alone, and still maps them so no clashing class is inserted.
+export function cohortsOnCancelledClass(
+  classOf: Map<string, string>,
+  importClasses: ImportClass[],
+): Map<string, ImportClass> {
+  const cancelled = new Map(importClasses.filter((c) => c.status === "cancelled").map((c) => [c.id, c]));
+  return new Map(
+    [...classOf].filter(([, id]) => cancelled.has(id)).map(([k, id]) => [k, cancelled.get(id)!]),
+  );
 }
 
 export type ImportSeat = { id: string; person_id: string; class_id: string; status: string };

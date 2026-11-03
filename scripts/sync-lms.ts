@@ -20,6 +20,7 @@ import { CANCELLABLE_STATUSES } from "../lib/classes/seats.ts";
 import {
   adoptEnrolment,
   classIdForCohort,
+  cohortsOnCancelledClass,
   cutOverCancels,
   importSeatsByKey,
   type Cohort,
@@ -173,8 +174,8 @@ async function once() {
       tx`SELECT id, code, start_date::text, end_date::text, language, (status = 'completed') FROM class`,
     );
     const importClasses = await tx<ImportClass[]>`
-      SELECT id, code, course_id, start_date::text AS start_date, language FROM class
-      WHERE notes LIKE ${IMPORT_CLASS_NOTE + "%"} AND status <> 'cancelled'`;
+      SELECT id, code, course_id, start_date::text AS start_date, language, status FROM class
+      WHERE notes LIKE ${IMPORT_CLASS_NOTE + "%"}`;
     const cohorts: Cohort[] = src.cohorts.map((k) => ({
       id: k.id,
       slug: k.slug,
@@ -190,9 +191,13 @@ async function once() {
       ]),
     );
     const lmsClassIds = new Set(classOf.values());
+    const onCancelled = cohortsOnCancelledClass(classOf, importClasses);
+    const ownedClassIds = new Set(
+      [...classOf].filter(([k]) => !onCancelled.has(k)).map(([, id]) => id),
+    );
     // A wrongly parsed SalesProcess date leaves an import class beside the real cohort.
     for (const c of importClasses) {
-      if (lmsClassIds.has(c.id)) continue;
+      if (lmsClassIds.has(c.id) || c.status === "cancelled") continue;
       for (const k of cohorts) {
         const gap =
           Math.abs(Date.parse(k.start_date) - Date.parse(c.start_date)) /
@@ -205,6 +210,11 @@ async function once() {
     }
     const classes: Record<string, unknown>[] = [];
     for (const [i, k] of src.cohorts.entries()) {
+      const cancelled = onCancelled.get(k.id);
+      if (cancelled) {
+        warnings.push(`class cancelled in CRM: ${cancelled.code}`);
+        continue;
+      }
       const completed = day(k.end_date) < today;
       if (completed) done.add(k.id);
       const online = /online/i.test(k.slug);
@@ -323,6 +333,7 @@ async function once() {
     const adopt: { id: string; status: string; completed_at: Date }[] = [];
     const enrols: Record<string, unknown>[] = [];
     for (const e of src.enrols) {
+      if (onCancelled.has(e.cohort_id)) continue;
       const personId = personOf.get(e.participant_id);
       if (!personId) {
         warnings.push(
@@ -380,10 +391,10 @@ async function once() {
 
     // From the class start date (Kuala Lumpur) the LMS owns the seats.
     const started = ids(
-      await tx`SELECT id FROM class WHERE id = ANY(${[...lmsClassIds]})
+      await tx`SELECT id FROM class WHERE id = ANY(${[...ownedClassIds]})
         AND start_date <= (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date`,
     );
-    const cut = cutOverCancels(importEnrols, lmsClassIds, matched, started);
+    const cut = cutOverCancels(importEnrols, ownedClassIds, matched, started);
     if (cut.length)
       await tx`UPDATE enrolment SET status = 'cancelled', cancelled_reason = 'Not in the LMS at class start' WHERE id = ANY(${cut}) AND status = ANY(${CANCELLABLE_STATUSES})`;
     for (const _ of cut) bump("enrolment: cut over", "update");
