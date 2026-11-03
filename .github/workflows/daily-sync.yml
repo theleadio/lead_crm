@@ -66,3 +66,4 @@ jobs:
       # Attribution matches only people the import has already created.
       - run: node scripts/import-ghl-contacts.ts --from-api --apply
       - run: node scripts/import-ghl-attribution.ts --apply --accept-approx-dates
+      - run: node scripts/sync-salesprocess-payments.ts --apply
