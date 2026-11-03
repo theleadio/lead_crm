@@ -48,3 +48,8 @@ test("product map", () => {
   assert.equal(Object.keys(PRODUCT_COURSE).length, 15);
   assert.ok(ONLINE_COURSES.has("lms-ai-agents-online-workshop"));
 });
+
+test("ids are pinned: a namespace or format change re-keys every imported row", () => {
+  assert.equal(enrolmentIdFor("sp-order-0001"), "6e5d3c3c-cc70-5003-944f-a0e040916600");
+  assert.equal(classIdFor("lms-claude-ai-mastery", "2026-11-28", "zh"), "59b3f673-a09a-504b-8184-121abe6087d8");
+});
