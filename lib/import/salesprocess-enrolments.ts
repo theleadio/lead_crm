@@ -13,6 +13,9 @@ export const PRODUCT_COURSE: Record<string, string> = {
   "[LIVE] Claude AI Mastery": "lms-claude-ai-mastery",
   "AI Vibe Coding 实战课 ": "lms-ai-vibe-coding",
   "AI Vibe Coding 实战课 - JB": "lms-ai-vibe-coding",
+  ".05 LEAD - AI Operating System Certification": "lms-ai-agents-foundation",
+  ".01 LEAD - (Penang) AI Agentic Automation Certification Landing Page": "lms-ai-agentic-automation-certification",
+  ".04 LEAD - EN - AI for Data Science Landing Page": "lms-ai-for-data-science-certification",
 };
 
 export const ONLINE_COURSES: ReadonlySet<string> = new Set(["lms-ai-agents-online-workshop"]);

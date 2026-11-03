@@ -9,7 +9,7 @@
 // product names and class codes only, never a buyer or an order id.
 import postgres from "postgres";
 import { fetchOrder } from "../lib/import/salesprocess-api.ts";
-import { parseClassSlot } from "../lib/import/class-slot.ts";
+import { parseClassSlot, type ClassSlot } from "../lib/import/class-slot.ts";
 import {
   IMPORT_CLASS_NOTE,
   ONLINE_COURSES,
@@ -57,47 +57,122 @@ const sql = postgres(process.env.DATABASE_URL, {
 
 type Cls = { id: string; code: string; language: "en" | "zh" };
 
+type Plan = {
+  orderId: string;
+  state: "paid" | "refunded";
+  priceMyr: number;
+  courseCode: string;
+  label: string;
+  contact: string;
+  paidAt: Date;
+  slot: ClassSlot;
+};
+let writeMs = 0;
+
 try {
+  // Pass 1: reads and API fetches only, no transaction. The seat trigger locks
+  // the class row until commit, so nothing may be written while we wait on HTTP.
+  const [{ today }] = await sql`
+    SELECT (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date::text AS today`;
+  const orders = new Map<
+    string,
+    { txns: Txn[]; product: string | null; contact: string }
+  >();
+  for (const r of await sql`
+    SELECT order_id, ghl_contact_id, status, amount_myr, refunded_myr, product, paid_at
+    FROM salesprocess_payment
+    WHERE live_mode AND order_id IS NOT NULL
+      AND paid_at > now() - interval '120 days'`) {
+    const o = orders.get(r.order_id) ?? {
+      txns: [] as Txn[],
+      product: null as string | null,
+      contact: r.ghl_contact_id as string,
+    };
+    o.product ??= r.product;
+    o.txns.push({
+      status: r.status,
+      paid_at: r.paid_at,
+      amount_myr: Number(r.amount_myr),
+      refunded_myr: Number(r.refunded_myr),
+    });
+    orders.set(r.order_id, o);
+  }
+  bump("orders (live, 120 days)", orders.size);
+
+  const seen = new Map<string, string>(
+    (
+      await sql`SELECT id, status FROM enrolment WHERE id = ANY(${[...orders.keys()].map(enrolmentIdFor)})`
+    ).map((r) => [r.id as string, r.status as string]),
+  );
+  const refunds: string[] = []; // enrolment ids to refund, no fetch needed
+  const plans: Plan[] = [];
+
+  for (const [orderId, o] of orders) {
+    const { state, priceMyr } = orderState(o.txns);
+    if (state === "ignore") {
+      bump("skip: not paid or refunded");
+      continue;
+    }
+    const courseCode = o.product ? PRODUCT_COURSE[o.product] : undefined;
+    if (!courseCode) {
+      bump("skip: unknown product");
+      note("unknown product", o.product ?? "(none)");
+      continue;
+    }
+    const label = o.product!;
+    const mine = seen.get(enrolmentIdFor(orderId));
+    if (state === "paid" ? mine : mine && mine !== "confirmed") {
+      bump("skip: already settled");
+      continue;
+    }
+    if (state === "refunded" && mine === "confirmed") {
+      refunds.push(enrolmentIdFor(orderId));
+      continue;
+    }
+
+    let order: Order;
+    try {
+      order = await fetchOrder<Order>(orderId);
+      fetched++;
+    } catch {
+      bump("skip: order fetch failed"); // message may carry order data
+      note("order fetch failed", label);
+      continue;
+    }
+    const item = order.items?.[0];
+    const paidAt = new Date(
+      Math.min(...o.txns.map((t) => t.paid_at.getTime())),
+    );
+    const slot = parseClassSlot(
+      [item?.price?.name, item?.name, item?.product?.description],
+      paidAt,
+    );
+    if (!slot) {
+      bump("skip: no date");
+      note("no date", label);
+      continue;
+    }
+    if (slot.end < today) {
+      bump("skip: class ended");
+      continue;
+    }
+    plans.push({ orderId, state, priceMyr, courseCode, label, contact: o.contact, paidAt, slot });
+  }
+  stats["orders fetched from API"] = fetched;
+
+  // Pass 2: one short transaction. Re-reads classes and enrolments, so a class
+  // or seat made since pass 1 (LMS sync, checkout) is seen.
+  const wStart = Date.now();
   await sql.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(${SYNC_LOCK_KEY})`;
 
-    const [{ today }] = await tx`
-      SELECT (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date::text AS today`;
-
-    // Orders: one per order_id, from its live transactions in the window.
-    const orders = new Map<
-      string,
-      { txns: Txn[]; product: string | null; contact: string }
-    >();
-    for (const r of await tx`
-      SELECT order_id, ghl_contact_id, status, amount_myr, refunded_myr, product, paid_at
-      FROM salesprocess_payment
-      WHERE live_mode AND order_id IS NOT NULL
-        AND paid_at > now() - interval '120 days'`) {
-      const o = orders.get(r.order_id) ?? {
-        txns: [] as Txn[],
-        product: null as string | null,
-        contact: r.ghl_contact_id as string,
-      };
-      o.product ??= r.product;
-      o.txns.push({
-        status: r.status,
-        paid_at: r.paid_at,
-        amount_myr: Number(r.amount_myr),
-        refunded_myr: Number(r.refunded_myr),
-      });
-      orders.set(r.order_id, o);
-    }
-    bump("orders (live, 120 days)", orders.size);
-
-    // Bulk reads: the CRM is remote, so one query per table, not per order.
     const courseIds = new Map<string, string>(
       (
         await tx`SELECT id, code FROM course WHERE code = ANY(${[...new Set(Object.values(PRODUCT_COURSE))]})`
       ).map((r) => [r.code as string, r.id as string]),
     );
-    const classesByKey = new Map<string, Cls[]>(); // course code|start
     const courseCodeById = new Map([...courseIds].map(([c, id]) => [id, c]));
+    const classesByKey = new Map<string, Cls[]>(); // course code|start
     const classIds: string[] = [];
     for (const r of await tx`
       SELECT id, code, course_id, start_date::text AS start, language FROM class
@@ -109,13 +184,13 @@ try {
       ]);
       classIds.push(r.id);
     }
-    const enrolIds = [...orders.keys()].map(enrolmentIdFor);
-    const enrolById = new Map<string, { status: string }>();
+    const enrolById = new Set<string>();
     const active = new Map<string, string>(); // person|class → enrolment id
     for (const r of await tx`
       SELECT id, person_id, class_id, status FROM enrolment
-      WHERE class_id = ANY(${classIds}) OR id = ANY(${enrolIds})`) {
-      enrolById.set(r.id, { status: r.status });
+      WHERE class_id = ANY(${classIds})
+         OR id = ANY(${plans.map((p) => enrolmentIdFor(p.orderId))})`) {
+      enrolById.add(r.id);
       if (!["cancelled", "refunded", "transferred"].includes(r.status))
         active.set(`${r.person_id}|${r.class_id}`, r.id);
     }
@@ -123,57 +198,22 @@ try {
       (
         await tx`
           SELECT external_ref, person_id FROM touchpoint
-          WHERE external_ref = ANY(${[...orders.values()].map((o) => `ghl:${o.contact}`)})`
+          WHERE external_ref = ANY(${plans.map((p) => `ghl:${p.contact}`)})`
       ).map((r) => [r.external_ref as string, r.person_id as string]),
     );
 
-    for (const [orderId, o] of orders) {
-      const { state, priceMyr } = orderState(o.txns);
-      if (state === "ignore") {
-        bump("skip: not paid or refunded");
-        continue;
-      }
-      const courseCode = o.product ? PRODUCT_COURSE[o.product] : undefined;
-      if (!courseCode) {
-        bump("skip: unknown product");
-        note("unknown product", o.product ?? "(none)");
-        continue;
-      }
-      const label = o.product!;
+    for (const id of refunds) {
+      const res = await tx`
+        UPDATE enrolment SET status = 'refunded' WHERE id = ${id} AND status = 'confirmed'`;
+      bump(res.count ? "refunded" : "refund: nothing to change");
+    }
+
+    for (const { orderId, state, priceMyr, courseCode, label, contact, paidAt, slot } of plans) {
       const enrolId = enrolmentIdFor(orderId);
-      const mine = enrolById.get(enrolId);
-      if (state === "paid" ? mine : mine && mine.status !== "confirmed") {
+      if (enrolById.has(enrolId)) {
         bump("skip: already settled");
         continue;
       }
-
-      let order: Order;
-      try {
-        order = await fetchOrder<Order>(orderId);
-        fetched++;
-      } catch {
-        bump("skip: order fetch failed"); // message may carry order data
-        note("order fetch failed", label);
-        continue;
-      }
-      const item = order.items?.[0];
-      const paidAt = new Date(
-        Math.min(...o.txns.map((t) => t.paid_at.getTime())),
-      );
-      const slot = parseClassSlot(
-        [item?.price?.name, item?.name, item?.product?.description],
-        paidAt,
-      );
-      if (!slot) {
-        bump("skip: no date");
-        note("no date", label);
-        continue;
-      }
-      if (slot.end < today) {
-        bump("skip: class ended");
-        continue;
-      }
-
       const key = `${courseCode}|${slot.start}`;
       const found = pickClass(classesByKey.get(key) ?? [], slot.language);
       if (found === "ambiguous") {
@@ -186,7 +226,7 @@ try {
       let classId = found;
       let classCode =
         classesByKey.get(key)?.find((c) => c.id === found)?.code ?? "";
-      // A paid order never creates a class from a refund.
+      // A refund never creates a class.
       if (!classId && state === "paid") {
         classId = classIdFor(courseCode, slot.start, lang);
         classCode = classCodeFor(courseCode, slot.start, lang);
@@ -219,7 +259,7 @@ try {
         continue;
       }
 
-      const p = person.get(`ghl:${o.contact}`);
+      const p = person.get(`ghl:${contact}`);
       if (!p) {
         bump("skip: buyer not in CRM");
         continue;
@@ -254,23 +294,15 @@ try {
           throw e;
         }
         active.set(`${p}|${classId}`, enrolId);
-        enrolById.set(enrolId, { status: "confirmed" });
         bump(`insert enrolment: ${classCode}`);
-      } else {
-        const res = await tx`
-          UPDATE enrolment SET status = 'refunded'
-          WHERE id = ${enrolId} AND status = 'confirmed'`;
-        if (res.count) {
-          bump("refunded");
-          active.delete(`${p}|${classId}`);
-        } else if (holder && holder !== enrolId) {
-          bump("refund held by another row");
-          note("refund held by another row", `${label} ${classCode}`);
-        } else bump("refund: nothing to change");
-      }
+      } else if (holder) {
+        // No import enrolment exists (else it was refunded above): another row holds the seat.
+        bump("refund held by another row");
+        note("refund held by another row", `${label} ${classCode}`);
+      } else bump("refund: nothing to change");
     }
 
-    stats["orders fetched from API"] = fetched;
+    writeMs = Date.now() - wStart;
     if (!apply) throw new Error("dry-run");
   });
 } catch (e) {
@@ -288,5 +320,5 @@ for (const [name, m] of Object.entries(lists)) {
   console.table(Object.fromEntries(m));
 }
 console.log(
-  `orders fetched: ${fetched}, wall time: ${((Date.now() - started) / 1000).toFixed(1)}s`,
+  `orders fetched: ${fetched}, wall time: ${((Date.now() - started) / 1000).toFixed(1)}s, write phase: ${(writeMs / 1000).toFixed(2)}s`,
 );
