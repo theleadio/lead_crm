@@ -83,7 +83,9 @@ function ymd(d: Date): string {
 // ponytail: reads the whole window every run and upserts. Fine for one ad
 // account at a few hundred ads; add since-last-sync paging if it ever isn't.
 export async function fetchInsights(opts: {
-  days: number;
+  days?: number;
+  // YYYY-MM-DD; reads from this day to today instead of the last `days`.
+  since?: string;
   now?: Date;
   fetchImpl?: typeof fetch;
 }): Promise<InsightRow[]> {
@@ -93,20 +95,47 @@ export async function fetchInsights(opts: {
     throw new Error("META_ACCESS_TOKEN and META_AD_ACCOUNT_ID must be set");
   const version = process.env.META_GRAPH_VERSION || "v23.0";
   const until = opts.now ?? new Date();
-  const since = new Date(until.getTime() - (opts.days - 1) * 86_400_000);
+  const since = opts.since
+    ? new Date(`${opts.since}T00:00:00Z`)
+    : new Date(until.getTime() - ((opts.days ?? 7) - 1) * 86_400_000);
   const act = account.startsWith("act_") ? account : `act_${account}`;
-
-  const q = new URLSearchParams({
-    level: "ad",
-    time_increment: "1",
-    time_range: JSON.stringify({ since: ymd(since), until: ymd(until) }),
-    fields: FIELDS,
-    limit: "500",
-  });
-  let url: string | undefined =
-    `https://graph.facebook.com/${version}/${act}/insights?${q}`;
   const doFetch = opts.fetchImpl ?? fetch;
   const rows: InsightRow[] = [];
+  // Daily ad-level rows for a long range are slow and time out in one call, so
+  // read it in windows of at most 31 days.
+  for (
+    let from = since.getTime();
+    from <= until.getTime();
+    from += 31 * 86_400_000
+  ) {
+    const to = Math.min(from + 30 * 86_400_000, until.getTime());
+    const q = new URLSearchParams({
+      level: "ad",
+      time_increment: "1",
+      time_range: JSON.stringify({
+        since: ymd(new Date(from)),
+        until: ymd(new Date(to)),
+      }),
+      fields: FIELDS,
+      limit: "500",
+    });
+    await readInsightWindow(
+      `https://graph.facebook.com/${version}/${act}/insights?${q}`,
+      token,
+      doFetch,
+      rows,
+    );
+  }
+  return rows;
+}
+
+async function readInsightWindow(
+  first: string,
+  token: string,
+  doFetch: typeof fetch,
+  rows: InsightRow[],
+): Promise<void> {
+  let url: string | undefined = first;
   while (url) {
     // Token in a header, not the URL, so it never lands in a log line.
     const res = await doFetch(url, {
@@ -124,7 +153,6 @@ export async function fetchInsights(opts: {
     for (const r of body.data ?? []) rows.push(mapInsight(r));
     url = body.paging?.next;
   }
-  return rows;
 }
 
 // url_tags is not an insights field: it sits on the ad's creative, so it is a
@@ -186,20 +214,35 @@ export async function fetchUrlTags(opts: {
   return tags;
 }
 
+// Saved 500 rows per statement; one row per statement took about a minute per
+// month of data. A statement may not touch the same (ad_id, day) twice, so
+// repeats inside the batch keep the last one.
 export async function upsertInsights(rows: InsightRow[]): Promise<number> {
   const sql = db();
-  for (const r of rows) {
+  const byKey = new Map(rows.map((r) => [`${r.adId}|${r.day}`, r]));
+  const all = [...byKey.values()].map((r) => ({
+    ad_id: r.adId,
+    day: r.day,
+    account_id: r.accountId,
+    campaign_id: r.campaignId,
+    campaign_name: r.campaignName,
+    adset_id: r.adsetId,
+    adset_name: r.adsetName,
+    ad_name: r.adName,
+    currency: r.currency,
+    spend: r.spend,
+    impressions: r.impressions,
+    clicks: r.clicks,
+    leads: r.leads,
+    objective: r.objective,
+    messages: r.messages,
+    checkouts: r.checkouts,
+    inline_link_clicks: r.inlineLinkClicks,
+    url_tags: r.urlTags,
+  }));
+  for (let i = 0; i < all.length; i += 500) {
     await sql`
-      INSERT INTO meta_ad_insight
-        (ad_id, day, account_id, campaign_id, campaign_name, adset_id,
-         adset_name, ad_name, currency, spend, impressions, clicks, leads,
-         objective, messages, checkouts, inline_link_clicks, url_tags)
-      VALUES
-        (${r.adId}, ${r.day}, ${r.accountId}, ${r.campaignId}, ${r.campaignName},
-         ${r.adsetId}, ${r.adsetName}, ${r.adName}, ${r.currency}, ${r.spend},
-         ${r.impressions}, ${r.clicks}, ${r.leads},
-         ${r.objective}, ${r.messages}, ${r.checkouts}, ${r.inlineLinkClicks},
-         ${r.urlTags})
+      INSERT INTO meta_ad_insight ${sql(all.slice(i, i + 500))}
       ON CONFLICT (ad_id, day) DO UPDATE SET
         account_id = EXCLUDED.account_id, campaign_id = EXCLUDED.campaign_id,
         campaign_name = EXCLUDED.campaign_name, adset_id = EXCLUDED.adset_id,

@@ -302,14 +302,39 @@ test("nav: sidebar shows only areas the role can read (§9 Shell)", () => {
     "Classes",
     "Courses",
     "Tasks",
+    "Reports",
   ]);
   const partTime = nav("part_time");
-  for (const hidden of ["Deals", "Enrolments", "Settings"])
+  for (const hidden of ["Deals", "Enrolments", "Reports", "Settings"])
     assert.ok(!partTime.includes(hidden), hidden);
   // §9.7: every role reads courses, so the link is never hidden.
   for (const role of ROLES) assert.ok(nav(role).includes("Courses"), role);
-  assert.equal(nav("super_admin").length, 10);
+  assert.equal(nav("super_admin").length, 11);
   assert.ok(!nav("management").includes("Settings"));
+});
+
+// §9.18 reserved screen: the §6 matrix has no Reports row, so the link rides
+// on person read minus part_time's assigned-only kind (O62). Six roles in,
+// part_time out — the only non-trivial rule the reserved screen has.
+test("nav: Reports opens for person read that is not assigned-only", () => {
+  const withReports: Role[] = [
+    "super_admin",
+    "management",
+    "marketing",
+    "sales",
+    "support",
+    "operations",
+  ];
+  for (const role of ROLES)
+    assert.equal(
+      nav(role).includes("Reports"),
+      withReports.includes(role),
+      role,
+    );
+  // It sits after Tasks and before Settings.
+  const admin = nav("super_admin");
+  assert.equal(admin[admin.indexOf("Reports") - 1], "Tasks");
+  assert.equal(admin[admin.indexOf("Reports") + 1], "Settings");
 });
 
 // §6 export CSV row: super_admin full, operations "class lists", nobody else.

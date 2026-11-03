@@ -283,7 +283,7 @@ export function ClassesList({
                   column="code"
                   sort={sort}
                   onSort={onSort}
-                  className="w-32"
+                  className="w-48"
                 />
                 <SortableHead
                   label="Course"
@@ -384,14 +384,14 @@ function ClassRow({
 
   return (
     <TableRow>
-      <TableCell className="font-semibold">
+      <TableCell className="truncate font-semibold" title={cls.code}>
         {/* Opening a class is a read, so every role that sees the row gets the
             link — not only the two that see Edit (§9.10). */}
         <Link href={`/classes/${cls.id}`} className="text-blue-ink underline">
           {cls.code}
         </Link>
       </TableCell>
-      <TableCell className="text-ink-muted truncate">
+      <TableCell className="text-ink-muted truncate" title={cls.courseName}>
         {cls.courseName}
       </TableCell>
       <TableCell>{formatDateRange(cls.startDate, cls.endDate)}</TableCell>

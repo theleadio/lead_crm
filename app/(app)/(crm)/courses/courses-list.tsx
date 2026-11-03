@@ -184,7 +184,7 @@ export function CoursesList({
                   column="code"
                   sort={sort}
                   onSort={onSort}
-                  className="w-28"
+                  className="w-56"
                 />
                 <SortableHead
                   label="Name"
@@ -303,10 +303,16 @@ function CourseRow({
 }) {
   return (
     <TableRow className={c.isActive ? undefined : "text-ink-muted"}>
-      <TableCell className="font-medium">{c.code}</TableCell>
-      <TableCell>{c.nameEn}</TableCell>
-      <TableCell>{c.nameZh ?? "—"}</TableCell>
-      <TableCell>{c.track}</TableCell>
+      <TableCell className="truncate font-medium" title={c.code}>
+        {c.code}
+      </TableCell>
+      <TableCell className="truncate" title={c.nameEn}>
+        {c.nameEn}
+      </TableCell>
+      <TableCell className="truncate" title={c.nameZh ?? undefined}>
+        {c.nameZh ?? "—"}
+      </TableCell>
+      <TableCell className="truncate">{c.track}</TableCell>
       <TableCell>
         {c.durationDays} {c.durationDays === 1 ? "day" : "days"}
       </TableCell>

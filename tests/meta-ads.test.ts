@@ -198,3 +198,27 @@ test("fetchUrlTags throws Meta's error message in the same format", async () => 
     /^Error: Meta API 400: Invalid OAuth token \(code 190\)$/,
   );
 });
+
+test("fetchInsights reads a long --since range in windows of at most 31 days", async () => {
+  process.env.META_ACCESS_TOKEN = "tok";
+  process.env.META_AD_ACCOUNT_ID = "111";
+  const ranges: { since: string; until: string }[] = [];
+  const fetchImpl = (async (u: string) => {
+    ranges.push(JSON.parse(new URL(u).searchParams.get("time_range") ?? "{}"));
+    return new Response(JSON.stringify({ data: [] }), { status: 200 });
+  }) as typeof fetch;
+  await fetchInsights({
+    since: "2026-01-01",
+    now: new Date("2026-03-15T00:00:00Z"),
+    fetchImpl,
+  });
+  assert.equal(ranges[0].since, "2026-01-01");
+  assert.equal(ranges.at(-1)?.until, "2026-03-15");
+  assert.equal(ranges.length, 3);
+  for (let i = 1; i < ranges.length; i++) {
+    const gap =
+      (Date.parse(ranges[i].since) - Date.parse(ranges[i - 1].until)) /
+      86_400_000;
+    assert.equal(gap, 1, "windows touch with no gap and no overlap");
+  }
+});
