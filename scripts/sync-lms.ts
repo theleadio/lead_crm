@@ -7,6 +7,8 @@
 //
 // Needs DATABASE_URL (CRM) and LMS_DATABASE_URL. Idempotent: CRM course,
 // class and enrolment ids are the LMS ids, so a re-run updates in place.
+// Exception: a class or enrolment the SalesProcess import made is adopted and
+// keeps its own id; from the class start date the LMS decides who has a seat.
 // A participant whose email already exists in the CRM maps to that person,
 // which is left untouched.
 //
@@ -14,6 +16,17 @@
 // Switch to a Supabase Realtime / LISTEN trigger on the LMS if it grows.
 import postgres from "postgres";
 import { normalizePhoneE164 } from "../lib/format/phone.ts";
+import {
+  classIdForCohort,
+  cutOverCancels,
+  type Cohort,
+  type ImportClass,
+} from "../lib/import/lms-adopt.ts";
+import {
+  IMPORT_CLASS_NOTE,
+  SYNC_LOCK_KEY,
+  enrolmentIdFor,
+} from "../lib/import/salesprocess-enrolments.ts";
 
 const apply = process.argv.includes("--apply");
 const watchArg = process.argv.find((a) => a.startsWith("--watch"));
@@ -58,6 +71,7 @@ async function once() {
   const warnings: string[] = [];
 
   const run = async (tx: postgres.TransactionSql) => {
+    await tx`SELECT pg_advisory_xact_lock(${SYNC_LOCK_KEY})`;
     // One bulk read per table, then one bulk write per table: the CRM is a
     // remote DB, a query per row takes minutes.
     const ids = (r: { id: string }[]) => new Set(r.map((x) => x.id));
@@ -154,14 +168,46 @@ async function once() {
     const haveClass = await existing(
       tx`SELECT id, code, start_date::text, end_date::text, language, (status = 'completed') FROM class`,
     );
+    const importClasses = await tx<ImportClass[]>`
+      SELECT id, code, course_id, start_date::text AS start_date, language FROM class
+      WHERE notes LIKE ${IMPORT_CLASS_NOTE + "%"}`;
+    const cohorts: Cohort[] = src.cohorts.map((k) => ({
+      id: k.id,
+      slug: k.slug,
+      course_id: k.course_id,
+      start_date: day(k.start_date),
+      language: k.language === "cn" || k.language === "zh" ? "zh" : "en",
+    }));
+    const crmClassIds = new Set(haveClass.keys());
+    const classOf = new Map(
+      cohorts.map((k) => [
+        k.id,
+        classIdForCohort(k, crmClassIds, importClasses, cohorts, warnings),
+      ]),
+    );
+    const lmsClassIds = new Set(classOf.values());
+    // A wrongly parsed SalesProcess date leaves an import class beside the real cohort.
+    for (const c of importClasses) {
+      if (lmsClassIds.has(c.id)) continue;
+      for (const k of cohorts) {
+        const gap =
+          Math.abs(Date.parse(k.start_date) - Date.parse(c.start_date)) /
+          86400000;
+        if (k.course_id === c.course_id && gap >= 1 && gap <= 7)
+          warnings.push(
+            `SalesProcess class ${c.code} starts ${c.start_date}, LMS cohort ${k.slug} of the same course starts ${k.start_date}: check the date`,
+          );
+      }
+    }
     const classes: Record<string, unknown>[] = [];
-    for (const k of src.cohorts) {
+    for (const [i, k] of src.cohorts.entries()) {
       const completed = day(k.end_date) < today;
       if (completed) done.add(k.id);
       const online = /online/i.test(k.slug);
-      const lang = k.language === "cn" || k.language === "zh" ? "zh" : "en";
+      const lang = cohorts[i].language;
       const status = completed ? "completed" : "open";
-      const seen = haveClass.get(k.id);
+      const classId = classOf.get(k.id)!;
+      const seen = haveClass.get(classId);
       if (
         seen ===
         JSON.stringify([
@@ -177,7 +223,7 @@ async function once() {
       }
       bump("class", seen ? "update" : "insert");
       classes.push({
-        id: k.id,
+        id: classId,
         course_id: k.course_id,
         code: k.slug,
         start_date: day(k.start_date),
@@ -262,6 +308,24 @@ async function once() {
       ).map((r) => [`${r.person_id}|${r.class_id}`, r.id]),
     );
     const cohortEnd = new Map(src.cohorts.map((k) => [k.id, k.end_date]));
+    // Enrolments the SalesProcess import made, by person|class; an active one wins over a refunded one.
+    const importEnrols = await tx<
+      { id: string; person_id: string; class_id: string; status: string }[]
+    >`
+      SELECT id, person_id, class_id, status FROM enrolment
+      WHERE id = ANY(${(
+        await tx`SELECT DISTINCT order_id FROM salesprocess_payment WHERE order_id IS NOT NULL`
+      ).map((r) => enrolmentIdFor(r.order_id))})`;
+    const importOf = new Map<string, { id: string; status: string }>();
+    for (const r of importEnrols) {
+      const key = `${r.person_id}|${r.class_id}`;
+      if (!["cancelled", "refunded", "transferred"].includes(r.status))
+        importOf.set(key, { id: r.id, status: r.status });
+      else if (r.status === "refunded" && !importOf.has(key))
+        importOf.set(key, { id: r.id, status: r.status });
+    }
+    const matched = new Set<string>();
+    const adopt: { id: string; status: string; completed_at: Date | null }[] = [];
     const enrols: Record<string, unknown>[] = [];
     for (const e of src.enrols) {
       const personId = personOf.get(e.participant_id);
@@ -271,7 +335,32 @@ async function once() {
         );
         continue;
       }
-      const key = `${personId}|${e.cohort_id}`;
+      const classId = classOf.get(e.cohort_id) ?? e.cohort_id;
+      const key = `${personId}|${classId}`;
+      const finished = done.has(e.cohort_id);
+      const mine = haveEnrol.has(e.id) ? undefined : importOf.get(key);
+      if (mine) {
+        importOf.delete(key);
+        // A SalesProcess refund wins: the seat does not come back while Ops catches up in the LMS.
+        if (mine.status === "refunded") {
+          bump("enrolment: refunded in SalesProcess", "same");
+          continue;
+        }
+        matched.add(mine.id);
+        const status = finished ? "completed" : "confirmed";
+        // Only the two statuses the sync sets are moved; a status staff set stays.
+        if (mine.status === status || !["confirmed", "completed"].includes(mine.status)) {
+          bump("enrolment: adopted", "same");
+          continue;
+        }
+        adopt.push({
+          id: mine.id,
+          status,
+          completed_at: finished ? cohortEnd.get(e.cohort_id) : null,
+        });
+        bump("enrolment: adopted", "update");
+        continue;
+      }
       const holder = active.get(key);
       if (holder && holder !== e.id) {
         warnings.push(
@@ -285,11 +374,10 @@ async function once() {
         bump("enrolment", "same");
         continue;
       }
-      const finished = done.has(e.cohort_id);
       enrols.push({
         id: e.id,
         person_id: personId,
-        class_id: e.cohort_id,
+        class_id: classId,
         status: finished ? "completed" : "confirmed",
         payer_type: e.funding_type === "hrdc" ? "company" : "self",
         price_paid_myr: e.amount_paid_cents / 100,
@@ -299,6 +387,18 @@ async function once() {
       bump("enrolment", seen ? "update" : "insert");
     }
     await upsert("enrolment", enrols, "id", ["price_paid_myr"]);
+    for (const a of adopt)
+      await tx`UPDATE enrolment SET status = ${a.status}, completed_at = ${a.completed_at} WHERE id = ${a.id}`;
+
+    // From the class start date (Kuala Lumpur) the LMS owns the seats.
+    const started = ids(
+      await tx`SELECT id FROM class WHERE id = ANY(${[...lmsClassIds]})
+        AND start_date <= (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date`,
+    );
+    const cut = cutOverCancels(importEnrols, lmsClassIds, matched, started);
+    if (cut.length)
+      await tx`UPDATE enrolment SET status = 'cancelled', cancelled_reason = 'Not in the LMS at class start' WHERE id = ANY(${cut})`;
+    for (const _ of cut) bump("enrolment: cut over", "update");
 
     if (!apply) throw new Error("dry-run"); // roll back
   };
