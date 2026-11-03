@@ -63,13 +63,15 @@ export async function proxy(request: NextRequest) {
 // The public website (§10) and the public API (§8) need no session, so they
 // skip this proxy entirely: a marketing page should not cost a getUser() round
 // trip, nor depend on the sign-in provider being reachable. Each new public
-// page adds itself here — /register and the landing pages when 10.3 and 10.4
-// land. Hiding a path from the proxy is not a security decision: the CRM
+// page adds itself here — /register landed with 10.4, the landing pages are
+// still to come — and so does each locale of it: the whole /zh tree is public by
+// construction, and a path under it that we do not serve is a 404 either way
+// (§10.5). Hiding a path from the proxy is not a security decision: the CRM
 // screens keep their own check in app/(crm)/layout.tsx and every API route
 // authenticates itself. The enquiry form authenticates its own submission
 // with the public API key, server-side (§8.2).
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|api/public|schedule(?:/|$)|enquiry(?:/|$)).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/public|schedule(?:/|$)|enquiry(?:/|$)|register(?:/|$)|zh(?:/|$)).*)",
   ],
 };

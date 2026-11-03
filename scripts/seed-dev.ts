@@ -60,7 +60,7 @@ async function reset() {
              event_outbox, integration_event, person, app_user CASCADE`;
 }
 
-// Reference rows migration 001 inserts. Copied here because TRUNCATE ...
+// Reference rows migrations 001 and 006 insert. Copied here because TRUNCATE ...
 // app_user CASCADE wipes them; ON CONFLICT keeps any edits. Runs on every
 // seed, so an already-wiped database is repaired without --reset.
 async function restoreReferenceData() {
@@ -78,6 +78,10 @@ async function restoreReferenceData() {
   await sql`
     INSERT INTO app_setting (key, value) VALUES
       ('reservation_expiry_hours',   '48'),
+      -- Migration 006's row, wiped by the TRUNCATE above like the 001 ones.
+      -- Without it the Stripe path's holds fall back to the 48-hour default
+      -- and a Checkout session cannot match its seat (§12.1, §8.3).
+      ('stripe_reservation_hours',   '24'),
       ('first_response_sla_minutes', '60'),
       ('idle_timeout_hours',         '8'),
       ('hrdc_grant_lead_days',       'null'),

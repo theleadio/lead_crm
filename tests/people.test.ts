@@ -39,6 +39,14 @@ test("formatLastActivity: relative under 7 days, absolute after, dash when none"
   assert.equal(formatLastActivity("not a date", now), "—");
   assert.equal(formatLastActivity("2026-09-20T04:00:00Z", now), "3 days ago");
   assert.equal(formatLastActivity("2026-08-14T04:00:00Z", now), "14 Aug 2026");
+  // Under an hour used to read "just now" for a whole hour.
+  assert.equal(formatLastActivity("2026-09-23T03:59:30Z", now), "just now");
+  assert.equal(
+    formatLastActivity("2026-09-23T03:40:00Z", now),
+    "20 minutes ago",
+  );
+  assert.equal(formatLastActivity("2026-09-23T03:59:00Z", now), "1 minute ago");
+  assert.equal(formatLastActivity("2026-09-23T02:00:00Z", now), "2 hours ago");
 });
 
 // Spec §11.2: a WhatsApp-only contact may have no usable name, so the phone

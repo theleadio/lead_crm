@@ -83,3 +83,81 @@ test("a server module imports no plain value from a client module", () => {
     `a Server Component may import components from a "use client" module, but a plain value arrives as a client reference — move it to a module without the directive:\n  ${offenders.join("\n  ")}`,
   );
 });
+
+// The dictionaries and the locale helpers are read on the server and handed
+// to client components as props. They must stay plain in both directions: no
+// "use client" (a page spreading a client reference gets nothing, as above),
+// and nothing server-only, or the whole database and the public API key would
+// follow the strings into the browser bundle (§10.5).
+test("the locale helpers and dictionaries are neither client nor server-only", () => {
+  const shared = [
+    join("app", "(public)", "locale.ts"),
+    join("app", "(public)", "dictionaries.ts"),
+    join("app", "(public)", "dictionaries", "en.ts"),
+    join("app", "(public)", "dictionaries", "zh.ts"),
+  ];
+
+  for (const file of shared) {
+    const source = readFileSync(file, "utf8");
+    assert.ok(
+      !isClientModule(source),
+      `${file} must not be a "use client" module: a server page imports its values`,
+    );
+    assert.ok(
+      !/^\s*["']use server["']/.test(source),
+      `${file} must not be a "use server" module: a client component receives its values`,
+    );
+    // Comments talk about what these modules must not reach for, so the
+    // checks below run on the code alone.
+    const code = source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|\s)\/\/.*$/gm, "");
+    for (const forbidden of [
+      /from\s+["'][^"']*lib\/(public|db|sql|auth)/,
+      /process\.env/,
+    ]) {
+      assert.ok(
+        !forbidden.test(code),
+        `${file} matches ${forbidden} — a client component takes these strings as props, so this would pull server-only code into its bundle`,
+      );
+    }
+  }
+});
+
+// Only the active locale's strings should reach the browser (§10.5). A client
+// component that imports the dictionary drags both locales in, because the
+// Chinese overlay falls back to the English file. So a client component gets
+// its strings as a prop from its server parent — with one exception the
+// platform forces: an error boundary is rendered on the client and is passed
+// nothing, so it must read its own copy (website-localisation).
+test("only an error boundary imports the dictionary into the browser", () => {
+  // Only the Chinese error boundary: the platform renders an error boundary
+  // on the client and passes it nothing, and the Chinese one needs the
+  // English strings its fallback resolves against. The English boundary
+  // imports its own locale's file directly, so it ships no Chinese.
+  const ALLOWED = new Set([
+    join("app", "(public)", "zh", "schedule", "error.tsx"),
+  ]);
+  const offenders: string[] = [];
+
+  for (const file of filesIn(join("app", "(public)"))) {
+    if (ALLOWED.has(file)) continue;
+    const source = readFileSync(file, "utf8");
+    if (!isClientModule(source)) continue; // a server module may read it
+    // A value import only. `import type { Dict }` is erased before the
+    // bundler sees it, so taking the dictionary's *type* is free — that is
+    // exactly how a client component types the prop it is handed.
+    if (
+      /import\s+(?!type\s)[^;]*from\s+["'][^"']*dictionaries(\.ts)?["']/.test(
+        source,
+      )
+    )
+      offenders.push(file);
+  }
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `these take their strings as a prop instead — importing the dictionary ships both locales:\n  ${offenders.join("\n  ")}`,
+  );
+});
