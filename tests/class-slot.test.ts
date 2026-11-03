@@ -44,3 +44,7 @@ test("language from a later text when the dated text has none", () => {
 test("decodes &amp; before parsing", () => {
   assert.deepEqual(parseClassSlot(["<b>14 &amp; 15 November 2026</b>"], paid), slot("2026-11-14", "2026-11-15", null, null));
 });
+test("only Johor Bahru counts as a city, canonical case", () => {
+  assert.equal(parseClassSlot(["23 October 2026 @ Kuala Lumpur"], paid)?.city, null);
+  assert.equal(parseClassSlot(["23 October 2026 @ johor bahru"], paid)?.city, "Johor Bahru");
+});
