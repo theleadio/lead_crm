@@ -44,6 +44,17 @@ test("language from a later text when the dated text has none", () => {
 test("decodes &amp; before parsing", () => {
   assert.deepEqual(parseClassSlot(["<b>14 &amp; 15 November 2026</b>"], paid), slot("2026-11-14", "2026-11-15", null, null));
 });
+test("a day the month does not have is no date", () => {
+  assert.equal(parseClassSlot(["31 November 2026 (Mon) - English"], paid), null);
+});
+test("a range that ends before it starts is no date", () => {
+  assert.equal(parseClassSlot(["30-1 December 2026"], paid), null);
+});
+test("range across two months", () => {
+  assert.deepEqual(parseClassSlot(["30 November - 1 December 2026 (Mon, Tue) - English"], paid), slot("2026-11-30", "2026-12-01", "en", null));
+  assert.deepEqual(parseClassSlot(["30 Nov – 1 Dec 2026"], paid), slot("2026-11-30", "2026-12-01", null, null));
+  assert.deepEqual(parseClassSlot(["30 Dec - 2 Jan"], new Date("2026-12-20T00:00:00Z")), slot("2026-12-30", "2027-01-02", null, null));
+});
 test("only Johor Bahru counts as a city, canonical case", () => {
   assert.equal(parseClassSlot(["23 October 2026 @ Kuala Lumpur"], paid)?.city, null);
   assert.equal(parseClassSlot(["23 October 2026 @ johor bahru"], paid)?.city, "Johor Bahru");
