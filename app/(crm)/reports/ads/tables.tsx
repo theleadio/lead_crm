@@ -45,7 +45,9 @@ export function CampaignTable({
   // What each campaign cost, keyed by Meta's campaign id — the same key the
   // rows are grouped on. A campaign with no spend recorded, and the row for
   // leads carrying no campaign at all, show an em dash rather than zero.
-  spend: Map<string, SpendTotals>;
+  // Null when the spend read failed: the dashes then mean "unknown", and the
+  // panel says so rather than letting them read as "nothing spent".
+  spend: Map<string, SpendTotals> | null;
 }) {
   return (
     <PanelCard
@@ -62,12 +64,19 @@ export function CampaignTable({
         <>
           Every Meta touchpoint in range, grouped on the campaign id the lead
           carries. First touch is the lead&apos;s first contact with us; a later
-          touch is the same person arriving again. Cost per lead divides that
-          campaign&apos;s spend by its leads, so it counts people more than once
-          when they came back.
+          touch is the same person arriving again. Cost per person divides that
+          campaign&apos;s spend by the people it reached, not by leads: the
+          attribution import can give one person two touchpoints on the same
+          day.
         </>
       }
     >
+      {spend === null && (
+        <p className="text-ink-muted text-sm">
+          Ad spend could not be read, so the spend, clicks and cost columns are
+          blank rather than zero.
+        </p>
+      )}
       <TableCard>
         <Table>
           <TableHeader>
@@ -79,7 +88,7 @@ export function CampaignTable({
               <TableHead>People</TableHead>
               <TableHead>Spend</TableHead>
               <TableHead>Clicks</TableHead>
-              <TableHead>Cost per lead</TableHead>
+              <TableHead>Cost per person</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -90,10 +99,10 @@ export function CampaignTable({
             ) : (
               table.rows.map((row) => {
                 const totals = row.campaignId
-                  ? spend.get(row.campaignId)
+                  ? spend?.get(row.campaignId)
                   : undefined;
                 const perLead = totals
-                  ? costPer(totals.spend, row.leads)
+                  ? costPer(totals.spend, row.people)
                   : null;
                 return (
                   <TableRow key={row.campaignId ?? "__none__"}>

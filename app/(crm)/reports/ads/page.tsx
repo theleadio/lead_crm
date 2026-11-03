@@ -231,8 +231,8 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
       {query.size && (
         <p className="text-ink-muted text-sm">
           Showing {SIZE_NOTE[query.size]}. Seats, funding and signups count only
-          these classes; ad spend is not split by class, so the spend panels
-          still cover every campaign.
+          these classes. Leads and ad spend are not split by class, so the lead
+          and spend panels still cover every campaign.
         </p>
       )}
 
@@ -340,7 +340,7 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
       {campaigns.ok ? (
         <CampaignTable
           table={campaigns.data}
-          spend={cost?.campaignSpend ?? new Map()}
+          spend={spend.ok && cost ? cost.campaignSpend : null}
         />
       ) : (
         <PanelError what="leads by campaign" />
