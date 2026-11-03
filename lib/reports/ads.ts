@@ -18,6 +18,7 @@ import {
   type AdsWeeks,
   type CampaignSignups,
 } from "./types.ts";
+import type { CampaignRevenue } from "./spend.ts";
 
 // Service layer for the §9.18 ads report. Three independent reads over
 // `touchpoint`, each permission-checked on its own, none of them writing.
@@ -372,4 +373,60 @@ export async function signupsPerCampaign(
     signups: r.signups,
     hrdcSignups: r.hrdc_signups,
   }));
+}
+
+// §9.18 panel 3's revenue: SalesProcess payments (migration 016), credited to
+// the campaign of the buyer's first Meta touch, as signups are. A payment
+// reaches its buyer through the `ghl:` touchpoint the contact import wrote.
+//
+// The campaign is the touchpoint's `utm_campaign_id`, else the campaign of
+// the Meta ad (`utm_content`) or ad set (`utm_term`) it carries: SalesProcess
+// stores the ad and ad set ids there, and many leads have no campaign id of
+// their own. Net of refunds, live charges only, paid in the date range.
+// SalesProcess sells by card through Stripe, so it is all `stripe`; grant
+// money is not in it.
+export async function revenuePerCampaign(
+  viewer: Viewer,
+  q: AdsReportQuery,
+): Promise<Map<string, CampaignRevenue>> {
+  requireReportReader(viewer);
+  const sql = db();
+  const rows = await sql`
+    WITH ad AS (SELECT DISTINCT ad_id, campaign_id FROM meta_ad_insight),
+    adset AS (SELECT DISTINCT adset_id, campaign_id FROM meta_ad_insight),
+    first_campaign AS (
+      SELECT DISTINCT ON (t.person_id)
+             t.person_id,
+             coalesce(t.utm_campaign_id, ad.campaign_id, adset.campaign_id) AS campaign_id
+      FROM touchpoint t
+      JOIN person p ON p.id = t.person_id
+      LEFT JOIN ad ON ad.ad_id = t.utm_content
+      LEFT JOIN adset ON adset.adset_id = t.utm_term
+      WHERE coalesce(t.utm_campaign_id, ad.campaign_id, adset.campaign_id) IS NOT NULL
+        AND ${metaTouchpointSql(sql)}
+        AND ${livePersonSql(sql)}
+      ORDER BY t.person_id, t.occurred_at ASC, t.id ASC
+    )
+    SELECT f.campaign_id,
+           sum(sp.amount_myr - sp.refunded_myr)::numeric(12,2)::text AS net,
+           count(*)::int AS orders
+    FROM salesprocess_payment sp
+    JOIN touchpoint g ON g.external_ref = 'ghl:' || sp.ghl_contact_id
+    JOIN first_campaign f ON f.person_id = g.person_id
+    WHERE sp.live_mode
+      AND sp.status IN ('succeeded', 'partially_refunded')
+      AND sp.paid_at >= (${q.from}::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
+      AND sp.paid_at < ((${q.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
+    GROUP BY f.campaign_id`;
+  return new Map(
+    rows.map((r) => [
+      r.campaign_id as string,
+      {
+        stripe: r.net as string,
+        hrdc: "0.00",
+        orders: r.orders as number,
+        note: "SalesProcess payments to the buyer's first campaign; HRDC grants not included",
+      },
+    ]),
+  );
 }
