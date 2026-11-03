@@ -31,9 +31,18 @@ const CHANNEL_LABEL: Record<string, string> = {
   import: "Import",
 };
 
-const ROW_H = 56;
-const BAR_W = 14;
-const GAP = 4;
+// Tall enough to read a week-on-week change; columns share the card's width
+// so a short range is not a cluster of slivers in an empty box.
+const CHART_H = 160;
+
+// "6 Oct" under a column. Week starts are plain dates, so read them in UTC.
+function shortDay(weekStart: string): string {
+  return new Date(`${weekStart}T00:00:00Z`).toLocaleDateString("en-MY", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  });
+}
 
 function Facet({
   channel,
@@ -45,7 +54,6 @@ function Facet({
   peak: number;
 }) {
   const total = weeks.reduce((n, w) => n + (w.byChannel[channel] ?? 0), 0);
-  const width = weeks.length * (BAR_W + GAP);
   // The tallest column in this facet, direct-labelled — one label, not a
   // number on every bar.
   const best = weeks.reduce(
@@ -53,53 +61,63 @@ function Facet({
       (w.byChannel[channel] ?? 0) > (b.byChannel[channel] ?? 0) ? w : b,
     weeks[0],
   );
+  // At most about a dozen date labels, however long the range.
+  const every = Math.max(1, Math.ceil(weeks.length / 12));
+  const name = CHANNEL_LABEL[channel] ?? channel;
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between gap-2 text-sm">
-        <span className="font-medium">{CHANNEL_LABEL[channel] ?? channel}</span>
+        <span className="font-medium">{name}</span>
         <span className="text-ink-muted">
           {total} {total === 1 ? "lead" : "leads"}
         </span>
       </div>
-      <svg
-        viewBox={`0 0 ${Math.max(width, 1)} ${ROW_H}`}
-        className="h-14 w-full"
-        preserveAspectRatio="xMinYMax meet"
+      <div
         role="img"
-        aria-label={`${CHANNEL_LABEL[channel] ?? channel}: ${total} leads over ${weeks.length} weeks, peaking at ${best?.byChannel[channel] ?? 0} in the week of ${best ? formatDate(`${best.weekStart}T00:00:00Z`) : "—"}.`}
+        aria-label={`${name}: ${total} leads over ${weeks.length} weeks, peaking at ${best?.byChannel[channel] ?? 0} in the week of ${best ? formatDate(`${best.weekStart}T00:00:00Z`) : "—"}.`}
+        className="border-line flex items-end gap-1.5 border-b pt-5"
+        style={{ height: CHART_H }}
       >
-        {weeks.map((w, i) => {
+        {weeks.map((w) => {
           const n = w.byChannel[channel] ?? 0;
-          // Anchored to the baseline, so a tall column means more leads and
-          // nothing floats. A zero week draws no column at all.
-          const h = peak > 0 ? Math.round((n / peak) * (ROW_H - 2)) : 0;
           return (
-            <g key={w.weekStart}>
-              <title>{`Week of ${formatDate(`${w.weekStart}T00:00:00Z`)}: ${n} ${n === 1 ? "lead" : "leads"}`}</title>
-              {h > 0 && (
-                <rect
-                  x={i * (BAR_W + GAP)}
-                  y={ROW_H - h}
-                  width={BAR_W}
-                  height={h}
-                  rx="3"
-                  fill="var(--lead-blue)"
-                />
+            <div
+              key={w.weekStart}
+              title={`Week of ${formatDate(`${w.weekStart}T00:00:00Z`)}: ${n} ${n === 1 ? "lead" : "leads"}`}
+              className="flex h-full min-w-0 flex-1 items-end justify-center"
+            >
+              {/* Anchored to the baseline, so a tall column means more leads
+                  and nothing floats. A zero week draws no column at all. */}
+              {n > 0 && (
+                <div
+                  className="relative w-full max-w-12 rounded-t-[4px]"
+                  style={{
+                    height: `${peak > 0 ? (n / peak) * 100 : 0}%`,
+                    backgroundColor: "var(--lead-blue)",
+                  }}
+                >
+                  {w === best && (
+                    <span className="text-ink absolute bottom-full left-1/2 mb-1 -translate-x-1/2 text-xs font-medium tabular-nums">
+                      {n}
+                    </span>
+                  )}
+                </div>
               )}
-            </g>
+            </div>
           );
         })}
-        {/* Hairline baseline, solid and one shade off the surface. */}
-        <line
-          x1="0"
-          x2={Math.max(width, 1)}
-          y1={ROW_H - 0.5}
-          y2={ROW_H - 0.5}
-          stroke="var(--line)"
-          strokeWidth="1"
-        />
-      </svg>
+      </div>
+      <div aria-hidden="true" className="flex gap-1.5">
+        {weeks.map((w, i) => (
+          <span
+            key={w.weekStart}
+            className="text-ink-muted min-w-0 flex-1 truncate text-center text-xs"
+          >
+            {i % every === 0 ? shortDay(w.weekStart) : ""}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -132,7 +150,7 @@ export function LeadsOverTimePanel({ data }: { data: AdsWeeks }) {
         </div>
       ) : (
         <>
-          <div className="border-line bg-surface-raised flex flex-col gap-4 rounded-md border p-4">
+          <div className="border-line bg-surface-raised flex flex-col gap-6 rounded-md border p-4">
             {channels.map((channel) => (
               <Facet
                 key={channel}
