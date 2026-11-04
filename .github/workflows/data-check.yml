@@ -1,0 +1,46 @@
+# One-off, read-only checks for the SalesProcess replacement brainstorm
+# (docs/superpowers/specs/2026-11-04-lead-sales-platform-design.md).
+# Started by hand only (Actions > data-check > Run workflow). Writes nothing.
+#
+# Secrets: STRIPE_SECRET_KEY, SALESPROCESS_API_TOKEN, SALESPROCESS_LOCATION_ID.
+# Logs are public: the scripts print counts, totals and field names only, and
+# scripts/ci-errors.mjs keeps an uncaught error to its message.
+name: data-check
+
+on:
+  workflow_dispatch:
+    inputs:
+      check:
+        description: Which check to run
+        type: choice
+        options: [both, stripe, salesprocess]
+        default: both
+
+permissions:
+  contents: read
+
+jobs:
+  stripe:
+    if: inputs.check != 'salesprocess'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - run: node --import=./scripts/ci-errors.mjs scripts/check-stripe-summary.ts
+        env:
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+
+  salesprocess:
+    if: inputs.check != 'stripe'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - run: node --import=./scripts/ci-errors.mjs scripts/check-salesprocess-channels.ts
+        env:
+          SALESPROCESS_API_TOKEN: ${{ secrets.SALESPROCESS_API_TOKEN }}
+          SALESPROCESS_LOCATION_ID: ${{ secrets.SALESPROCESS_LOCATION_ID }}
