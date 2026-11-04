@@ -20,7 +20,17 @@ export type LeadContext = {
   // Already cleaned by cleanUrl(); chosen by the route from body and headers.
   landingUrl: string | null;
   referrer: string | null;
+  // Where the lead came from. Default `web_form` (the website's own forms);
+  // `lead_form` is a Meta Lead Ads form, sent server-to-server by lead_sales
+  // through POST /api/internal/leads. The ads report reads both by channel.
+  channel?: LeadChannel;
+  // The ad platform's own ids (migration 015), so the ads report joins this
+  // lead to meta_ad_insight exactly, not by campaign name.
+  campaignId?: string | null;
+  adId?: string | null;
 };
+
+export type LeadChannel = "web_form" | "lead_form";
 
 // O14 fallback (decision calendar, 16 Oct): keep only the path and utm_*,
 // gclid, fbclid; drop other query parameters, credentials and the fragment.
@@ -58,11 +68,14 @@ const isUniqueViolation = (err: unknown, constraint?: string) =>
 // (migration 009, O31) and answers with the same ids. The deal is the one the
 // call created (deal.source_touchpoint_id) or, when it attached to an
 // existing open deal, the one named in that call's LeadCaptured row.
-export async function findReplay(key: string): Promise<LeadResult | null> {
+export async function findReplay(
+  key: string,
+  channel: LeadChannel = "web_form",
+): Promise<LeadResult | null> {
   const sql = db();
   const [t] = await sql`
     SELECT id, person_id, occurred_at FROM touchpoint
-    WHERE channel = 'web_form' AND external_ref = ${key}`;
+    WHERE channel = ${channel} AND external_ref = ${key}`;
   if (!t) return null;
   const [d] = await sql`
     SELECT id FROM deal WHERE source_touchpoint_id = ${t.id}`;
@@ -89,7 +102,7 @@ export async function captureLead(
       // Two calls with one idempotencyKey at once: the loser's transaction is
       // rolled back whole; answer with the winner's result.
       if (input.idempotencyKey && isReplayRace(err)) {
-        const replay = await findReplay(input.idempotencyKey);
+        const replay = await findReplay(input.idempotencyKey, ctx.channel);
         if (replay) return { ...replay, replayed: true };
       }
       // Two calls with the same new email/phone at once: the loser retries
@@ -192,15 +205,16 @@ async function insertLead(
                               utm_campaign, utm_content, utm_term, gclid, fbclid,
                               gbraid, wbraid, li_fat_id, ttclid,
                               landing_url, referrer, form_name, is_first_touch,
-                              external_ref)
-      VALUES (${personId}, 'web_form', ${a?.utmSource ?? null},
+                              external_ref, utm_campaign_id, utm_ad_id)
+      VALUES (${personId}, ${ctx.channel ?? "web_form"}, ${a?.utmSource ?? null},
               ${a?.utmMedium ?? null}, ${a?.utmCampaign ?? null},
               ${a?.utmContent ?? null}, ${a?.utmTerm ?? null},
               ${a?.gclid ?? null}, ${a?.fbclid ?? null},
               ${a?.gbraid ?? null}, ${a?.wbraid ?? null},
               ${a?.liFatId ?? null}, ${a?.ttclid ?? null}, ${ctx.landingUrl},
               ${ctx.referrer}, ${input.formName},
-              ${priorTouches === 0 && !cookieFirst}, ${input.idempotencyKey})
+              ${priorTouches === 0 && !cookieFirst}, ${input.idempotencyKey},
+              ${ctx.campaignId ?? null}, ${ctx.adId ?? null})
       RETURNING id`;
     let firstId: string | null = priorTouches === 0 ? tp.id : null;
     if (cookieFirst) {
@@ -232,11 +246,12 @@ async function insertLead(
       await sql`
         UPDATE person
         SET notes = left(coalesce(notes || E'\n', '') ||
-              ${`[Web form ${input.formName ?? ""}] ${input.message}`}, 10000)
+              ${`[${ctx.channel === "lead_form" ? "Meta lead form" : "Web form"} ${input.formName ?? ""}] ${input.message}`}, 10000)
         WHERE id = ${personId}`;
 
     // 5. Consent. A ticked box grants email and WhatsApp marketing (the form's
-    // wording, §10.3). An unticked box records nothing: it is the default, not
+    // wording, §10.3). The consent row's source is where it was given: the
+    // website form, or a Meta lead form (`lead_form`). An unticked box records nothing: it is the default, not
     // a withdrawal, and "no consent row" already means "no consent" (§14).
     // A purpose whose latest row is a WITHDRAWAL is never granted again from
     // the public form (PDPA; O45: needs a double opt-in decision). Nothing is
@@ -250,7 +265,7 @@ async function insertLead(
         if (latest) continue; // granted already, or withdrawn (O45)
         await sql`
           INSERT INTO consent (person_id, purpose, is_granted, source)
-          VALUES (${personId}, ${purpose}, true, 'web_form')`;
+          VALUES (${personId}, ${purpose}, true, ${ctx.channel ?? "web_form"})`;
         await raiseEvent(
           "ConsentChanged",
           personId,
