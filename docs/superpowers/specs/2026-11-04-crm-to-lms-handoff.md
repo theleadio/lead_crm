@@ -122,7 +122,19 @@ The event's payload today has only `enrolmentId`, `fromClassId` and `toClassId` 
 
 **What the LMS does:** move the student to the new cohort under `newEnrolmentId`, and cancel the old enrollment.
 
-### 4.4 Completion: no message (decided 4 Nov)
+### 4.4 `class.updated` (decided 4 Nov)
+
+**Trigger:** the existing `ClassChanged` event (date, time, venue, online link, language). **Data:** the `class` block from 4.1, plus `changedFields`.
+
+**What the LMS does:** upserts the cohort by `class.id`. It doesn't touch enrolments. Telling the students is the CRM's class-notice flow (§12.8), not the LMS's.
+
+### 4.5 `person.updated` (decided 4 Nov, main spec §7.2)
+
+**Trigger:** a new `PersonContactChanged` event, raised when a person's email, phone or name changes in the CRM, which is the master. **Data:** `{ "personId", "previousEmail", "email", "fullName", "phoneE164" }`.
+
+**What the LMS does:** finds the participant by `previousEmail` and updates it. This keeps the daily sync, which matches by email, from creating a duplicate.
+
+### 4.6 Completion: no message (decided 4 Nov)
 
 The LMS marks completion, because attendance lives there, and it issues the certificate itself. The CRM sends no completion message. The daily `scripts/sync-lms.ts` brings `completed`, `completed_at` and `certificate_no` back into the CRM, under the rule in §2. No `EnrolmentCompleted` event is needed.
 
@@ -151,7 +163,7 @@ The LMS marks completion, because attendance lives there, and it issues the cert
 
 ## 6. Build steps, once agreed
 
-1. **CRM:** add a `lib/lms/send.ts` client that signs requests, has a timeout, and returns the parsed reply. Then add the handlers for the three messages.
+1. **CRM:** add a `lib/lms/send.ts` client that signs requests, has a timeout, and returns the parsed reply. Then add the handlers for the five messages (4.1–4.5), and the new `PersonContactChanged` event.
 2. **CRM:** change `scripts/sync-lms.ts` to follow the ownership table in §2. **This must ship at the same time as the handlers.**
 3. **LMS:** add the endpoint: verify, check idempotency, then upsert. Its tests use the same sample bodies as the CRM's.
 4. **Both:** test against a staging LMS, then switch on with an env flag, `LMS_HANDOFF_ENABLED`.

@@ -105,5 +105,9 @@ Facebook Messenger is assumed until the feature map confirms it. The email provi
 - ~~SLA~~: first reply within 24 hours for every team (decided 4 Nov). Counted in **office working hours** (decided 4 Nov): Monday–Friday, 8:30 AM–4:30 PM, Malaysia time (Asia/Kuala_Lumpur, assumed). The deadline is **the same time on the next working day**. Examples: in Tuesday 10 AM → due Wednesday 10 AM; in Friday 5 PM (after hours) → counts from Monday 8:30 AM, due Tuesday 8:30 AM; in Friday 3 PM → due Monday 3 PM. National plus KL/Selangor public holidays are non-working days (decided 4 Nov). The holiday list has to be kept up to date each year, in a `holiday` table edited in Settings.
 - Who's in Finance and in Tech, and are they `app_user` accounts already? (User will confirm.)
 - Should a resolved ticket send the customer a closing message or survey?
+- ~~After hours~~: auto-reply "Thanks, we'll reply by the next working day", once per conversation per evening, in the class language or else the person's (decided 4 Nov). On WhatsApp outside the reply window this needs an approved template.
+- ~~Overdue tickets~~: dashboard only, as a red overdue list sorted by deadline, with no notifications (decided 4 Nov).
+- Customer reply on a resolved ticket: reopens it (proposed).
+- ~~Retention~~: conversations and attachments are kept indefinitely and deleted on request, the same as CRM people (decided 4 Nov).
 - ~~Help form~~: open to anyone (decided 4 Nov). It needs spam protection (a captcha or similar) and rate limiting.
 - ~~Read access~~: everyone in `support` and `sales`, plus team members for their own tickets, plus `super_admin` and `management` (decided 4 Nov).

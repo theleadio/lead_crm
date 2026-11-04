@@ -19,6 +19,10 @@
 
 ## 3. Phases
 
+**Builders:** Zhixuan and Shawn (decided 4 Nov). Each phase still needs a named owner below.
+
+**Where:** all `lead_sales` work goes on `lead-sales/*` sub-branches in `lead_crm`, with PRs into `lead-sales/main`, until the `lead_sales` repo exists. Development and testing use a **separate staging Supabase project** with fake data and test WATI, Meta and Stripe accounts, never production (decided 4 Nov).
+
 | Phase | Delivers | Needs first | Done when |
 |---|---|---|---|
 | **0. Setup** | Repo, auth, app shell and navigation, brand theme, CI (lint, typecheck, tests), Netlify deploy, `sales` schema with its migration runner | Repo created; Supabase access | A staff member signs in and sees an empty Inbox page on a preview deploy |

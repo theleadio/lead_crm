@@ -45,7 +45,7 @@ Tables (proposed, in the `lead_sales` schema; see the build plan):
 ## 4. Rules that are not optional
 
 - **Consent.** A marketing message to someone without `marketing_email` / `marketing_whatsapp` consent is skipped, and the skip is logged.
-  - Whether onboarding messages count as *service* messages, sent to a paying student without marketing consent, is a legal question under PDPA. **I'm not certain and the team should confirm it.** Until then the draft treats onboarding as service, and newsletters and promotions as marketing.
+  - **Decided 4 Nov:** onboarding, class reminders and other course messages are *service* messages. They go to paying students without marketing consent. Newsletters and promotions are marketing and need consent. This is the team's decision; it hasn't been reviewed by a PDPA specialist.
 - **WhatsApp outside the reply window.** Automated WhatsApp messages must use Meta-approved templates. I understand free text is only allowed within a 24-hour window after the customer writes, but that needs verifying against Meta's current rules. The templates live in WATI, as the original spec says.
 - **No double sends.** Each send step checks `sales.message` for the same template, person and run first.
 - **Kill switch.** Each automation can be paused. Pausing stops new runs and holds the waiting ones.
@@ -66,6 +66,5 @@ Tables (proposed, in the `lead_sales` schema; see the build plan):
 
 - Which email service sends onboarding and transactional email? Not chosen yet.
 - Which WhatsApp templates are already approved in WATI?
-- Onboarding without marketing consent (§4): confirm with whoever handles PDPA.
 - Who may create or edit automations? Proposed: `marketing` and `management`.
 - Should existing SalesProcess workflows be rebuilt one-to-one? The feature map will list them.

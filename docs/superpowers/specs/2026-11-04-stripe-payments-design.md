@@ -46,13 +46,17 @@ JM's flow: **Stripe payment → recorded in the CRM first → then the LMS.** No
 
 The webhook writes CRM tables (`payment`, `enrolment`) and must follow CRM rules, so **it belongs in `lead_crm`**, e.g. `app/api/webhooks/stripe/route.ts`. That matches the original spec. The `lead_sales` "Payments" screens (transaction list, products, payment links) read these same tables.
 
+## 4b. Receipts (decided 4 Nov)
+
+Stripe's own automatic receipt emails are enough for now. That's a setting in the Stripe dashboard, with no code. There's no e-invoice module until Finance confirms whether LHDN MyInvois e-invoicing applies to LEAD (main spec §7.5).
+
 ## 5. Old Stripe data
 
 The decision belongs to JM. Run the `data-check` workflow first (`scripts/check-stripe-summary.ts`). It shows counts and totals per year, so the size of an import is known. If it's imported, old charges match people by email. Anything that doesn't match is stored `unmatched`, so it isn't dropped.
 
 ## 6. Open questions
 
-- Who builds the webhook: Shawn, as the spec says, or someone else? It is a go-live gate either way.
+- ~~Who builds the webhook~~: built in PR #41, waiting for Shawn's review (decided 4 Nov).
 - Payment links outside Checkout (e.g. invoices or links sent by sales): do they carry the same metadata? If not, they arrive unmatched.
 - Partial payments / deposits: the spec mentions a part-payments question (O16). Does a deposit confirm the seat?
 - Old Stripe data (§5): JM.
