@@ -21,14 +21,14 @@ import type { RecordedPayment } from "./types.ts";
 // sums `amount_myr` or reads `price_paid_myr` (design 4).
 
 // §9.12: money cannot be recorded against an enrolment in one of these.
-const BLOCKED_STATUSES = ["cancelled", "refunded", "transferred"];
+export const BLOCKED_STATUSES = ["cancelled", "refunded", "transferred"];
 
 // §12.1, as in `lib/enrolments/service.ts`: a cancelled or completed class is
 // exempt from the seat guard, so history can still be corrected. The 006
 // trigger exempts the same two.
-const SEAT_GUARD_EXEMPT = ["cancelled", "completed"];
+export const SEAT_GUARD_EXEMPT = ["cancelled", "completed"];
 
-function holdsSeat(status: string): boolean {
+export function holdsSeat(status: string): boolean {
   return SEAT_STATUSES.includes(status);
 }
 
@@ -62,11 +62,11 @@ function isDuplicateProof(e: unknown): boolean {
 // Migration 006 raises `no_seats` (SQLSTATE P0001) on a write that oversells a
 // published class — for this route, confirming an enrolment whose reservation
 // had already run out.
-function isNoSeats(e: unknown): boolean {
+export function isNoSeats(e: unknown): boolean {
   return Boolean((e as { message?: string }).message?.includes("no_seats"));
 }
 
-async function seatsTaken(classId: string): Promise<number> {
+export async function seatsTaken(classId: string): Promise<number> {
   const [row] = await db()`SELECT class_seats_taken(${classId}) AS taken`;
   return row.taken as number;
 }

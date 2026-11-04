@@ -70,8 +70,10 @@ export async function proxy(request: NextRequest) {
 // screens keep their own check in app/(crm)/layout.tsx and every API route
 // authenticates itself. The enquiry form authenticates its own submission
 // with the public API key, server-side (§8.2).
+// Webhooks (`/api/webhooks/*`) are skipped for the same reason: Stripe has no
+// session, and each webhook checks its sender's signature itself.
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|api/public|schedule(?:/|$)|enquiry(?:/|$)|register(?:/|$)|zh(?:/|$)).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/public|api/webhooks|schedule(?:/|$)|enquiry(?:/|$)|register(?:/|$)|zh(?:/|$)).*)",
   ],
 };
