@@ -259,7 +259,7 @@ try {
             venue_address: online ? null : "TBC",
             city: online ? null : (slot.city ?? "TBC"),
             online_url: online ? "https://thelead.io" : null,
-            capacity: 40,
+            capacity: 30, // max 30 seats per class, decided 4 Nov
             status: "open",
             notes: online
               ? IMPORT_CLASS_NOTE

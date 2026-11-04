@@ -86,7 +86,7 @@ Dry run by default, `--apply` to write, one transaction, counts only in the log 
    - `id` = UUID v5 of `sp-class|{course code}|{start date}|{language}` (stable across runs, so a re-run never creates it twice).
    - `code` = `{course code without "lms-"}-{start date}` plus `-{language}`; unique by construction.
    - In person: `venue_name` AI365 Hub, `venue_address` TBC, `city` parsed city or TBC. Online: `online_url` `https://thelead.io` (the LMS sync's fallback).
-   - `capacity` 40, `status` `open`, `language` parsed or `en`, `notes` "Imported from SalesProcess. Venue address and city still TBC.", `price_myr` null.
+   - `capacity` 30 (the 4 Nov max of 30 seats per class), `status` `open`, `language` parsed or `en`, `notes` "Imported from SalesProcess. Venue address and city still TBC.", `price_myr` null.
 7. **Find the buyer.** `person` via touchpoint `external_ref = 'ghl:' || ghl_contact_id`. None → skip and count (ghl:import runs first in the same job, so this is contacts newer than the last import).
 8. **Write the enrolment.** `id` = UUID v5 of `sp-enrolment|{order_id}`.
    - Paid, no active enrolment for person + class → insert `confirmed`, `payer_type` `self`, `price_paid_myr` = amount − refunded, `created_at` = `paid_at`.
