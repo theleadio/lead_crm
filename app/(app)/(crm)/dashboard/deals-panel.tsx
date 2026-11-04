@@ -43,7 +43,7 @@ export function DealsPanel({ totals }: { totals: HomePipelineTotals[] }) {
               onClick={() => setPipeline(tab.pipeline)}
               className={`focus-visible:outline-focus-ring rounded-full px-5 py-2 text-[13px] font-semibold focus-visible:outline-2 ${
                 pipeline === tab.pipeline
-                  ? "bg-primary text-white"
+                  ? "bg-primary text-on-blue"
                   : "text-ink-muted"
               }`}
             >
@@ -56,21 +56,21 @@ export function DealsPanel({ totals }: { totals: HomePipelineTotals[] }) {
       <div className="flex flex-col gap-4 lg:flex-row">
         <Link
           href={`/deals?pipeline=${shown.pipeline}&mine=1`}
-          className="focus-visible:outline-focus-ring flex w-full shrink-0 flex-col justify-between gap-3 rounded-md bg-[linear-gradient(135deg,#6C85F5_0%,#4F6BED_55%,#3A4FC9_100%)] p-5 focus-visible:outline-2 focus-visible:outline-offset-2 lg:w-75"
+          className="focus-visible:outline-focus-ring flex w-full shrink-0 flex-col justify-between gap-3 rounded-md bg-[linear-gradient(135deg,#BCCDE0_0%,#A1BACE_55%,#8AA3B9_100%)] p-5 focus-visible:outline-2 focus-visible:outline-offset-2 lg:w-75"
         >
           <span className="flex items-center justify-between gap-2">
-            <span className="text-[13px] text-[#DCE3FF]">
+            <span className="text-[13px] text-[#2C3742]">
               Open pipeline ·{" "}
               {shown.pipeline === "individual" ? "Individual" : "Corporate"}
             </span>
             <span
               aria-hidden="true"
-              className="text-primary flex size-7 items-center justify-center rounded-full bg-white"
+              className="flex size-7 items-center justify-center rounded-full bg-[#0E0F13] text-[#A1BACE]"
             >
               <ArrowUpRight className="size-3.5" />
             </span>
           </span>
-          <span className="text-[28px] leading-none font-bold text-white">
+          <span className="text-[28px] leading-none font-bold text-[#0E0F13]">
             {formatMoneyMyr(shown.openTotalMyr)}
           </span>
           <span className="bg-lead-yellow text-on-yellow w-fit rounded-full px-2 py-[3px] text-[11px] font-bold">

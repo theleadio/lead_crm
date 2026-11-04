@@ -13,9 +13,12 @@ import {
 } from "@/lib/auth/permissions";
 import { listClassNotices } from "@/lib/classes/notices";
 import { listRoster } from "@/lib/classes/roster";
+import { listCourses } from "@/lib/courses/service";
+import { courseListQuerySchema } from "@/lib/validation/course";
 import { getClass, type ClassRecord } from "@/lib/classes/service";
 import { classStatusBadge, seatBarColor } from "@/lib/classes/types";
 import { formatDateRange } from "@/lib/format/date";
+import { ClassForm } from "../class-form";
 import { ClassControls } from "./class-controls";
 import { DetailsTab } from "./details-tab";
 import { NoticesTab } from "./notices-tab";
@@ -52,17 +55,40 @@ export default async function ClassDetailPage(
   if (!cls) notFound();
 
   const tabs = tabsFor(user);
-  const asked = (await props.searchParams).tab;
-  const tab: Tab = tabs.find((t) => t.id === asked)?.id ?? ("details" as const);
+  const search = await props.searchParams;
+  const tab: Tab =
+    tabs.find((t) => t.id === search.tab)?.id ?? ("details" as const);
   const canWrite = canWriteClass(user);
+  // §9.9 edit, in place of the read-only details (?edit=1). Saving or
+  // cancelling drops the flag and shows the details again.
+  const editing = canWrite && tab === "details" && search.edit === "1";
+  const courses = editing
+    ? // Every course, retired ones included: a class already on a retired
+      // course must stay editable without silently moving it (§9.5 v1.6).
+      await listCourses(
+        courseListQuerySchema.parse({ sort: "name", limit: "100" }),
+      )
+    : null;
 
   return (
     <div className="space-y-6">
       <BackLink href="/classes" label="Classes" />
-      <ClassHeader cls={cls} canWrite={canWrite} />
+      <ClassHeader cls={cls} canWrite={canWrite && !editing} />
       <TabStrip tabs={tabs} active={tab} />
 
-      {tab === "details" && (
+      {editing && courses && (
+        <section className="border-line bg-surface-raised rounded-md border p-5">
+          <ClassForm
+            existing={cls}
+            courses={courses.data.map((c) => ({
+              id: c.id,
+              code: c.code,
+              nameEn: c.isActive ? c.nameEn : `${c.nameEn} (inactive)`,
+            }))}
+          />
+        </section>
+      )}
+      {tab === "details" && !editing && (
         <DetailsTab
           cls={cls}
           canWrite={canWrite}
@@ -139,7 +165,7 @@ function ClassHeader({
         canWrite ? (
           <span className="flex flex-wrap items-start justify-end gap-2">
             <Button asChild variant="outline">
-              <Link href={`/classes/${cls.id}/edit`}>Edit</Link>
+              <Link href={`/classes/${cls.id}?edit=1`}>Edit</Link>
             </Button>
             {/* §9.10 v1.9: the status and website controls live here, not on
                 the 9.8 row — the rules that refuse them need the seat count

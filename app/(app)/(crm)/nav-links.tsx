@@ -33,8 +33,10 @@ const ICONS: Record<string, LucideIcon> = {
 
 export function NavLinks({
   items,
+  collapsed,
 }: {
   items: { href: string; label: string }[];
+  collapsed: boolean;
 }) {
   const segment = useSelectedLayoutSegment();
 
@@ -53,14 +55,22 @@ export function NavLinks({
             prefetch={false}
             aria-current={active ? "page" : undefined}
             title={item.label}
-            className={`focus-visible:outline-lead-blue flex items-center justify-center gap-2.5 rounded-full px-2.5 py-2.5 text-[13px] focus-visible:outline-2 focus-visible:outline-offset-2 md:justify-start md:px-3.5 ${
+            // Fixed left padding keeps each icon centred in the 40px rail and still
+            // while the sidebar opens or closes; the label is clipped, not moved.
+            className={`focus-visible:outline-lead-blue flex items-center gap-2.5 overflow-hidden rounded-full px-3 py-2.5 text-[13px] whitespace-nowrap focus-visible:outline-2 focus-visible:-outline-offset-2 ${
               active
-                ? "bg-lead-blue font-semibold text-white"
+                ? "bg-lead-blue text-on-blue font-semibold"
                 : "text-on-charcoal hover:bg-charcoal-raised hover:text-white"
             }`}
           >
             <Icon aria-hidden="true" className="size-4 shrink-0" />
-            <span className="sr-only md:not-sr-only">{item.label}</span>
+            <span
+              className={`transition-opacity duration-150 motion-reduce:transition-none ${
+                collapsed ? "opacity-0" : "opacity-0 md:opacity-100"
+              }`}
+            >
+              {item.label}
+            </span>
           </Link>
         );
       })}

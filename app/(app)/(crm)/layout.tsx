@@ -1,11 +1,13 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { Search } from "lucide-react";
 import { FlashToast } from "@/components/flash-toast";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { navFor } from "@/lib/auth/nav";
 import { getSession } from "@/lib/auth/server";
-import { NavLinks } from "./nav-links";
 import { SignOutButton } from "./sign-out-button";
+import { Sidebar } from "./sidebar";
+import { SIDEBAR_COLLAPSED, SIDEBAR_COOKIE } from "./sidebar-state";
 
 // Shell per spec Section 9: role-filtered sidebar (lib/auth/nav.ts) + top bar
 // (global people search, signed-in user, sign out). Styled after design.pen
@@ -33,27 +35,12 @@ export default async function CrmLayout({
     );
   }
 
+  const sidebarCollapsed =
+    (await cookies()).get(SIDEBAR_COOKIE)?.value === SIDEBAR_COLLAPSED;
+
   return (
     <div className="bg-surface flex min-h-screen gap-4 p-4">
-      <aside className="bg-charcoal border-line sticky top-4 h-[calc(100vh-2rem)] w-14 shrink-0 overflow-y-auto rounded-lg border px-2 py-5 md:w-56 md:px-3.5">
-        <div className="mb-4 flex items-center justify-center gap-2.5 pb-2 md:justify-start md:px-1.5">
-          <span
-            aria-hidden="true"
-            className="bg-charcoal-raised flex size-[30px] items-center justify-center gap-0.5 rounded-full"
-          >
-            <span className="bg-lead-yellow h-3.5 w-1 rounded-[1px]" />
-            <span className="flex flex-col gap-0.5">
-              <span className="h-[2.5px] w-[9px] rounded-[1px] bg-[#8FA6F5]" />
-              <span className="h-[2.5px] w-[7px] rounded-[1px] bg-[#8FA6F5]" />
-              <span className="h-[2.5px] w-[9px] rounded-[1px] bg-[#8FA6F5]" />
-            </span>
-          </span>
-          <span className="hidden text-base font-bold tracking-wider text-white md:inline">
-            LEAD
-          </span>
-        </div>
-        <NavLinks items={navFor(user)} />
-      </aside>
+      <Sidebar items={navFor(user)} initialCollapsed={sidebarCollapsed} />
       <div className="flex min-w-0 flex-1 flex-col gap-4">
         <header className="border-line bg-surface-raised flex items-center justify-between gap-4 rounded-full border py-2.5 pr-2.5 pl-3.5">
           <form
@@ -80,7 +67,7 @@ export default async function CrmLayout({
             <SignOutButton />
             <span
               aria-hidden="true"
-              className="bg-lead-blue flex size-9 items-center justify-center rounded-full text-[13px] font-bold text-white"
+              className="bg-lead-blue text-on-blue flex size-9 items-center justify-center rounded-full text-[13px] font-bold"
             >
               {(user.email ?? "?").slice(0, 2).toUpperCase()}
             </span>

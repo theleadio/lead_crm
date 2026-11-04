@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MapPin, Monitor, Pencil } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { EyeOff, Globe, MapPin, Monitor } from "lucide-react";
 import {
   EmptyRow,
   FilterRow,
@@ -34,9 +35,10 @@ import { formatDateRange } from "@/lib/format/date";
 import type { ListResponse } from "@/lib/people/types";
 
 const LIMIT = 25;
-// Code, course, dates, language, mode, venue, capacity, seats, status, public
-// (+ an actions column for roles that may write).
-const COLUMNS = 10;
+// Class (code over course), dates, format (language over mode), venue, seats,
+// status (status over website). No actions column: the row opens the class,
+// and Edit lives on the class page.
+const COLUMNS = 6;
 
 type CourseOption = { id: string; nameEn: string; isActive: boolean };
 
@@ -274,23 +276,14 @@ export function ClassesList({
       ) : (
         <TableCard>
           {/* table-fixed with a width per column: on auto layout the widest
-              cell sets each width, so every filter reshuffled the table. */}
-          <Table className="table-fixed">
+              cell sets each width, so every filter reshuffled the table.
+              Related facts share a column on two lines, so the table fits
+              1280px with the sidebar open; Class takes what is left, never
+              under 180px (the min-width): narrower, the table scrolls. */}
+          <Table className="min-w-[836px] table-fixed">
             <TableHeader>
               <TableRow>
-                <SortableHead
-                  label="Code"
-                  column="code"
-                  sort={sort}
-                  onSort={onSort}
-                  className="w-48"
-                />
-                <SortableHead
-                  label="Course"
-                  column="course"
-                  sort={sort}
-                  onSort={onSort}
-                />
+                <ClassHead sort={sort} onSort={onSort} />
                 <SortableHead
                   label="Dates"
                   column="start"
@@ -298,23 +291,17 @@ export function ClassesList({
                   onSort={onSort}
                   className="w-36"
                 />
-                <TableHead className="w-20">Language</TableHead>
-                <TableHead className="w-28">Mode</TableHead>
-                <TableHead className="w-40">City / venue</TableHead>
-                <TableHead className="w-20">Capacity</TableHead>
-                <TableHead className="w-36">Seats sold</TableHead>
-                <TableHead className="w-28">Status</TableHead>
-                <TableHead className="w-20">Public</TableHead>
-                {canWrite && (
-                  <TableHead className="w-24 text-right">Actions</TableHead>
-                )}
+                <TableHead className="w-28">Format</TableHead>
+                <TableHead className="w-36">City / venue</TableHead>
+                <TableHead className="w-32">Seats sold</TableHead>
+                <TableHead className="w-32">Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {state.status === "loading" ? (
-                <SkeletonRows columns={COLUMNS + (canWrite ? 1 : 0)} />
+                <SkeletonRows columns={COLUMNS} />
               ) : rows.length === 0 ? (
-                <EmptyRow columns={COLUMNS + (canWrite ? 1 : 0)}>
+                <EmptyRow columns={COLUMNS}>
                   {filtered ? (
                     <>
                       No classes match these filters.{" "}
@@ -349,9 +336,7 @@ export function ClassesList({
                   )}
                 </EmptyRow>
               ) : (
-                rows.map((c) => (
-                  <ClassRow key={c.id} cls={c} canWrite={canWrite} />
-                ))
+                rows.map((c) => <ClassRow key={c.id} cls={c} />)
               )}
             </TableBody>
           </Table>
@@ -370,36 +355,47 @@ export function ClassesList({
   );
 }
 
-function ClassRow({
-  cls,
-  canWrite,
-}: {
-  cls: ClassListItem;
-  canWrite: boolean;
-}) {
+function ClassRow({ cls }: { cls: ClassListItem }) {
+  const router = useRouter();
+  const href = `/classes/${cls.id}`;
   const badge = classStatusBadge(cls.status);
   const sold = cls.confirmedCount + cls.reservedCount;
   const pct = Math.min(100, Math.round((sold / cls.capacity) * 100));
   const venue = [cls.venueName, cls.city].filter(Boolean).join(", ");
 
   return (
-    <TableRow>
-      <TableCell className="truncate font-semibold" title={cls.code}>
+    // The whole row opens the class, as on People (§9): the code stays a real
+    // link for keyboard and middle-click, and clicks on it aren't hijacked.
+    <TableRow
+      className="cursor-pointer"
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest("a, button")) return;
+        router.push(href);
+      }}
+    >
+      <TableCell>
         {/* Opening a class is a read, so every role that sees the row gets the
             link — not only the two that see Edit (§9.10). */}
-        <Link href={`/classes/${cls.id}`} className="text-blue-ink underline">
+        <Link
+          href={href}
+          title={cls.code}
+          className="text-blue-ink block truncate font-semibold underline"
+        >
           {cls.code}
         </Link>
-      </TableCell>
-      <TableCell className="text-ink-muted truncate" title={cls.courseName}>
-        {cls.courseName}
+        <span
+          className="text-ink-muted block truncate text-xs"
+          title={cls.courseName}
+        >
+          {cls.courseName}
+        </span>
       </TableCell>
       <TableCell>{formatDateRange(cls.startDate, cls.endDate)}</TableCell>
-      <TableCell className="text-ink-muted">
-        {cls.language === "zh" ? "中文" : "English"}
-      </TableCell>
-      <TableCell className="text-ink-muted">
-        <span className="flex items-center gap-1.5">
+      <TableCell>
+        <span className="block">
+          {cls.language === "zh" ? "中文" : "English"}
+        </span>
+        <span className="text-ink-muted flex items-center gap-1.5 text-xs">
           {cls.mode === "online" ? (
             <Monitor aria-hidden="true" className="text-ink-subtle size-3.5" />
           ) : (
@@ -408,8 +404,9 @@ function ClassRow({
           {MODE_LABELS[cls.mode] ?? cls.mode}
         </span>
       </TableCell>
-      <TableCell className="text-ink-muted truncate">{venue || "—"}</TableCell>
-      <TableCell className="text-ink-muted">{cls.capacity}</TableCell>
+      <TableCell className="text-ink-muted truncate" title={venue || undefined}>
+        {venue || "—"}
+      </TableCell>
       <TableCell>
         {/* The numbers are written out beside the bar: the bar alone would
             make the colour the only signal (§9.8, §13). */}
@@ -427,36 +424,58 @@ function ClassRow({
       </TableCell>
       <TableCell>
         <Badge variant={badge.variant}>{badge.label}</Badge>
+        <span className="text-ink-muted mt-1 flex items-center gap-1.5 text-xs">
+          {cls.isPublic ? (
+            <Globe aria-hidden="true" className="text-ink-subtle size-3.5" />
+          ) : (
+            <EyeOff aria-hidden="true" className="text-ink-subtle size-3.5" />
+          )}
+          {cls.isPublic ? "On website" : "Hidden"}
+        </span>
       </TableCell>
-      <TableCell>
-        {cls.isPublic ? (
-          <Badge variant="default">Public</Badge>
-        ) : (
-          <Badge variant="secondary">Hidden</Badge>
-        )}
-      </TableCell>
-      {canWrite && (
-        <TableCell>
-          <RowActions cls={cls} />
-        </TableCell>
-      )}
     </TableRow>
   );
 }
 
-// Edit only. The status and website controls moved to the 9.10 header with
-// v1.9 (§12.1): Back to draft needs the seat count and the website toggle
-// needs the stored status, and a row that carried both let Ops change one
-// while reading the other's state from a list that had already moved on.
-function RowActions({ cls }: { cls: ClassListItem }) {
+// One column, two sorts: the class code leads the cell and the course name
+// sits under it, so both keep the sort they had as separate columns.
+function ClassHead({
+  sort,
+  onSort,
+}: {
+  sort: string | undefined;
+  onSort: (sort: string) => void;
+}) {
+  const stateOf = (column: string) =>
+    sort === column
+      ? "ascending"
+      : sort === `-${column}`
+        ? "descending"
+        : "none";
+  const code = stateOf("code");
+  const course = stateOf("course");
+  const button = (label: string, column: string, state: string) => (
+    <button
+      type="button"
+      onClick={() => onSort(state === "ascending" ? `-${column}` : column)}
+      aria-label={`Sort by ${label.toLowerCase()}`}
+      className="focus-visible:outline-focus-ring inline-flex cursor-pointer items-center gap-1 font-semibold hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
+    >
+      {label}
+      <span aria-hidden="true" className="w-3 text-xs">
+        {state === "ascending" ? "▲" : state === "descending" ? "▼" : ""}
+      </span>
+    </button>
+  );
   return (
-    // An icon button: two words per row turned the column into a wall of
-    // text. It carries its label for screen readers and on hover.
-    <Button asChild variant="ghost" size="icon-sm" title={`Edit ${cls.code}`}>
-      <Link href={`/classes/${cls.id}/edit`}>
-        <Pencil aria-hidden="true" className="size-4" />
-        <span className="sr-only">Edit {cls.code}</span>
-      </Link>
-    </Button>
+    <TableHead
+      aria-sort={code !== "none" ? code : course !== "none" ? course : "none"}
+    >
+      <span className="inline-flex items-center gap-1">
+        {button("Class", "code", code)}
+        <span aria-hidden="true">/</span>
+        {button("Course", "course", course)}
+      </span>
+    </TableHead>
   );
 }

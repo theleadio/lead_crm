@@ -236,7 +236,9 @@ export function PeopleList({
     });
   }
 
-  const columnCount = canWrite ? 10 : 9;
+  // Name (with phone and email under it), language, stage, owner, last
+  // activity, created, tags (+ the select column for roles that may write).
+  const columnCount = canWrite ? 8 : 7;
 
   return (
     <div className="space-y-4">
@@ -379,8 +381,6 @@ export function PeopleList({
                   sort={sort}
                   onSort={changeSort}
                 />
-                <TableHead>Phone</TableHead>
-                <TableHead>Email</TableHead>
                 <TableHead>Language</TableHead>
                 <TableHead>Stage</TableHead>
                 <TableHead>Owner</TableHead>
@@ -604,7 +604,9 @@ function TagFilter({
       <summary className="border-line-strong bg-surface-sunken text-ink flex h-9 cursor-pointer list-none items-center rounded-sm border px-3 text-sm">
         {value.length ? `Tags: ${value.length} selected` : "Tags: all"}
       </summary>
-      <div className="border-line bg-surface-raised absolute z-10 mt-1 w-56 space-y-1 rounded-md border p-2 shadow-md">
+      {/* Anchored to the right edge: Tags is the last filter in the row,
+          so a left-anchored panel ran past the window at 1280px. */}
+      <div className="border-line bg-surface-raised absolute right-0 z-10 mt-1 w-56 space-y-1 rounded-md border p-2">
         {options.map((o) => (
           <label key={o.id} className="flex items-center gap-2 text-sm">
             <input
@@ -639,8 +641,14 @@ function PersonRow({
 }) {
   // Spec §11.2: WhatsApp-only contacts may have no name — show the phone.
   const name = displayName(person.fullName, person.phone);
-  const shownTags = person.tags.slice(0, 3);
-  const hiddenTags = person.tags.slice(3);
+  // Two tags and a count keep the column narrow enough for 1280px.
+  const shownTags = person.tags.slice(0, 2);
+  const hiddenTags = person.tags.slice(2);
+  // Phone and email ride under the name. When the name itself fell back to
+  // the phone (§11.2), the phone is not repeated.
+  const contact = [person.fullName?.trim() ? person.phone : null, person.email]
+    .filter(Boolean)
+    .join(" · ");
   const router = useRouter();
   const href = `/people/${person.id}`;
 
@@ -681,9 +689,15 @@ function PersonRow({
             {name}
           </Link>
         </span>
+        {contact && (
+          <span
+            className="text-ink-muted block max-w-52 truncate text-xs font-normal"
+            title={contact}
+          >
+            {contact}
+          </span>
+        )}
       </TableCell>
-      <TableCell>{person.phone ?? "—"}</TableCell>
-      <TableCell>{person.email ?? "—"}</TableCell>
       <TableCell>{LANGUAGE_LABEL[person.preferredLanguage]}</TableCell>
       <TableCell>
         <Badge variant={STAGE_VARIANT[person.stage]} className="capitalize">
@@ -694,14 +708,25 @@ function PersonRow({
       <TableCell>{formatLastActivity(person.lastActivityAt)}</TableCell>
       <TableCell>{formatDate(person.createdAt)}</TableCell>
       <TableCell>
-        <span className="flex flex-wrap gap-1">
+        <span className="flex max-w-36 flex-wrap gap-1">
           {shownTags.map((tag) => (
-            <Badge key={tag} variant="outline">
-              {tag}
+            // A tag is a label, not a state: no status dot (dots mark
+            // statuses only, 4 Nov 2026).
+            <Badge
+              key={tag}
+              variant="outline"
+              className="max-w-full before:hidden"
+              title={tag}
+            >
+              <span className="truncate">{tag}</span>
             </Badge>
           ))}
           {hiddenTags.length > 0 && (
-            <Badge variant="outline" title={hiddenTags.join(", ")}>
+            <Badge
+              variant="outline"
+              className="before:hidden"
+              title={hiddenTags.join(", ")}
+            >
               +{hiddenTags.length}
             </Badge>
           )}

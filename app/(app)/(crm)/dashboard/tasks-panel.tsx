@@ -90,7 +90,7 @@ function GroupLabel({
   return (
     <div className="border-line bg-surface-muted flex items-center gap-2 border-y px-5 py-2">
       <span
-        className={`text-[11px] font-bold tracking-wider ${
+        className={`text-xs font-semibold ${
           tone === "overdue" ? "text-danger" : "text-ink-muted"
         }`}
       >
@@ -138,7 +138,7 @@ export function TasksPanel({ data }: { data: HomeTasks }) {
         <>
           {overdue.length > 0 && (
             <GroupLabel
-              label="OVERDUE"
+              label="Overdue"
               count={data.overdueCount}
               tone="overdue"
             />
@@ -147,7 +147,7 @@ export function TasksPanel({ data }: { data: HomeTasks }) {
             <TaskRow key={task.id} task={task} />
           ))}
           {today.length > 0 && (
-            <GroupLabel label="TODAY" count={data.todayCount} tone="today" />
+            <GroupLabel label="Today" count={data.todayCount} tone="today" />
           )}
           {today.map((task) => (
             <TaskRow key={task.id} task={task} />

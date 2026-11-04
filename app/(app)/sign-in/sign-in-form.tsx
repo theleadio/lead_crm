@@ -45,7 +45,7 @@ export function SignInForm() {
       <button
         type="submit"
         disabled={pending}
-        className="bg-lead-blue hover:bg-lead-blue-hover focus-visible:outline-focus-ring w-full cursor-pointer rounded-full py-2.5 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-default disabled:opacity-50"
+        className="bg-lead-blue hover:bg-lead-blue-hover focus-visible:outline-focus-ring text-on-blue w-full cursor-pointer rounded-full py-2.5 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-default disabled:opacity-50"
       >
         {pending ? "Signing in…" : "Sign in"}
       </button>

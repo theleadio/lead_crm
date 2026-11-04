@@ -427,7 +427,7 @@ function Shell({
 
         <button
           type="submit"
-          className="bg-primary focus-visible:outline-focus-ring rounded-md px-4 py-2.5 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2"
+          className="bg-primary focus-visible:outline-focus-ring text-on-blue rounded-md px-4 py-2.5 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
         >
           Apply
         </button>

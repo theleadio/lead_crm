@@ -35,7 +35,9 @@ import type { ListResponse } from "@/lib/people/types";
 
 const LIMIT = 25;
 // Code, name, Chinese name, track, duration, price, HRDC, status (+ Edit).
-const COLUMNS = 8;
+// Code, name (English over Chinese), track (over duration), list price (over
+// HRDC), status (+ an edit column for roles that may write).
+const COLUMNS = 5;
 
 type State =
   | { status: "loading" }
@@ -175,8 +177,10 @@ export function CoursesList({
         <TableCard>
           {/* table-fixed with a width per column: on auto layout the widest
               cell sets each width, so every filter reshuffled the table.
-              Name takes whatever is left. */}
-          <Table className="table-fixed">
+              Related facts share a column on two lines, so the table fits
+              1280px with the sidebar open; Name takes what is left, never
+              under 220px (the min-width): narrower, the table scrolls. */}
+          <Table className="min-w-[892px] table-fixed">
             <TableHeader>
               <TableRow>
                 <SortableHead
@@ -184,7 +188,7 @@ export function CoursesList({
                   column="code"
                   sort={sort}
                   onSort={onSort}
-                  className="w-56"
+                  className="w-52"
                 />
                 <SortableHead
                   label="Name"
@@ -192,13 +196,14 @@ export function CoursesList({
                   sort={sort}
                   onSort={onSort}
                 />
-                <TableHead className="w-44">Chinese name</TableHead>
-                <TableHead className="w-36">Track</TableHead>
-                <TableHead className="w-28">Duration</TableHead>
+                <TableHead className="w-32">Track</TableHead>
                 <TableHead className="w-32">List price</TableHead>
-                <TableHead className="w-28">HRDC</TableHead>
                 <TableHead className="w-28">Status</TableHead>
-                {canWrite && <TableHead className="w-20" />}
+                {canWrite && (
+                  <TableHead className="w-24">
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                )}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -303,26 +308,40 @@ function CourseRow({
 }) {
   return (
     <TableRow className={c.isActive ? undefined : "text-ink-muted"}>
-      <TableCell className="truncate font-medium" title={c.code}>
+      {/* Codes are long hyphenated slugs: they wrap at the hyphens rather
+          than hide their endings, which is where codes differ. */}
+      <TableCell className="font-medium break-words whitespace-normal">
         {c.code}
       </TableCell>
-      <TableCell className="truncate" title={c.nameEn}>
-        {c.nameEn}
-      </TableCell>
-      <TableCell className="truncate" title={c.nameZh ?? undefined}>
-        {c.nameZh ?? "—"}
-      </TableCell>
-      <TableCell className="truncate">{c.track}</TableCell>
       <TableCell>
-        {c.durationDays} {c.durationDays === 1 ? "day" : "days"}
+        <span className="block truncate" title={c.nameEn}>
+          {c.nameEn}
+        </span>
+        <span
+          lang="zh-Hans"
+          className="text-ink-muted block truncate text-xs"
+          title={c.nameZh ?? undefined}
+        >
+          {c.nameZh ?? "No Chinese name"}
+        </span>
       </TableCell>
       <TableCell>
-        {c.listPriceMyr === null ? "—" : formatMoneyMyr(c.listPriceMyr)}
+        <span className="block truncate" title={c.track}>
+          {c.track}
+        </span>
+        <span className="text-ink-muted block text-xs">
+          {c.durationDays} {c.durationDays === 1 ? "day" : "days"}
+        </span>
       </TableCell>
       <TableCell>
-        <Badge variant={c.hrdcClaimable ? "default" : "outline"}>
-          {c.hrdcClaimable ? "Claimable" : "No"}
-        </Badge>
+        <span className="block">
+          {c.listPriceMyr === null ? "—" : formatMoneyMyr(c.listPriceMyr)}
+        </span>
+        <span
+          className={`block text-xs ${c.hrdcClaimable ? "text-blue-ink" : "text-ink-muted"}`}
+        >
+          {c.hrdcClaimable ? "HRDC claimable" : "Not HRDC"}
+        </span>
       </TableCell>
       <TableCell>
         {c.isActive ? (

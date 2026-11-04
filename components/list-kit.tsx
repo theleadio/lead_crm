@@ -21,7 +21,7 @@ export function ListHeader({
 }
 
 export function FilterRow({ children }: { children: React.ReactNode }) {
-  return <div className="flex flex-wrap items-center gap-3">{children}</div>;
+  return <div className="flex flex-wrap items-center gap-2">{children}</div>;
 }
 
 export function FilterSelect({
@@ -40,7 +40,7 @@ export function FilterSelect({
       aria-label={label}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="border-line-strong bg-surface-sunken text-ink focus-visible:outline-focus-ring h-9 rounded-sm border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+      className="border-line-strong bg-surface-sunken text-ink focus-visible:outline-focus-ring h-8 max-w-60 truncate rounded-sm border px-2.5 text-[13px] focus-visible:outline-2 focus-visible:outline-offset-2"
     >
       <option value="">{label}: all</option>
       {/* The field name on every option, not just "all": a closed select
@@ -85,7 +85,7 @@ export function SortableHead({
       <button
         type="button"
         onClick={() => onSort(state === "ascending" ? `-${column}` : column)}
-        className="focus-visible:outline-focus-ring inline-flex cursor-pointer items-center gap-1 font-bold tracking-wide uppercase hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
+        className="focus-visible:outline-focus-ring inline-flex cursor-pointer items-center gap-1 font-semibold hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
       >
         {label}
         <span aria-hidden="true" className="w-3 text-xs">
