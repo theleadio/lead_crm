@@ -13,17 +13,23 @@ Decided 4 Nov: the CRM sends sign-up data to the LMS. Our team owns both ends. T
 - **The outbox already retries.** `lib/events/drain.ts` makes 5 attempts, waiting 30 s, 2 min, 10 min and 1 h between them. After the 5th failure the row becomes a dead letter until `retryDeadEvents()` revives it. Handlers can run twice, so they must be idempotent.
 - **There is no `EnrolmentCompleted` event yet.** `lib/events/types.ts` has `EnrolmentConfirmed`, `EnrolmentCancelled` and `EnrolmentTransferred`, but nothing for completion.
 
-## 2. The decision this forces: one owner per field
+## 2. What the daily sync does to CRM enrolments (corrected 4 Nov)
 
-Once the CRM sends enrolments to the LMS, the daily sync must stop writing enrolment **status** into the CRM, except for the completion step described in the table. Otherwise it can put a CRM-cancelled enrolment back to `confirmed`: it upserts with `ON CONFLICT DO UPDATE` whenever the price differs.
+An earlier version of this section said the sync could put a CRM-cancelled enrolment back to `confirmed`. **That was wrong.** `scripts/sync-lms.ts` sets an enrolment's status only when it **inserts** one. On an enrolment the CRM already has, it updates `price_paid_myr` and nothing else. So the CRM keeps ownership of status, and the sync needs no change for the hand-off.
 
-Proposal:
+Two points remain:
+- **Price.** The sync overwrites `price_paid_myr` from the LMS's `amount_paid_cents`. The LMS must store the `pricePaidMyr` it receives in `enrolment.confirmed`, or the CRM price is replaced with whatever the LMS holds.
+- **Completion (open, for Shawn).** The team decided the LMS marks completion. The CRM's status rules (§12.4) only allow `attended → completed`, and the sync has no attendance data, so existing enrolments never become `completed` today. Options:
+  - the LMS sends attendance and completion back as notices
+  - the sync moves enrolments forward step by step from LMS data
+  - a rule change in §12.4
 
-| Data | Owner after go-live | Sync LMS → CRM |
-|---|---|---|
-| Enrolment exists, status, price, payer | **CRM** | Stops writing these |
-| Course and class (cohort) details | CRM for new ones; LMS-created ones are still imported | Keeps importing, insert only |
-| Attendance, completion, certificate number | **LMS** (decided 4 Nov) | The sync copies `completed`, `completed_at` and `certificate_no` into the CRM. It may only move an enrolment forward from `confirmed`, `onboarded` or `attended`, and never touches `cancelled`, `transferred` or `refunded` |
+  The certificate number has no known LMS column yet either.
+
+| Data | Owner |
+|---|---|
+| Enrolment exists, status, price, payer | **CRM** |
+| Attendance, completion, certificate number | **LMS** (decided 4 Nov). How it reaches the CRM is open (above) |
 
 ## 3. Transport
 
@@ -163,8 +169,8 @@ The LMS marks completion, because attendance lives there, and it issues the cert
 
 ## 6. Build steps, once agreed
 
-1. **CRM:** add a `lib/lms/send.ts` client that signs requests, has a timeout, and returns the parsed reply. Then add the handlers for the five messages (4.1–4.5), and the new `PersonContactChanged` event.
-2. **CRM:** change `scripts/sync-lms.ts` to follow the ownership table in §2. **This must ship at the same time as the handlers.**
+1. **CRM:** the signed client (`lib/lms/send.ts`), the five notices (4.1–4.5), `PersonContactChanged`, `LmsAccountReady` and the backfill script. **Built in PR #43**, off until `LMS_HANDOFF_ENABLED=true`.
+2. **CRM:** completion back from the LMS. Open (§2).
 3. **LMS:** add the endpoint: verify, check idempotency, then upsert. Its tests use the same sample bodies as the CRM's.
 4. **Both:** test against a staging LMS, then switch on with an env flag, `LMS_HANDOFF_ENABLED`.
 
