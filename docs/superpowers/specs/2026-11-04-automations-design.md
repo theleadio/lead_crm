@@ -47,7 +47,7 @@ Tables (proposed, in the `lead_sales` schema; see the build plan):
 - **Consent.** A marketing message to someone without `marketing_email` / `marketing_whatsapp` consent is skipped, and the skip is logged.
   - Whether onboarding messages count as *service* messages, sent to a paying student without marketing consent, is a legal question under PDPA. **I'm not certain and the team should confirm it.** Until then the draft treats onboarding as service, and newsletters and promotions as marketing.
 - **WhatsApp outside the reply window.** Automated WhatsApp messages must use Meta-approved templates. I understand free text is only allowed within a 24-hour window after the customer writes, but that needs verifying against Meta's current rules. The templates live in WATI, as the original spec says.
-- **No double sends.** Each send step checks `message_log` for the same template, person and run first.
+- **No double sends.** Each send step checks `sales.message` for the same template, person and run first.
 - **Kill switch.** Each automation can be paused. Pausing stops new runs and holds the waiting ones.
 
 ## 5. First flows to build
@@ -55,7 +55,7 @@ Tables (proposed, in the `lead_sales` schema; see the build plan):
 1. **Onboarding**, triggered by a new event `LmsAccountReady`:
    - The LMS handler raises `LmsAccountReady` when the LMS answers `200` to `enrolment.confirmed` (handoff doc, §5). Starting from that event, not from `EnrolmentConfirmed`, means the account and temp-password email already exist. No polling is needed.
    - If the LMS notice dead-letters, onboarding never starts, and the Ops task from the handoff doc is the alarm.
-   - Pick the template language from the class language (or the person's preference; see main spec §7.4).
+   - Pick the template language from the class language (decided 4 Nov, main spec §7.4).
    - A student with no email gets WhatsApp only, plus the Ops task to add an email.
    - send the onboarding email and the WhatsApp template, both with the class details, `class.thelead.io` and the temp-password note
    - set `onboarding_step`

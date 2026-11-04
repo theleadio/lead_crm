@@ -20,16 +20,15 @@ Facebook Messenger is assumed until the feature map confirms it. The email provi
 
 - **`person`, with dedupe in `lib/people/`.** Each inbound sender is matched to a person by phone (E.164) or email. A new sender becomes a new person.
 - **`integration_event`.** Webhooks land here first. `UNIQUE (source, external_event_id)` already makes them idempotent.
-- **`message_log`.** It already holds WhatsApp and email messages per person, both in and out. Today its `channel` only allows `whatsapp` and `email`.
+- **`message_log`.** It already holds WhatsApp and email messages per person, both in and out. Today its `channel` only allows `whatsapp` and `email`. `lead_sales` reads it, for older history and the CRM's own sends, but doesn't write it.
 - **`app_user` and roles.** The roles are super_admin, management, marketing, sales, support, operations and part_time. There is **no Finance or Tech role**, so teams are a new concept (§3).
 - **`task`.** It stays for internal to-dos. Tickets are separate, because a ticket has a customer on the other end and a conversation.
 
 ## 3. Data model (proposed; every change goes through Shawn)
 
-**Change `message_log`** rather than adding a second message table, so each person keeps one history:
-- Widen `channel` to `whatsapp | email | messenger | web_form`.
-- Add `conversation_id`.
-- Add `attachment_paths text[]`. Files go to storage, not the database.
+**`sales.message`** (decided 4 Nov: `lead_sales` keeps its own table and doesn't write the CRM's `message_log`):
+- Columns: `conversation_id`, `person_id`, `channel` (`whatsapp | email | messenger | web_form`), `direction`, `external_message_id` (unique per channel), `body`, `attachment_paths text[]` (files go to storage, not the database), `sent_at`, `status`.
+- The CRM person timeline reads it as well, through a read-only view, so each person still has one history.
 
 **`conversation`.** One thread with a person on one channel.
 - Columns: `person_id`, `channel`, `external_thread_id` (unique per channel), `status` (`open | snoozed | closed`), `assigned_user_id`, `last_message_at`, `last_inbound_at`.
@@ -64,14 +63,14 @@ Facebook Messenger is assumed until the feature map confirms it. The email provi
 
 1. **Webhook in.** WATI, Meta or the email provider posts to `lead_sales`. We verify the provider's signature, then store the raw payload in `integration_event`, using its unique key to stop duplicates.
 2. **Match the person.** Use phone or email through the existing dedupe. If the match is uncertain, the person gets flagged `needs_review`, as the CRM does today.
-3. **Find or open the conversation**, then insert a `message_log` row (`direction = in`).
+3. **Find or open the conversation**, then insert a `sales.message` row (`direction = in`).
 4. **Route it.**
    - **Help form:** the customer picks a category on the form, so the ticket is created straight away with that category, team and assignee. This is deterministic, so no guessing.
    - **Chat or email:** the message waits in the inbox. An agent clicks **Make ticket** and picks a category, and the team and assignee follow from `ticket_category` and `ticket_rule`.
    - **Optional keyword rules:** for example, "invoice", "e-invoice" or "receipt" → Finance; "voucher" or "API key" → Tech. They only *suggest* a category in v1, so a wrong keyword can't misroute anything.
    - **Phase 4, AI:** AI suggests the category and drafts an answer. A person still confirms.
 5. **Assign.** `round_robin` picks the team member who was given a ticket longest ago, skipping inactive users.
-6. **Reply.** It is sent through the same channel and logged as `message_log` with `direction = out`. Note:
+6. **Reply.** It is sent through the same channel and logged as `sales.message` with `direction = out`. Note:
    - WhatsApp and Messenger only allow free-form replies for a limited time after the customer's last message; I believe that window is 24 hours for both. Outside it, WhatsApp needs a Meta-approved template. **Check both rules against Meta's current documentation**, because they change.
    - `conversation.last_inbound_at` is stored so the composer can warn the agent when the window has closed.
 

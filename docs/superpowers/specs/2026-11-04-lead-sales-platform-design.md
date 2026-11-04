@@ -146,7 +146,7 @@ Tables the new repo would add, in its own `sales` schema (names provisional; see
 
 A read-through of all the drafts found these. Each needs a decision before the module it touches is built.
 
-### 7.1 Conflict: where inbox messages are stored
+### 7.1 Where inbox messages are stored: decided 4 Nov, option (a)
 
 - The inbox draft extends the CRM's `message_log`, so each person keeps one history.
 - The build plan says `lead_sales` writes CRM tables only through CRM code (ground rule 4).
@@ -154,7 +154,7 @@ A read-through of all the drafts found these. Each needs a decision before the m
   - **(a)** Inbox messages go in `sales.message`, and the CRM person timeline reads that too, through a view. Rule 4 holds. Recommended.
   - **(b)** `lead_sales` writes `message_log` through an internal CRM endpoint. One table, but every inbound message makes an extra hop.
 
-### 7.2 Email change: one source of truth (Wei Ping's "if change email where change")
+### 7.2 Email change: one source of truth (Wei Ping's "if change email where change"). Decided 4 Nov: the CRM is the master
 
 The same student's email lives in three places: CRM `person.email`, LMS `participants.email`, and the newsletter service's list.
 - The LMS sync matches people **by email**. If a student's email is changed in the CRM only, the next sync can't find the person and may create a duplicate.
@@ -170,9 +170,9 @@ The same student's email lives in three places: CRM `person.email`, LMS `partici
 - Cancelled classes are covered: each enrolment gets its own `EnrolmentCancelled`.
 - A date or link change isn't covered. Add a `class.updated` notice, or decide the LMS team edits cohorts by hand.
 
-### 7.4 English and Chinese
+### 7.4 English and Chinese. Decided 4 Nov: the class language
 
-LEAD runs `en` and `zh` classes, and people have `preferred_language`. Onboarding, reminders, the help form, ticket categories and auto-replies all need both languages. Which one is used: the class language, or the person's preference?
+LEAD runs `en` and `zh` classes, and people have `preferred_language`. Onboarding, reminders, the help form, ticket categories and auto-replies all need both languages. **Decided: messages use the class language** (`class.language`). Where there's no class, e.g. a help-form reply or a newsletter, the person's `preferred_language` is the natural fallback. That fallback is not confirmed yet.
 
 ### 7.5 Receipts and e-invoices
 
@@ -187,7 +187,7 @@ HRDC, bank transfer and invoice payments are recorded by hand, through `app/api/
 - They confirm the enrolment the same way, so the LMS notice and onboarding still fire.
 - Ops need to know that recording the payment is what triggers the student's onboarding.
 
-### 7.7 Go-live gate: the Stripe webhook
+### 7.7 Go-live gate: the Stripe webhook. Decided 4 Nov: Claude builds it, in `lead_crm`, on its own branch and PR, for Shawn to review
 
 The original spec (§15.2) says that without the webhook, a paid reservation expires after 24 hours and the student loses the seat. This is the most urgent item in all the drafts, and it has no confirmed owner.
 
