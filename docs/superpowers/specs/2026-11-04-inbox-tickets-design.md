@@ -103,8 +103,8 @@ Facebook Messenger is assumed until the feature map confirms it. The email provi
 
 - Is "Messenger" Facebook Messenger, and is Instagram DM wanted too? The feature map should answer this.
 - Which provider receives support email?
-- What are the SLA targets per team, e.g. time to first response? These are not set; the team needs to choose them.
-- Who's in Finance and in Tech, and are they `app_user` accounts already?
+- ~~SLA~~: first reply within 24 hours for every team (decided 4 Nov). `sla_due_at` = created + 24 h. Whether that counts calendar or working hours is not decided.
+- Who's in Finance and in Tech, and are they `app_user` accounts already? (User will confirm.)
 - Should a resolved ticket send the customer a closing message or survey?
-- Is the help form public, or only for existing students?
-- Who may read conversations, given that some contain payment details?
+- ~~Help form~~: open to anyone (decided 4 Nov). It needs spam protection (a captcha or similar) and rate limiting.
+- ~~Read access~~: everyone in `support` and `sales`, plus team members for their own tickets, plus `super_admin` and `management` (decided 4 Nov).

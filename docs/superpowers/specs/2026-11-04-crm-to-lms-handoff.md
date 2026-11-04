@@ -138,23 +138,17 @@ The LMS marks completion, because attendance lives there, and it issues the cert
 
 ```json
 // enrolment.confirmed
-{
-  "participantId": "LMS id",
-  "enrollmentId": "= enrolment.id",
-  "accountCreated": true,
-  "loginUrl": "https://… link the student uses to sign in or set a password"
-}
+{ "participantId": "LMS id", "enrollmentId": "= enrolment.id", "accountCreated": true }
 ```
 
-**Login details go out in the CRM's onboarding message** (decided 4 Nov), not from the LMS. So:
-- The LMS returns `loginUrl`. The CRM stores it on the enrolment; that needs a new column, e.g. `lms_login_url`, which goes through Shawn.
-- The onboarding send has to wait until that reply has arrived. If it goes first, the message has no link.
-- If `loginUrl` is a one-time set-password link, the LMS decides how long it stays valid. The onboarding message must go out well within that time.
+**Login details go out in the CRM's onboarding message** (decided 4 Nov), not from the LMS:
+- The message links to `https://class.thelead.io/`, the same for every student, so nothing per-student needs storing and no new column is needed.
+- The onboarding send should still wait until the LMS has answered `200`, so the account exists when the student clicks.
 - The LMS must **not** email the login details itself, so the student doesn't get two messages.
 
 ## 6. Build steps, once agreed
 
-1. **CRM:** add a `lib/lms/send.ts` client that signs requests, has a timeout, and returns the parsed reply. Then add the handlers for the three messages, and store `loginUrl`.
+1. **CRM:** add a `lib/lms/send.ts` client that signs requests, has a timeout, and returns the parsed reply. Then add the handlers for the three messages.
 2. **CRM:** change `scripts/sync-lms.ts` to follow the ownership table in §2. **This must ship at the same time as the handlers.**
 3. **LMS:** add the endpoint: verify, check idempotency, then upsert. Its tests use the same sample bodies as the CRM's.
 4. **Both:** test against a staging LMS, then switch on with an env flag, `LMS_HANDOFF_ENABLED`.
@@ -162,9 +156,9 @@ The LMS marks completion, because attendance lives there, and it issues the cert
 ## 7. Open questions (our team)
 
 - ~~Completion~~: the LMS marks it (decided 4 Nov).
-- ~~Login details~~: the CRM's onboarding message carries the `loginUrl` (decided 4 Nov).
-- **Login link:** is `loginUrl` a permanent sign-in page or a one-time set-password link, and how long does it stay valid?
-- **Funding types:** how do the CRM's `funding_type` values map to the LMS's, including `leaders_club`?
+- ~~Login details~~: the CRM's onboarding message carries the login link (decided 4 Nov).
+- ~~Login link~~: the onboarding message links to `https://class.thelead.io/` (decided 4 Nov). It is the same link for everyone, so the LMS does not need to return a personal link. How a new student signs in the first time (password, email code) is still for the LMS dev to confirm.
+- ~~Leaders Club~~: it's a membership, not a funding type (decided 4 Nov). It does not become a CRM `funding_type`. Record it as a tag or price type and pay it as `self` or `company`. The LMS's full `funding_type` list is still needed to finish the mapping.
 - **LMS endpoint:** where does it live: an LMS app route, or a Supabase Edge Function?
 - **Old classes:** for classes created in the CRM before go-live, send a one-off backfill, or only send new confirmations?
 - **Certificate:** which template, what does the certificate number look like, and is there a PDF link? The LMS owns this now.

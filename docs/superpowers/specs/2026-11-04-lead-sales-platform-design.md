@@ -79,7 +79,7 @@ These are small. Every schema change goes through Shawn, because of the schema f
    - Plan: the CRM never writes into the LMS database. Outbox handlers in `lib/events/handlers.ts` POST a signed message to an endpoint in the LMS:
      - `enrolment.confirmed` → the LMS creates the student account (or finds the existing one) and enrols the student in the course/class
      - `enrolment.cancelled` and `enrolment.transferred` keep the LMS in step
-     - The confirmed reply carries a `loginUrl`. The CRM's onboarding message sends it to the student (decided 4 Nov)
+     - The CRM's onboarding message gives the student the LMS link, `https://class.thelead.io/` (decided 4 Nov)
    - Completion and certificates are the LMS's (decided 4 Nov). The daily LMS sync copies `completed` and `certificate_no` back into the CRM.
    - Full contract: `2026-11-04-crm-to-lms-handoff.md`.
    - Signed with a shared secret (HMAC header), retried by the outbox, idempotent on the enrolment id.
