@@ -26,7 +26,7 @@ The Salesprocess dashboard could not be opened: the host was blocked in the rese
 
 | Topic | Decision |
 |---|---|
-| Where the work goes | Small changes go in `lead_crm` (section 3). New modules go in a **new repo** (section 4). |
+| Where the work goes | Small changes go in `lead_crm` (section 3). New modules go in a **new repo, `lead_sales`** (section 4). |
 | New repo stack | Same as `lead_crm`: Next.js 16, Supabase auth, raw SQL, Tailwind/shadcn, Netlify. |
 | Data | The new repo **shares the CRM Supabase DB**: same `person`, `company`, `deal`, `enrolment` and `event_outbox`, plus its own new tables. |
 | SalesProcess modules to replace | Conversations inbox, Workflows/automation, Funnels/websites/forms, Email marketing and social planner. |
@@ -66,7 +66,7 @@ These are small. Every schema change goes through Shawn, because of the schema f
      - on `EnrolmentConfirmed`, create the LMS student account (or find an existing one), then enrol the student in the course or class
      - on completion, issue the certificate and write `enrolment.certificate_no`
    - Needs LMS **write** access and its schema or API, from the LMS owner.
-   - The team may rename "Enrolments" to "Onboarding" (open).
+   - Name stays **Enrolments** (decided 4 Nov; no rename to Onboarding).
 
 ## 4. New repo modules (phased)
 
@@ -87,14 +87,17 @@ Shared tables the new repo would add (names provisional): `conversation`, `messa
 | Question | Owner |
 |---|---|
 | Exact logo blue and yellow hex codes | Marketing |
-| Mapping of old corporate stages to new ones (e.g. new/discovery→engage, proposal_sent→submitted, won→approved?) | Sales |
-| What "track SSM" requires beyond storing the number | Team |
+| Mapping of old corporate stages to new ones (e.g. new/discovery→engage, proposal_sent→submitted, won→approved?) | Sales — asked 4 Nov, awaiting answer |
+| What "track SSM" requires beyond storing the number (relabel, format check, required for corporate deals, e-invoice use) | Finance — asked 4 Nov, awaiting answer |
 | LMS write API or DB credentials and schema; certificate template | LMS owner |
 | Keep or import old Stripe data | JM |
 | Messenger and email providers (inbound support inbox, newsletter ESP) | Wei Ping / Alicia |
-| Rename Enrolments to Onboarding | Team |
 | Approval of shared-DB schema changes | Shawn |
-| Name of the new repo, and who creates it | Shawn / team |
+| Who creates the new repo `theleadio/lead_sales` | Shawn / team |
+
+### Decided 4 Nov
+- Enrolments keeps its name.
+- New repo name: `theleadio/lead_sales`.
 
 ## 6. Team notes and where they went
 
