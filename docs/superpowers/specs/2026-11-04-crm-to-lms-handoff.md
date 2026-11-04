@@ -143,8 +143,9 @@ The LMS marks completion, because attendance lives there, and it issues the cert
 
 **Login details go out in the CRM's onboarding message** (decided 4 Nov), not from the LMS:
 - The message links to `https://class.thelead.io/`, the same for every student, so nothing per-student needs storing and no new column is needed.
-- The onboarding send should still wait until the LMS has answered `200`, so the account exists when the student clicks.
-- The LMS must **not** email the login details itself, so the student doesn't get two messages.
+- The LMS emails the student a **temporary password** at their registered email when it creates the account (decided 4 Nov).
+- So the CRM's onboarding message gives the link and says "check your email for your temporary password". It never contains the password itself.
+- The onboarding send should wait until the LMS has answered `200`, so the account and the temp-password email exist when the student clicks.
 
 ## 6. Build steps, once agreed
 
@@ -157,8 +158,8 @@ The LMS marks completion, because attendance lives there, and it issues the cert
 
 - ~~Completion~~: the LMS marks it (decided 4 Nov).
 - ~~Login details~~: the CRM's onboarding message carries the login link (decided 4 Nov).
-- ~~Login link~~: the onboarding message links to `https://class.thelead.io/` (decided 4 Nov). It is the same link for everyone, so the LMS does not need to return a personal link. How a new student signs in the first time (password, email code) is still for the LMS dev to confirm.
+- ~~Login link~~: the onboarding message links to `https://class.thelead.io/` (decided 4 Nov). It is the same link for everyone, so the LMS does not need to return a personal link. First sign-in uses a temporary password the LMS emails to the student's registered email (decided 4 Nov).
 - ~~Leaders Club~~: it's a membership, not a funding type (decided 4 Nov). It does not become a CRM `funding_type`. Record it as a tag or price type and pay it as `self` or `company`. The LMS's full `funding_type` list is still needed to finish the mapping.
-- **LMS endpoint:** where does it live: an LMS app route, or a Supabase Edge Function?
+- **LMS endpoint:** the LMS only needs the student's contact data (name, email, phone) plus the class, and does the rest (confirmed 4 Nov). Where its receiving address lives, an LMS app route or a Supabase Edge Function, is for the LMS dev.
 - **Old classes:** for classes created in the CRM before go-live, send a one-off backfill, or only send new confirmations?
 - **Certificate:** which template, what does the certificate number look like, and is there a PDF link? The LMS owns this now.
