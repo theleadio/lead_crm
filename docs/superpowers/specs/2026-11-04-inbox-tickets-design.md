@@ -10,7 +10,10 @@ Put all customer messages in one inbox: WhatsApp (via WATI), Facebook Messenger,
 |---|---|
 | **Finance** | e-invoice, receipt |
 | **Tech** | voucher, API key |
+| **Operations** | Qi En (decided 4 Nov) |
 | **Support** (default) | everything else |
+
+Members, decided 4 Nov: Finance is Mischa, Tech is JM, Operations is Qi En. Which team takes "everything else", Support or Operations, isn't decided yet.
 
 Facebook Messenger is assumed until the feature map confirms it. The email provider for the support inbox isn't chosen yet.
 
@@ -51,7 +54,7 @@ Facebook Messenger is assumed until the feature map confirms it. The email provi
   - `general` → Support
 
 **`team` and `team_member`.**
-- Teams: Finance, Tech, Support.
+- Teams: Finance (Mischa), Tech (JM), Operations (Qi En), and Support or another default team (to decide).
 - Members: `app_user` rows. One person can be in several teams.
 
 **`ticket_rule`.** An ordered list. The first rule that matches wins.
@@ -103,7 +106,7 @@ Facebook Messenger is assumed until the feature map confirms it. The email provi
 - ~~Instagram DM~~: included alongside Facebook Messenger (decided 4 Nov). Both come through Meta; check the exact webhooks and permissions against Meta's current docs.
 - Which provider receives support email?
 - ~~SLA~~: first reply within 24 hours for every team (decided 4 Nov). Counted in **office working hours** (decided 4 Nov): Monday–Friday, 8:30 AM–4:30 PM, Malaysia time (Asia/Kuala_Lumpur, assumed). The deadline is **the same time on the next working day**. Examples: in Tuesday 10 AM → due Wednesday 10 AM; in Friday 5 PM (after hours) → counts from Monday 8:30 AM, due Tuesday 8:30 AM; in Friday 3 PM → due Monday 3 PM. National plus KL/Selangor public holidays are non-working days (decided 4 Nov). The holiday list has to be kept up to date each year, in a `holiday` table edited in Settings.
-- Who's in Finance and in Tech, and are they `app_user` accounts already? (User will confirm.)
+- ~~Who's in the teams~~: Finance is Mischa, Tech is JM, Operations is Qi En (decided 4 Nov). Check they all have `app_user` accounts.
 - Should a resolved ticket send the customer a closing message or survey?
 - ~~After hours~~: auto-reply "Thanks, we'll reply by the next working day", once per conversation per evening, in the class language or else the person's (decided 4 Nov). On WhatsApp outside the reply window this needs an approved template.
 - ~~Overdue tickets~~: dashboard only, as a red overdue list sorted by deadline, with no notifications (decided 4 Nov).

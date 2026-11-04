@@ -55,7 +55,7 @@ How it works (how Meta delivers leads is from memory and **needs checking agains
 | **B. Endpoint in `lead_sales`**, which calls the CRM's lead intake over HTTP | Keeps new work out of the CRM | Needs an internal authenticated call into the CRM |
 | **C. n8n**, as the original spec planned | No code for the fetch step | Another system to run; the mapping logic lives outside git |
 
-**Recommendation: B.** `lead_sales` receives the webhook and fetches the lead, then calls a new **internal** CRM endpoint that runs `captureLead()` behind a shared secret. Rules stay in one place and the CRM change stays small. This needs Shawn's agreement, because the spec gave this job to n8n.
+**Decided 4 Nov: B.** `lead_sales` receives the webhook and fetches the lead, then calls a new **internal** CRM endpoint that runs `captureLead()` behind a shared secret. Rules stay in one place and the CRM change stays small. It replaces the original spec's n8n plan.
 
 ## 5. Setup needed (checklist, to verify)
 
@@ -68,5 +68,5 @@ How it works (how Meta delivers leads is from memory and **needs checking agains
 
 - Which lead forms are live today, and what custom questions do they ask? Alicia knows.
 - Do the forms have a marketing-consent checkbox? If not, `consentMarketing` is false, and those leads get no marketing messages under the CRM's consent rules.
-- Option A, B or C (§4)? Shawn and the team decide.
+- ~~Route~~: B, through `lead_sales` (decided 4 Nov).
 - Backfill: import past Meta leads, or only new ones from go-live? SalesProcess may already hold the old ones, and the GHL import (`lib/import/`) already pulls SalesProcess contacts.

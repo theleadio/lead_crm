@@ -19,21 +19,16 @@ An earlier version of this section said the sync could put a CRM-cancelled enrol
 
 Two points remain:
 - **Price.** The sync overwrites `price_paid_myr` from the LMS's `amount_paid_cents`. The LMS must store the `pricePaidMyr` it receives in `enrolment.confirmed`, or the CRM price is replaced with whatever the LMS holds.
-- **Completion (open, for Shawn).** The team decided the LMS marks completion. The CRM's status rules (§12.4) only allow `attended → completed`, and the sync has no attendance data, so existing enrolments never become `completed` today. Options:
-  - the LMS sends attendance and completion back as notices
-  - the sync moves enrolments forward step by step from LMS data
-  - a rule change in §12.4
-
-  The certificate number has no known LMS column yet either.
+- **Completion (decided 4 Nov).** The LMS sends attendance and completion back to the CRM as signed notices (§4.6). The daily sync doesn't do it.
 
 | Data | Owner |
 |---|---|
 | Enrolment exists, status, price, payer | **CRM** |
-| Attendance, completion, certificate number | **LMS** (decided 4 Nov). How it reaches the CRM is open (above) |
+| Attendance, completion, certificate number | **LMS** (decided 4 Nov). Sent to the CRM as notices (§4.6) |
 
 ## 3. Transport
 
-- **Request:** HTTPS `POST` to one LMS endpoint. Proposed path `/api/crm/events`; the host depends on how the LMS is deployed.
+- **Request:** HTTPS `POST` to `https://class.thelead.io/api/crm/events` (decided 4 Nov), set in `LMS_WEBHOOK_URL`.
 - **Body:** JSON, UTF-8.
 - **Sender:** a new outbox handler in `lib/events/handlers.ts`, so retries and dead letters come for free.
 - **Secret:** `LMS_WEBHOOK_SECRET`, set in Netlify for the CRM and in the LMS's own environment. Never commit it to git; the repo is public.
@@ -140,9 +135,20 @@ The event's payload today has only `enrolmentId`, `fromClassId` and `toClassId` 
 
 **What the LMS does:** finds the participant by `previousEmail` and updates it. This keeps the daily sync, which matches by email, from creating a duplicate.
 
-### 4.6 Completion: no message (decided 4 Nov)
+### 4.6 LMS → CRM: attendance and completion (decided 4 Nov)
 
-The LMS marks completion, because attendance lives there, and it issues the certificate itself. The CRM sends no completion message. The daily `scripts/sync-lms.ts` brings `completed`, `completed_at` and `certificate_no` back into the CRM, under the rule in §2. No `EnrolmentCompleted` event is needed.
+This is the opposite direction to the notices above. The LMS posts to a new CRM endpoint, `POST /api/webhooks/lms`, signed the same way (§3) with the same `LMS_WEBHOOK_SECRET`. It stays idempotent on `messageId`, the LMS's own event id, stored in `integration_event` with source `lms`.
+
+| `type` | `data` | What the CRM does |
+|---|---|---|
+| `enrolment.onboarded` | `{ enrolmentId }` | `confirmed → onboarded`, once the student has signed in |
+| `enrolment.attended` | `{ enrolmentId }` | `onboarded → attended` |
+| `enrolment.no_show` | `{ enrolmentId }` | `onboarded → no_show` |
+| `enrolment.completed` | `{ enrolmentId, completedAt, certificateNo, certificateUrl? }` | `attended → completed`, and stores `completed_at` and `certificate_no` |
+
+- Each move goes through the CRM's own §12.4 rules (`canChangeTo`), so a notice that would skip a step is refused with `409`. The LMS sends the steps in order, and the CRM's `409` makes it retry.
+- **Open:** whether "onboarded" means first sign-in or something else (the LMS dev decides), and the certificate number format.
+- **Not built yet.** Needs the LMS side to send these notices.
 
 ## 5. Replies
 
@@ -170,7 +176,7 @@ The LMS marks completion, because attendance lives there, and it issues the cert
 ## 6. Build steps, once agreed
 
 1. **CRM:** the signed client (`lib/lms/send.ts`), the five notices (4.1–4.5), `PersonContactChanged`, `LmsAccountReady` and the backfill script. **Built in PR #43**, off until `LMS_HANDOFF_ENABLED=true`.
-2. **CRM:** completion back from the LMS. Open (§2).
+2. **CRM:** `POST /api/webhooks/lms` for attendance and completion (§4.6). Not built yet.
 3. **LMS:** add the endpoint: verify, check idempotency, then upsert. Its tests use the same sample bodies as the CRM's.
 4. **Both:** test against a staging LMS, then switch on with an env flag, `LMS_HANDOFF_ENABLED`.
 
@@ -180,6 +186,6 @@ The LMS marks completion, because attendance lives there, and it issues the cert
 - ~~Login details~~: the CRM's onboarding message carries the login link (decided 4 Nov).
 - ~~Login link~~: the onboarding message links to `https://class.thelead.io/` (decided 4 Nov). It is the same link for everyone, so the LMS does not need to return a personal link. First sign-in uses a temporary password the LMS emails to the student's registered email (decided 4 Nov).
 - ~~Leaders Club~~: it's a membership, not a funding type (decided 4 Nov). It does not become a CRM `funding_type`. Record it as a tag or price type and pay it as `self` or `company`. The LMS's full `funding_type` list is still needed to finish the mapping.
-- **LMS endpoint:** the LMS only needs the student's contact data (name, email, phone) plus the class, and does the rest (confirmed 4 Nov). Where its receiving address lives, an LMS app route or a Supabase Edge Function, is for the LMS dev.
+- ~~LMS endpoint~~: `https://class.thelead.io/api/crm/events` (decided 4 Nov).
 - ~~Old enrolments~~: a one-off backfill at go-live sends `enrolment.confirmed` for every confirmed enrolment in upcoming classes (decided 4 Nov). It's safe to re-run, because the LMS upserts by enrolment id.
 - **Certificate:** which template, what does the certificate number look like, and is there a PDF link? The LMS owns this now.

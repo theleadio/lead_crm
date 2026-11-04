@@ -46,7 +46,7 @@ These are small. Every schema change goes through Shawn, because of the schema f
    - Update spec §9.9.
 2. **SSM number.**
    - `company.registration_no` already exists and is shown as "Registration no." (`company-form-dialog.tsx`, `lib/validation/company.ts`).
-   - Proposal: relabel it "SSM no." and add format validation, instead of adding a new column. The team needs to confirm what "track" means: just storing it, or also checking it or making it required for corporate deals or HRDC.
+   - **Decided 4 Nov:** rename the label to "SSM no." only. No new column, no format check, and it isn't required for any deal stage.
 3. **Corporate stages.**
    - Today: `new, discovery, proposal_sent, funding, won, lost` (CHECK in `001_schema_v1.sql:317`, and the discovery rule at line 322).
    - New: `engage, funding, submitted, approved, lost`.
@@ -55,7 +55,7 @@ These are small. Every schema change goes through Shawn, because of the schema f
      - `hrdc-task.ts` (it uses the `won` timing)
      - `deals-board.tsx`
      - the corporate `won_at` logic
-   - Needs a data migration for existing deals. The mapping is open (section 5).
+   - Needs a data migration for existing deals. **Mapping decided 4 Nov:** `new` and `discovery` → `engage`, `proposal_sent` → `submitted`, `won` → `approved`. `funding` and `lost` stay the same.
 4. **Brand colours.**
    - Today: `--lead-blue: #4f6bed` and `--lead-yellow: #f5be2e` in `app/globals.css`, with dark-mode variants at lines 93 and 206, and `design.pen`.
    - Logo colours, read from the logo file marketing sent on 4 Nov. The file is a compressed WebP, so these values can be a step off; confirm them against the original vector file.
@@ -171,3 +171,17 @@ All decided on 4 Nov unless marked otherwise.
 - **Automations editors:** `management`, `super_admin` and `sales`. Marketing can't edit automations; Alicia's team asks one of them to change a flow.
 - **LMS backfill:** when the CRM → LMS link goes live, a one-off backfill sends `enrolment.confirmed` for every confirmed enrolment in upcoming classes. It's idempotent on the enrolment id, so students already in the LMS aren't duplicated.
 - **Branch sync:** whoever is building merges `main` into `lead-sales/main` every week.
+
+### Decisions from the Q&A, 4 Nov (afternoon)
+
+- **Corporate stage mapping:** `new`/`discovery` → `engage`, `proposal_sent` → `submitted`, `won` → `approved` (3.3).
+- **SSM:** rename the label to "SSM no." only (3.2).
+- **Meta Lead Ads:** through `lead_sales`, which receives Meta's webhook, with the CRM saving the lead through `captureLead()`. This is option B in the Meta draft and replaces the original n8n plan.
+- **LMS completion:** the LMS sends attendance and completion back to the CRM as signed notices. This is a new LMS → CRM direction (handoff doc §4.6).
+- **LMS address:** `https://class.thelead.io/api/crm/events`.
+- **New repo:** the user creates `theleadio/lead_sales`, because this Claude session can't create repositories. Until then the work stays on `lead-sales/*` branches.
+- **Old Stripe data:** run the data-check workflow (#42) first, then decide from the numbers.
+- **Event list:** the 13 spec events plus 3 internal LMS events, as built in #43, is accepted.
+- **Ticket teams:** Finance: Mischa. Tech: JM. Operations: Qi En.
+- **Logo colours:** `#A1BACE` and `#FBE33B` are final.
+- **Still unknown:** the LMS's full funding-label list.
