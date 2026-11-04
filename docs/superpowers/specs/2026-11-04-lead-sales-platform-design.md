@@ -58,7 +58,21 @@ These are small. Every schema change goes through Shawn, because of the schema f
    - Needs a data migration for existing deals. The mapping is open (section 5).
 4. **Brand colours.**
    - Today: `--lead-blue: #4f6bed` and `--lead-yellow: #f5be2e` in `app/globals.css`, with dark-mode variants at lines 93 and 206, and `design.pen`.
-   - Change: switch to the exact logo blue and yellow. Hex codes are pending.
+   - Logo colours, read from the logo file marketing sent on 4 Nov. The file is a compressed WebP, so these values can be a step off; confirm them against the original vector file.
+     | Role | Hex |
+     |---|---|
+     | Logo blue | `#A1BACE` (a pale grey-blue, much lighter than today's `#4f6bed`) |
+     | Logo yellow | `#FBE33B` (today's `--lead-yellow` is `#f5be2e`) |
+     | Circle grey | `#3D3D3D` |
+     | Wordmark | `#0A0A0A` on light backgrounds, white on dark |
+   - Contrast (WCAG ratio; AA for normal text needs at least 4.5:1):
+     - White text on logo blue: 2.01:1, fails AA.
+     - White text on logo yellow: 1.30:1, fails AA.
+     - Logo blue as text on white: 2.01:1, fails AA.
+     - Dark `#0A0A0A` on logo blue: 9.83:1, passes. On logo yellow: 15.23:1, passes.
+     - Logo blue on the dark theme's `#1B1D29`: 8.32:1, passes. Logo yellow on it: 12.88:1, passes.
+   - Proposal: use the logo blue and yellow as **fills with dark text**, and for accents, badges and charts. Don't use them for white-text buttons or for text on white. For primary buttons and links on light backgrounds, use a darker blue built from the same hue. Its exact value is a design decision for marketing.
+   - Who changes `app/globals.css` and `design.pen` is not decided yet.
 5. **Dashboard.** Move the Upcoming classes panel (`app/(app)/(crm)/dashboard/classes-panel.tsx`) to the top of `dashboard/page.tsx`.
 6. **Enrolment → LMS: send the sign-up data to the LMS** (decided 4 Nov).
    - Today: the CRM only reads the LMS (`lib/lms/read.ts`; separate Supabase project, the LMS owns its rows).
@@ -88,7 +102,7 @@ Shared tables the new repo would add (names provisional): `conversation`, `messa
 
 | Question | Owner |
 |---|---|
-| Exact logo blue and yellow hex codes | Marketing |
+| Confirm logo hex codes against the original vector file, and choose the darker blue for buttons and links | Marketing |
 | Mapping of old corporate stages to new ones (e.g. new/discovery→engage, proposal_sent→submitted, won→approved?) | Sales — asked 4 Nov, awaiting answer |
 | What "track SSM" requires beyond storing the number (relabel, format check, required for corporate deals, e-invoice use) | Finance — asked 4 Nov, awaiting answer |
 | LMS endpoint fields and certificate template (our team builds the receiver in the LMS repo) | Our team |
