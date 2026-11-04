@@ -52,8 +52,11 @@ Tables (proposed, in the `lead_sales` schema; see the build plan):
 
 ## 5. First flows to build
 
-1. **Onboarding** (`EnrolmentConfirmed`):
-   - wait for the LMS reply (handoff doc, §5)
+1. **Onboarding**, triggered by a new event `LmsAccountReady`:
+   - The LMS handler raises `LmsAccountReady` when the LMS answers `200` to `enrolment.confirmed` (handoff doc, §5). Starting from that event, not from `EnrolmentConfirmed`, means the account and temp-password email already exist. No polling is needed.
+   - If the LMS notice dead-letters, onboarding never starts, and the Ops task from the handoff doc is the alarm.
+   - Pick the template language from the class language (or the person's preference; see main spec §7.4).
+   - A student with no email gets WhatsApp only, plus the Ops task to add an email.
    - send the onboarding email and the WhatsApp template, both with the class details, `class.thelead.io` and the temp-password note
    - set `onboarding_step`
 2. **New lead follow-up** (`LeadCaptured`): add the tag "new lead", then create a sales task due the next working day.
