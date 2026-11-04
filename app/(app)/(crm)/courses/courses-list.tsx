@@ -172,8 +172,9 @@ export function CoursesList({
           {/* table-fixed with a width per column: on auto layout the widest
               cell sets each width, so every filter reshuffled the table.
               Related facts share a column on two lines, so the table fits
-              1280px with the sidebar open; Name takes what is left, never
-              under 220px (the min-width): narrower, the table scrolls. */}
+              1280px with the sidebar open. Shares, not pixels, so spare width on a
+              wide screen spreads across every column instead of all landing
+              in Name; under the min-width the table scrolls. */}
           <Table className="min-w-[796px] table-fixed">
             <TableHeader>
               <TableRow>
@@ -182,17 +183,18 @@ export function CoursesList({
                   column="code"
                   sort={sort}
                   onSort={onSort}
-                  className="w-52"
+                  className="w-[26%]"
                 />
                 <SortableHead
                   label="Name"
                   column="name"
                   sort={sort}
                   onSort={onSort}
+                  className="w-[34%]"
                 />
-                <TableHead className="w-32">Track</TableHead>
-                <TableHead className="w-32">List price</TableHead>
-                <TableHead className="w-28">Status</TableHead>
+                <TableHead className="w-[14%]">Track</TableHead>
+                <TableHead className="w-[14%]">List price</TableHead>
+                <TableHead className="w-[12%]">Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
