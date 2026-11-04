@@ -706,8 +706,10 @@ function PersonRow({
           />
         </TableCell>
       )}
-      <TableCell className="font-medium">
-        <span className="inline-flex items-center gap-2">
+      {/* Same table trick as Tags: the cell owns a share of the row, so the
+          contact line only shows "…" when that share is really too small. */}
+      <TableCell className="w-[24%] max-w-0 font-medium">
+        <span className="flex min-w-0 items-center gap-2">
           {person.needsReview && (
             <span
               className="bg-warning inline-block size-2 rounded-full"
@@ -721,14 +723,14 @@ function PersonRow({
           {selectable ? (
             <span>{name}</span>
           ) : (
-            <Link href={href} className="hover:text-blue-ink">
+            <Link href={href} className="hover:text-blue-ink truncate">
               {name}
             </Link>
           )}
         </span>
         {contact && (
           <span
-            className="text-ink-muted block max-w-52 truncate text-xs font-normal"
+            className="text-ink-muted block truncate text-xs font-normal"
             title={contact}
           >
             {contact}
@@ -744,8 +746,11 @@ function PersonRow({
       <TableCell>{person.owner?.fullName ?? "—"}</TableCell>
       <TableCell>{formatLastActivity(person.lastActivityAt)}</TableCell>
       <TableCell>{formatDate(person.createdAt)}</TableCell>
-      <TableCell>
-        <span className="flex max-w-36 flex-wrap gap-1">
+      {/* Tags get about a third of the row (a percentage width + max-width 0
+          is the table trick for "fill, but never push the table wider"), so a
+          tag only shows "…" when the space really runs out. */}
+      <TableCell className="w-[30%] max-w-0">
+        <span className="flex flex-wrap gap-1">
           {shownTags.map((tag) => (
             // A tag is a label, not a state: no status dot (dots mark
             // statuses only, 4 Nov 2026).

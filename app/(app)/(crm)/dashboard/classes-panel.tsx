@@ -87,7 +87,11 @@ function SeatCard({ cls: c, days }: { cls: HomeClass; days: number }) {
   const share = c.capacity > 0 ? c.sold / c.capacity : 0;
   const pct = Math.min(100, Math.round(share * 100));
   const left = Math.max(0, c.capacity - c.sold);
-  const needsPush = days <= PUSH_WITHIN_DAYS && share < PUSH_BELOW_SHARE;
+  // Draft and full classes take no bookings to push.
+  const needsPush =
+    ["open", "few_seats"].includes(c.status) &&
+    days <= PUSH_WITHIN_DAYS &&
+    share < PUSH_BELOW_SHARE;
   const where =
     c.mode === "online"
       ? "Online"

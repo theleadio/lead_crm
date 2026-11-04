@@ -136,6 +136,9 @@ export function EnrolmentsList({
     const asked = params.toString();
     if (serverParams.current === null) serverParams.current = asked;
     if (asked === serverParams.current && reloadKey === 0) return;
+    // Once the view has left the server's query, its rows are gone: coming
+    // back to that query must fetch, or the loading skeleton never clears.
+    serverParams.current = "";
 
     // React's ignore flag, not AbortController: aborting mid-read errors the
     // response body stream, and that rejection reaches no catch of ours.

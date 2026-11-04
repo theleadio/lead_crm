@@ -148,7 +148,7 @@ export default async function EnrolmentDetailPage(
             <span>
               {enrolment.pricePaidMyr
                 ? formatMoneyMyr(enrolment.pricePaidMyr)
-                : "Not paid"}
+                : "Not recorded"}
             </span>
           </Row>
           <Row>
@@ -269,7 +269,12 @@ export default async function EnrolmentDetailPage(
                 paymentRecorded={
                   enrolment.payments === null
                     ? null
-                    : enrolment.payments.some((p) => p.status === "succeeded")
+                    : // Money arrived, even if part of it went back.
+                      enrolment.payments.some(
+                        (p) =>
+                          p.status === "succeeded" ||
+                          p.status === "partially_refunded",
+                      )
                 }
               />
               <TransferDialog

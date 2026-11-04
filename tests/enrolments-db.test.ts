@@ -159,6 +159,8 @@ it("keeps another owner's money away from sales (§6 ²)", async () => {
     RETURNING id`;
   await db()`UPDATE enrolment SET deal_id = ${deal.id} WHERE id = ${id}`;
 
-  assert.deepEqual((await getEnrolment(id, sales))?.payments, []);
+  // null ("may not see"), not [] ("none"): the screen must not claim
+  // there is no payment.
+  assert.equal((await getEnrolment(id, sales))?.payments, null);
   assert.equal((await getEnrolment(id, other))?.payments?.length, 1);
 });

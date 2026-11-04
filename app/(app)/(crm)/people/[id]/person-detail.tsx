@@ -382,6 +382,8 @@ function EditForm({
   const [form, setForm] = useState<Form>(initial);
   const [owners, setOwners] = useState<OwnerOption[]>([]);
   const [saving, setSaving] = useState(false);
+  // §13: never lose typed input silently — Cancel with changes asks first.
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const [error, setError] = useState<{
     message: string;
     existing?: { id: string; fullName: string };
@@ -599,11 +601,20 @@ function EditForm({
           type="button"
           variant="outline"
           disabled={saving}
-          onClick={onCancel}
+          onClick={() => (changed.length ? setConfirmCancel(true) : onCancel())}
         >
           Cancel
         </Button>
       </div>
+      <ConfirmDialog
+        open={confirmCancel}
+        onOpenChange={setConfirmCancel}
+        title="Discard your changes?"
+        body={<p>What you changed in this form is not saved.</p>}
+        confirmLabel="Discard changes"
+        cancelLabel="Keep editing"
+        onConfirm={async () => onCancel()}
+      />
     </form>
   );
 }

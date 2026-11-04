@@ -133,7 +133,9 @@ async function readPayments(
           SELECT 1 FROM deal
           WHERE id = ${dealId} AND owner_user_id = ${viewer.id}`
       : [];
-    if (!owned) return [];
+    // null, not []: an empty list would read as "no payment" on the screen
+    // and in the confirm dialog, when the viewer simply may not see it.
+    if (!owned) return null;
   }
   const rows = await sql`
     SELECT id, method, amount_myr, status, paid_at, reference_no,

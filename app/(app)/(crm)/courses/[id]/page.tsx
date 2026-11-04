@@ -124,11 +124,13 @@ export default async function CoursePage(props: PageProps<"/courses/[id]">) {
       <ClassTable
         title="Upcoming classes"
         rows={upcoming.data}
+        total={upcoming.page.total}
         empty="No upcoming class of this course."
       />
       <ClassTable
         title="Past classes"
         rows={past.data}
+        total={past.page.total}
         empty="No class of this course has run yet."
       />
     </div>
@@ -138,10 +140,13 @@ export default async function CoursePage(props: PageProps<"/courses/[id]">) {
 function ClassTable({
   title,
   rows,
+  total,
   empty,
 }: {
   title: string;
   rows: ClassListItem[];
+  // The full count; the page lists at most 100 (§14).
+  total: number;
   empty: string;
 }) {
   return (
@@ -149,8 +154,16 @@ function ClassTable({
       <h2 className="flex items-center gap-2.5 font-semibold">
         {title}
         <span className="bg-surface-sunken text-ink-muted rounded-full px-2 py-0.5 text-xs font-semibold">
-          {rows.length}
+          {total}
         </span>
+        {total > rows.length && (
+          <span className="text-ink-muted text-xs font-normal">
+            Showing the first {rows.length}.{" "}
+            <Link href="/classes" className="text-blue-ink hover:underline">
+              See all on Classes
+            </Link>
+          </span>
+        )}
       </h2>
       <TableCard>
         <Table className="min-w-[640px] table-fixed">
