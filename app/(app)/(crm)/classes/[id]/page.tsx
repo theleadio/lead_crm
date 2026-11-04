@@ -13,7 +13,7 @@ import {
 } from "@/lib/auth/permissions";
 import { listClassNotices } from "@/lib/classes/notices";
 import { listRoster } from "@/lib/classes/roster";
-import { listCourses } from "@/lib/courses/service";
+import { getCourse, listCourses } from "@/lib/courses/service";
 import { courseListQuerySchema } from "@/lib/validation/course";
 import { getClass, type ClassRecord } from "@/lib/classes/service";
 import { classStatusBadge, seatBarColor } from "@/lib/classes/types";
@@ -54,6 +54,7 @@ export default async function ClassDetailPage(
   const cls = await getClass(id, user);
   if (!cls) notFound();
 
+  const course = await getCourse(cls.courseId);
   const tabs = tabsFor(user);
   const search = await props.searchParams;
   const tab: Tab =
@@ -73,7 +74,11 @@ export default async function ClassDetailPage(
   return (
     <div className="space-y-6">
       <BackLink href="/classes" label="Classes" />
-      <ClassHeader cls={cls} canWrite={canWrite && !editing} />
+      <ClassHeader
+        cls={cls}
+        canWrite={canWrite && !editing}
+        websiteGaps={websiteGaps(cls, course?.listPriceMyr ?? null)}
+      />
       <TabStrip tabs={tabs} active={tab} />
 
       {editing && courses && (
@@ -92,6 +97,7 @@ export default async function ClassDetailPage(
         <DetailsTab
           cls={cls}
           canWrite={canWrite}
+          courseListPriceMyr={course?.listPriceMyr ?? null}
           // §12.1: seats taken is the two counts the database gave us, so the
           // dialog's number needs no query of its own.
           seatHolders={cls.confirmedCount + cls.reservedCount}
@@ -122,9 +128,11 @@ export default async function ClassDetailPage(
 function ClassHeader({
   cls,
   canWrite,
+  websiteGaps,
 }: {
   cls: ClassRecord;
   canWrite: boolean;
+  websiteGaps: string[];
 }) {
   const badge = classStatusBadge(cls.status);
   const sold = cls.confirmedCount + cls.reservedCount;
@@ -175,10 +183,29 @@ function ClassHeader({
               status={cls.status}
               isPublic={cls.isPublic}
               version={cls.version}
+              websiteGaps={websiteGaps}
             />
           </span>
         ) : undefined
       }
     />
   );
+}
+
+// What a visitor would see missing if this class went on the website (§10:
+// show the real class). "TBC" counts as missing: it is a placeholder, not a
+// venue. Shown as a warning before Show on website, never a block.
+function websiteGaps(cls: ClassRecord, courseListPriceMyr: string | null) {
+  const tbc = (v: string | null) => !v?.trim() || /^tbc$/i.test(v.trim());
+  const gaps: string[] = [];
+  if (!cls.priceMyr && !courseListPriceMyr) gaps.push("No price is set.");
+  if (cls.mode !== "online") {
+    if (tbc(cls.venueName)) gaps.push("The venue is not set.");
+    if (tbc(cls.venueAddress) || tbc(cls.city))
+      gaps.push("The venue address or city still says TBC.");
+  }
+  if (cls.mode !== "in_person" && !cls.onlineUrl?.trim())
+    gaps.push("There is no joining link.");
+  if (!cls.startTime) gaps.push("No start time is set.");
+  return gaps;
 }

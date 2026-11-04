@@ -97,6 +97,7 @@ export function CancelClass({
           </>
         }
         confirmLabel="Cancel class"
+        cancelLabel="Keep class"
         canConfirm={Boolean(reason.trim())}
         onConfirm={cancel}
       >

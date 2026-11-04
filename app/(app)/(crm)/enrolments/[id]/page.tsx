@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { formatMoneyMyr } from "@/lib/format/money";
 import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { BackLink, DetailHeader, Panel, Row } from "@/components/detail-kit";
@@ -75,7 +76,7 @@ export default async function EnrolmentDetailPage(
             <span>
               <Link
                 href={`/people/${enrolment.personId}`}
-                className="text-blue-ink underline"
+                className="text-blue-ink hover:underline"
               >
                 {enrolment.personName}
               </Link>
@@ -87,7 +88,7 @@ export default async function EnrolmentDetailPage(
               {enrolment.bookerPersonId ? (
                 <Link
                   href={`/people/${enrolment.bookerPersonId}`}
-                  className="text-blue-ink underline"
+                  className="text-blue-ink hover:underline"
                 >
                   {enrolment.bookerName}
                 </Link>
@@ -101,7 +102,7 @@ export default async function EnrolmentDetailPage(
             <span>
               <Link
                 href={`/classes/${enrolment.classId}`}
-                className="text-blue-ink underline"
+                className="text-blue-ink hover:underline"
               >
                 {enrolment.classCode}
               </Link>
@@ -144,7 +145,11 @@ export default async function EnrolmentDetailPage(
           <Row>
             <span className="text-ink-muted">Price paid (MYR)</span>
             {/* §12.7: the snapshot taken at purchase, not the class's price. */}
-            <span>{value(enrolment.pricePaidMyr)}</span>
+            <span>
+              {enrolment.pricePaidMyr
+                ? formatMoneyMyr(enrolment.pricePaidMyr)
+                : "Not paid"}
+            </span>
           </Row>
           <Row>
             <span className="text-ink-muted">Onboarding step</span>
@@ -182,7 +187,7 @@ export default async function EnrolmentDetailPage(
               <span>
                 <Link
                   href={`/enrolments/${enrolment.transferredToEnrolmentId}`}
-                  className="text-blue-ink underline"
+                  className="text-blue-ink hover:underline"
                 >
                   {enrolment.transferredToClassCode}
                 </Link>
@@ -225,7 +230,7 @@ export default async function EnrolmentDetailPage(
                       href={`/api/payments/${payment.id}/proof`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-blue-ink underline"
+                      className="text-blue-ink hover:underline"
                     >
                       Proof
                     </a>
@@ -261,6 +266,11 @@ export default async function EnrolmentDetailPage(
                 version={enrolment.version}
                 // Cancelling needs a reason, so it has its own dialog.
                 moves={moves.filter((s) => s !== "cancelled")}
+                paymentRecorded={
+                  enrolment.payments === null
+                    ? null
+                    : enrolment.payments.some((p) => p.status === "succeeded")
+                }
               />
               <TransferDialog
                 id={enrolment.id}

@@ -338,6 +338,9 @@ The dashboard's one gradient: a 135° sweep of the logo blue, from #BCCDE0 throu
 - **Do** keep CRM text between 11px and 28px and build hierarchy with weight and the chalk steps.
 - **Do** use Body Dense (13px) for table cells and sidebar items, so a 1280px screen shows a full working list.
 
+- **Do** open records one way everywhere: clicking a list row (or its name) opens the record. The name is plain bold, never underlined. A record page opens read-only, and **Edit** at the top right turns it into the form until Save or Cancel. Courses have no page of their own, so their row opens the edit dialog.
+- **Do** style a link to another record (a person in a panel, the class on an enrolment, the back link) in LEAD blue with an underline on hover only. Links inside a sentence or message keep their underline.
+
 ### Don't:
 
 - **Don't** add shadows. The system is flat.

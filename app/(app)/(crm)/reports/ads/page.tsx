@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { DateField } from "@/components/date-field";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { permissionFor } from "@/lib/auth/permissions";
 import { formatDate } from "@/lib/format/date";
@@ -385,21 +386,11 @@ function Shell({
       <form method="get" className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium">From</span>
-          <input
-            type="date"
-            name="filter[from]"
-            defaultValue={from}
-            className="border-line focus-visible:outline-focus-ring rounded-md border px-3 py-2 focus-visible:outline-2"
-          />
+          <DateField name="filter[from]" defaultValue={from} className="w-40" />
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium">To</span>
-          <input
-            type="date"
-            name="filter[to]"
-            defaultValue={to}
-            className="border-line focus-visible:outline-focus-ring rounded-md border px-3 py-2 focus-visible:outline-2"
-          />
+          <DateField name="filter[to]" defaultValue={to} className="w-40" />
         </label>
         {/* Size is a plain <select> inside the same GET form, so it shares
             the Apply button and lands in the URL beside the dates — the view

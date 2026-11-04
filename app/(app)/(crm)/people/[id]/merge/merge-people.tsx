@@ -156,6 +156,7 @@ export function MergePeopleView({
           </>
         }
         confirmLabel="Merge permanently"
+        cancelLabel="Don't merge"
         canConfirm={typed.trim() === keptName}
         onConfirm={confirm}
       >

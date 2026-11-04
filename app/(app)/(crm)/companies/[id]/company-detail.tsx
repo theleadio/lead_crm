@@ -1,5 +1,6 @@
 "use client";
 
+import { DateField } from "@/components/date-field";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -137,7 +138,7 @@ export function CompanyDetailView({
         actions={
           canWrite && (
             <Button variant="outline" onClick={() => setEditOpen(true)}>
-              Edit company
+              Edit
             </Button>
           )
         }
@@ -207,7 +208,7 @@ export function CompanyDetailView({
                     <Row key={m.membershipId}>
                       <Link
                         href={`/people/${m.personId}`}
-                        className="text-blue-ink underline"
+                        className="text-blue-ink hover:underline"
                       >
                         {m.fullName}
                       </Link>
@@ -329,7 +330,7 @@ function MemberRow({
       <div className="grid auto-cols-fr grid-flow-col gap-2">
         <Link
           href={`/people/${m.personId}`}
-          className="text-blue-ink underline"
+          className="text-blue-ink hover:underline"
         >
           {m.fullName}
         </Link>
@@ -406,11 +407,10 @@ function MemberRow({
           </p>
           <label className="flex items-center gap-2">
             End date
-            <input
-              type="date"
+            <DateField
               value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="border-line-strong bg-surface-sunken text-ink h-9 rounded-sm border px-2"
+              onChange={(v) => setEndDate(v)}
+              className="w-40"
             />
           </label>
           {error && (

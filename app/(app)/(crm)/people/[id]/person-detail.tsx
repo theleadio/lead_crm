@@ -88,6 +88,9 @@ export function PersonDetailView({
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
+  // One edit pattern across the CRM: a record opens read-only, and Edit
+  // (top right) turns its details into the form until Save or Cancel.
+  const [editing, setEditing] = useState(false);
   const dismissToast = useCallback(() => setToast(null), []);
 
   useEffect(() => {
@@ -196,6 +199,11 @@ export function PersonDetailView({
         }
         actions={
           <>
+            {canWrite && !editing && (
+              <Button variant="outline" onClick={() => setEditing(true)}>
+                Edit
+              </Button>
+            )}
             {canCreateDeal && (
               <NewDeal
                 pipeline="individual"
@@ -245,7 +253,7 @@ export function PersonDetailView({
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="border-line bg-surface-raised rounded-md border p-5">
           <h2 className="mb-4 font-semibold">Details</h2>
-          {canWrite ? (
+          {canWrite && editing ? (
             <EditForm
               canMerge={canExportData}
               canEditCompany={canEditCompany}
@@ -257,10 +265,12 @@ export function PersonDetailView({
                   status: "ready",
                   detail: { ...detail, person },
                 });
+                setEditing(false);
                 setToast(
                   `Saved changes to ${person.fullName || "this person"}.`,
                 );
               }}
+              onCancel={() => setEditing(false)}
               onReload={reload}
             />
           ) : (
@@ -299,7 +309,7 @@ export function PersonDetailView({
                   <span>
                     <Link
                       href={`/enrolments/${e.id}`}
-                      className="text-blue-ink underline"
+                      className="text-blue-ink hover:underline"
                     >
                       {e.classCode}
                     </Link>
@@ -357,6 +367,7 @@ function EditForm({
   onNotice,
   person,
   onSaved,
+  onCancel,
   onReload,
 }: {
   canMerge: boolean;
@@ -364,6 +375,7 @@ function EditForm({
   onNotice: (message: string) => void;
   person: Person;
   onSaved: (person: Person) => void;
+  onCancel: () => void;
   onReload: () => void;
 }) {
   const initial = toForm(person);
@@ -583,15 +595,14 @@ function EditForm({
         <Button type="submit" disabled={saving || !changed.length}>
           {saving ? "Saving…" : "Save changes"}
         </Button>
-        {changed.length > 0 && !saving && (
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => setForm(initial)}
-          >
-            Discard
-          </Button>
-        )}
+        <Button
+          type="button"
+          variant="outline"
+          disabled={saving}
+          onClick={onCancel}
+        >
+          Cancel
+        </Button>
       </div>
     </form>
   );
@@ -886,6 +897,7 @@ function NotADuplicate({
           </>
         }
         confirmLabel="Clear the flag"
+        tone="primary"
         onConfirm={dismiss}
       >
         <Input
@@ -957,6 +969,7 @@ function DeletePerson({
           </>
         }
         confirmLabel="Delete"
+        cancelLabel="Keep person"
         canConfirm={Boolean(reason.trim())}
         onConfirm={remove}
       >
@@ -1017,6 +1030,7 @@ function ErasePerson({
           </>
         }
         confirmLabel="Erase"
+        cancelLabel="Keep data"
         canConfirm={Boolean(reason.trim()) && typed.trim() === name}
         onConfirm={erase}
       >

@@ -1,6 +1,9 @@
 "use client";
 
+import { formatMoneyMyr } from "@/lib/format/money";
+import { DateField } from "@/components/date-field";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   EmptyRow,
@@ -14,6 +17,7 @@ import {
   TableCard,
 } from "@/components/list-kit";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -29,7 +33,7 @@ import {
   type EnrolmentListItem,
 } from "@/lib/enrolments/types";
 import { ENROLMENT_STATUSES } from "@/lib/enrolments/status-rules";
-import { formatDate, formatDateRange } from "@/lib/format/date";
+import { formatDate, formatDateRange, formatDateTime } from "@/lib/format/date";
 import type { ListResponse } from "@/lib/people/types";
 import type { EnrolmentListQuery } from "@/lib/validation/enrolment-query";
 
@@ -56,6 +60,7 @@ export function EnrolmentsList({
   courses: { id: string; nameEn: string }[];
   classes: { id: string; code: string }[];
 }) {
+  const router = useRouter();
   const [when, setWhen] = useState(initialQuery.when);
   const [search, setSearch] = useState(initialQuery.q ?? "");
   const [q, setQ] = useState(initialQuery.q ?? "");
@@ -70,6 +75,9 @@ export function EnrolmentsList({
     initialQuery.enrolledFrom ?? "",
   );
   const [enrolledTo, setEnrolledTo] = useState(initialQuery.enrolledTo ?? "");
+  const [needsAction, setNeedsAction] = useState(
+    initialQuery.needsAction === true,
+  );
   const [sort, setSort] = useState(initialQuery.sort ?? "");
   const [page, setPage] = useState(initialQuery.page);
   const [state, setState] = useState<State>({
@@ -112,6 +120,7 @@ export function EnrolmentsList({
     if (status) params.set("filter[status]", status);
     if (payerType) params.set("filter[payerType]", payerType);
     if (hasPrice) params.set("filter[hasPrice]", hasPrice);
+    if (needsAction) params.set("filter[needsAction]", "true");
     if (enrolledFrom) params.set("filter[enrolledFrom]", enrolledFrom);
     if (enrolledTo) params.set("filter[enrolledTo]", enrolledTo);
     if (sort) params.set("sort", sort);
@@ -162,6 +171,7 @@ export function EnrolmentsList({
     status,
     payerType,
     hasPrice,
+    needsAction,
     enrolledFrom,
     enrolledTo,
     sort,
@@ -177,39 +187,78 @@ export function EnrolmentsList({
     (value: T) => {
       set(value);
       setPage(1);
+      // Skeleton until the new rows land, so the old view's empty message
+      // never shows under the new filter.
+      setState({ status: "loading" });
     };
+  const filtered = Boolean(
+    q ||
+    classId ||
+    courseId ||
+    status ||
+    payerType ||
+    hasPrice ||
+    enrolledFrom ||
+    enrolledTo,
+  );
+  function clearFilters() {
+    setSearch("");
+    setQ("");
+    setClassId("");
+    setCourseId("");
+    setStatus("");
+    setPayerType("");
+    setHasPrice("");
+    setEnrolledFrom("");
+    setEnrolledTo("");
+    setPage(1);
+    setState({ status: "loading" });
+  }
 
   return (
     <div className="space-y-4">
       <ListHeader title="Enrolments" />
 
-      {/* Two views of one register, so tabs rather than another select — the
+      <div className="flex flex-wrap items-center gap-3">
+        {/* Two views of one register, so tabs rather than another select — the
           §9.8 Classes split, by the same Kuala Lumpur rule. */}
-      <div
-        role="tablist"
-        aria-label="Which enrolments"
-        className="border-line bg-surface-raised flex w-fit gap-1 rounded-full border p-1"
-      >
-        {(["upcoming", "past"] as const).map((w) => (
-          <button
-            key={w}
-            role="tab"
-            type="button"
-            aria-selected={when === w}
-            onClick={() => {
-              if (when === w) return;
-              setWhen(w);
-              setPage(1);
-            }}
-            className={`focus-visible:outline-focus-ring rounded-full px-5 py-2 text-[13px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 ${
-              when === w
-                ? "bg-primary text-primary-foreground"
-                : "text-ink-muted hover:text-ink"
-            }`}
-          >
-            {w === "upcoming" ? "Classes to come" : "Classes that have run"}
-          </button>
-        ))}
+        <div
+          role="tablist"
+          aria-label="Which enrolments"
+          className="border-line bg-surface-raised flex w-fit gap-1 rounded-full border p-1"
+        >
+          {(["upcoming", "past"] as const).map((w) => (
+            <button
+              key={w}
+              role="tab"
+              type="button"
+              aria-selected={when === w}
+              onClick={() => {
+                if (when === w) return;
+                setWhen(w);
+                setPage(1);
+                setState({ status: "loading" });
+              }}
+              className={`focus-visible:outline-focus-ring rounded-full px-5 py-2 text-[13px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 ${
+                when === w
+                  ? "bg-primary text-primary-foreground"
+                  : "text-ink-muted hover:text-ink"
+              }`}
+            >
+              {w === "upcoming" ? "Classes to come" : "Classes that have run"}
+            </button>
+          ))}
+        </div>
+
+        {/* The work queue: reserved seats (soonest hold to run out first) and
+          payments still pending — the enrolments someone has to move. */}
+        <Button
+          variant={needsAction ? "default" : "outline"}
+          aria-pressed={needsAction}
+          onClick={() => filter(setNeedsAction)(!needsAction)}
+        >
+          Needs action
+        </Button>
       </div>
 
       <FilterRow>
@@ -259,22 +308,20 @@ export function EnrolmentsList({
         />
         <label className="text-ink-muted flex items-center gap-2 text-sm">
           Enrolled from
-          <Input
-            type="date"
+          <DateField
             aria-label="Enrolled from"
             value={enrolledFrom}
-            onChange={(e) => filter(setEnrolledFrom)(e.target.value)}
-            className="h-9 w-40"
+            onChange={(v) => filter(setEnrolledFrom)(v)}
+            className="w-40"
           />
         </label>
         <label className="text-ink-muted flex items-center gap-2 text-sm">
           to
-          <Input
-            type="date"
+          <DateField
             aria-label="Enrolled to"
             value={enrolledTo}
-            onChange={(e) => filter(setEnrolledTo)(e.target.value)}
-            className="h-9 w-40"
+            onChange={(v) => filter(setEnrolledTo)(v)}
+            className="w-40"
           />
         </label>
       </FilterRow>
@@ -334,16 +381,61 @@ export function EnrolmentsList({
             {state.status === "loading" && <SkeletonRows columns={COLUMNS} />}
             {state.status === "ready" && rows.length === 0 && (
               <EmptyRow columns={COLUMNS}>
-                No enrolment matches these filters.
+                {filtered ? (
+                  <>
+                    No enrolment matches these filters.{" "}
+                    <Button variant="link" onClick={clearFilters}>
+                      Clear filters
+                    </Button>
+                  </>
+                ) : needsAction ? (
+                  <>
+                    Nothing needs action: no seat on hold and no payment pending{" "}
+                    {when === "upcoming"
+                      ? "in classes to come"
+                      : "in classes that have run"}
+                    .{" "}
+                    <Button
+                      variant="link"
+                      onClick={() => filter(setNeedsAction)(false)}
+                    >
+                      Show every enrolment
+                    </Button>
+                  </>
+                ) : when === "upcoming" ? (
+                  <>
+                    No enrolments in upcoming classes yet.{" "}
+                    <Button
+                      variant="link"
+                      onClick={() => {
+                        setWhen("past");
+                        setPage(1);
+                        setState({ status: "loading" });
+                      }}
+                    >
+                      Show past enrolments
+                    </Button>
+                  </>
+                ) : (
+                  "No class has run with enrolments yet."
+                )}
               </EmptyRow>
             )}
             {rows.map((row) => (
-              <TableRow key={row.id}>
+              // The whole row opens the enrolment (§9.11), as every list row
+              // opens its record; the class code is a separate link.
+              <TableRow
+                key={row.id}
+                className="cursor-pointer"
+                onClick={(e) => {
+                  if ((e.target as HTMLElement).closest("a, button")) return;
+                  router.push(`/enrolments/${row.id}`);
+                }}
+              >
                 <TableCell className="font-semibold">
-                  {/* The row opens the enrolment (§9.11), not the person. */}
                   <Link
                     href={`/enrolments/${row.id}`}
-                    className="text-blue-ink underline"
+                    className="hover:text-blue-ink"
                   >
                     {row.personName}
                   </Link>
@@ -351,7 +443,7 @@ export function EnrolmentsList({
                 <TableCell>
                   <Link
                     href={`/classes/${row.classId}`}
-                    className="text-blue-ink underline"
+                    className="text-blue-ink hover:underline"
                   >
                     {row.classCode}
                   </Link>
@@ -368,6 +460,11 @@ export function EnrolmentsList({
                   >
                     {enumLabel(row.status)}
                   </Badge>
+                  {row.status === "reserved" && row.seatReservedUntil && (
+                    <span className="text-ink-muted mt-1 block text-xs">
+                      Held until {formatDateTime(row.seatReservedUntil)}
+                    </span>
+                  )}
                 </TableCell>
                 <TableCell>
                   {/* §12.1: the same predicate the class screens count with. */}
@@ -379,7 +476,7 @@ export function EnrolmentsList({
                   {enumLabel(row.payerType)}
                 </TableCell>
                 <TableCell className="text-ink-muted">
-                  {row.pricePaidMyr ?? "—"}
+                  {row.pricePaidMyr ? formatMoneyMyr(row.pricePaidMyr) : "—"}
                 </TableCell>
                 <TableCell className="text-ink-muted">
                   {formatDate(row.createdAt)}

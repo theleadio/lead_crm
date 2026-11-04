@@ -16,6 +16,11 @@ import {
 // says what happens and to how many records; `children` hold the reason and
 // typed-name inputs, whose state lives in the caller so a failed action keeps
 // what was typed. `onConfirm` returns an error message, or nothing on success.
+//
+// Red is for actions that destroy or call something off (tone "danger", the
+// default); a confirmation that only double-checks a normal step is blue
+// ("primary"). The way out never reuses the action's verb: next to "Cancel
+// class" it reads "Keep class", not "Cancel".
 export function ConfirmDialog({
   open,
   onOpenChange,
@@ -23,6 +28,8 @@ export function ConfirmDialog({
   body,
   children,
   confirmLabel,
+  cancelLabel = "Go back",
+  tone = "danger",
   canConfirm = true,
   onConfirm,
 }: {
@@ -32,6 +39,8 @@ export function ConfirmDialog({
   body: React.ReactNode;
   children?: React.ReactNode;
   confirmLabel: string;
+  cancelLabel?: string;
+  tone?: "danger" | "primary";
   canConfirm?: boolean;
   onConfirm: () => Promise<string | void>;
 }) {
@@ -58,6 +67,8 @@ export function ConfirmDialog({
           title={title}
           body={body}
           confirmLabel={confirmLabel}
+          cancelLabel={cancelLabel}
+          tone={tone}
           canConfirm={canConfirm}
           onConfirm={onConfirm}
           onCancel={() => onOpenChange(false)}
@@ -75,6 +86,8 @@ function Body({
   body,
   children,
   confirmLabel,
+  cancelLabel,
+  tone,
   canConfirm,
   onConfirm,
   onCancel,
@@ -83,6 +96,8 @@ function Body({
   body: React.ReactNode;
   children?: React.ReactNode;
   confirmLabel: string;
+  cancelLabel: string;
+  tone: "danger" | "primary";
   canConfirm: boolean;
   onConfirm: () => Promise<string | void>;
   onCancel: () => void;
@@ -119,10 +134,10 @@ function Body({
       )}
       <DialogFooter>
         <Button variant="outline" onClick={onCancel}>
-          Cancel
+          {cancelLabel}
         </Button>
         <Button
-          variant="destructive"
+          variant={tone === "danger" ? "destructive" : "default"}
           disabled={!canConfirm || saving}
           onClick={confirm}
         >

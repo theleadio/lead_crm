@@ -1,4 +1,5 @@
 import { Panel, Row } from "@/components/detail-kit";
+import { formatMoneyMyr } from "@/lib/format/money";
 import type { ClassRecord } from "@/lib/classes/service";
 import { enumLabel } from "@/lib/classes/types";
 import { formatDate } from "@/lib/format/date";
@@ -23,9 +24,12 @@ export function DetailsTab({
   cls,
   canWrite,
   seatHolders,
+  courseListPriceMyr,
 }: {
   cls: ClassRecord;
   canWrite: boolean;
+  // A class with no price of its own sells at its course's list price (§5).
+  courseListPriceMyr: string | null;
   // How many students the cancel dialog will name. Counted on the server
   // again inside the transaction, so this number is only for the wording.
   seatHolders: number;
@@ -102,8 +106,14 @@ export function DetailsTab({
           <span>{cls.fewSeatsThreshold}</span>
         </Row>
         <Row>
-          <span className="text-ink-muted">Price (MYR)</span>
-          <span>{value(cls.priceMyr)}</span>
+          <span className="text-ink-muted">Price</span>
+          <span>
+            {cls.priceMyr
+              ? formatMoneyMyr(cls.priceMyr)
+              : courseListPriceMyr
+                ? `${formatMoneyMyr(courseListPriceMyr)} (course list price)`
+                : "Not set"}
+          </span>
         </Row>
         <Row>
           <span className="text-ink-muted">HRDC claimable</span>

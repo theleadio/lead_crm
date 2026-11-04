@@ -288,7 +288,7 @@ function CompanyRow({ company: c }: { company: CompanyListItem }) {
       }}
     >
       <TableCell className="font-medium">
-        <Link href={href} className="text-blue-ink underline">
+        <Link href={href} className="hover:text-blue-ink">
           {c.legalName}
         </Link>
       </TableCell>

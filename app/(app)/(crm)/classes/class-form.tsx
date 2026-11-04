@@ -1,5 +1,6 @@
 "use client";
 
+import { DateField } from "@/components/date-field";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -250,21 +251,21 @@ export function ClassForm({
         <div className="grid grid-cols-2 gap-3">
           <Field label="Start date" required error={fieldErrors.startDate}>
             {(id) => (
-              <Input
+              <DateField
+                required
                 id={id}
-                type="date"
                 value={form.startDate}
-                onChange={(e) => set("startDate", e.target.value)}
+                onChange={(v) => set("startDate", v)}
               />
             )}
           </Field>
           <Field label="End date" required error={fieldErrors.endDate}>
             {(id) => (
-              <Input
+              <DateField
+                required
                 id={id}
-                type="date"
                 value={form.endDate}
-                onChange={(e) => set("endDate", e.target.value)}
+                onChange={(v) => set("endDate", v)}
               />
             )}
           </Field>

@@ -58,7 +58,7 @@ export default async function CrmLayout({
               required
               pattern=".*\S.*"
               aria-label="Search people"
-              placeholder="Search people, companies…"
+              placeholder="Search people by name, email or phone…"
               className="bg-surface-sunken text-ink placeholder:text-ink-subtle focus-visible:outline-focus-ring w-full max-w-80 rounded-full py-2 pr-3 pl-9 text-[13px] focus-visible:outline-2 focus-visible:outline-offset-2"
             />
           </form>

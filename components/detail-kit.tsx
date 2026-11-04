@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 
 export function BackLink({ href, label }: { href: string; label: string }) {
   return (
-    <Link href={href} className="text-blue-ink text-sm underline">
+    <Link href={href} className="text-blue-ink text-sm hover:underline">
       ← {label}
     </Link>
   );

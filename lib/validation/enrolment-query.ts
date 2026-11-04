@@ -43,6 +43,9 @@ export const enrolmentListQuerySchema = z.object({
   // that lives in `payment`, which §6 hides from support, and a filter that
   // returned different rows per role would be worse than none.
   hasPrice: bool,
+  // The work queue: seats on hold and payments still to arrive, the two
+  // statuses staff have to move by hand.
+  needsAction: bool,
   enrolledFrom: z.iso.date().optional(),
   enrolledTo: z.iso.date().optional(),
   sort: z.enum(ENROLMENT_SORTS).optional(),
@@ -62,6 +65,7 @@ export function readEnrolmentParams(sp: URLSearchParams) {
     status: sp.get("filter[status]") ?? undefined,
     payerType: sp.get("filter[payerType]") ?? undefined,
     hasPrice: sp.get("filter[hasPrice]") ?? undefined,
+    needsAction: sp.get("filter[needsAction]") ?? undefined,
     enrolledFrom: sp.get("filter[enrolledFrom]") ?? undefined,
     enrolledTo: sp.get("filter[enrolledTo]") ?? undefined,
     sort: sp.get("sort") ?? undefined,

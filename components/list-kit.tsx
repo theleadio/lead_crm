@@ -165,6 +165,8 @@ export function Pagination({
   total: number;
   onPage: (page: number) => void;
 }) {
+  // No rows: the table's empty state says so, and "1–0 of 0" said nothing.
+  if (total === 0) return null;
   const lastPage = Math.max(1, Math.ceil(total / limit));
   const from = (page - 1) * limit + 1;
   const to = Math.min(page * limit, total);

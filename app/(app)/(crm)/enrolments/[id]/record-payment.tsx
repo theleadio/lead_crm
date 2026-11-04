@@ -1,5 +1,6 @@
 "use client";
 
+import { DateField } from "@/components/date-field";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Toast } from "@/components/toast";
@@ -231,7 +232,7 @@ export function RecordPayment({
             Amount (MYR)
             <Input
               inputMode="decimal"
-              placeholder="3200.00"
+              placeholder="Amount received, e.g. 3200"
               value={amountMyr}
               onChange={(e) => setAmountMyr(e.target.value)}
             />
@@ -257,11 +258,10 @@ export function RecordPayment({
 
           <label className="text-sm">
             Payment date
-            <Input
-              type="date"
+            <DateField
               max={todayInKualaLumpur()}
               value={paidOn}
-              onChange={(e) => setPaidOn(e.target.value)}
+              onChange={(v) => setPaidOn(v)}
             />
             {fieldError("paidOn")}
           </label>

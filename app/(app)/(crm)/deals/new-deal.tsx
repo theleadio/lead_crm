@@ -233,7 +233,7 @@ export function NewDeal({
               inputMode="decimal"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              placeholder="4500.00"
+              placeholder="e.g. 4500"
             />
             {suggested && (
               <p className="text-ink-muted mt-1 text-xs">

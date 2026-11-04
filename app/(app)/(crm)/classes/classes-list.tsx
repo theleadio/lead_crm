@@ -379,7 +379,7 @@ function ClassRow({ cls }: { cls: ClassListItem }) {
         <Link
           href={href}
           title={cls.code}
-          className="text-blue-ink block truncate font-semibold underline"
+          className="hover:text-blue-ink block truncate font-semibold"
         >
           {cls.code}
         </Link>

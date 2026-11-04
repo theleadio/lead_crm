@@ -109,6 +109,7 @@ export function CreateEnrolment({
           </p>
         }
         confirmLabel="Create enrolment"
+        tone="primary"
         canConfirm={Boolean(chosen)}
         onConfirm={create}
       >
