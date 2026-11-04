@@ -13,7 +13,7 @@ Put all customer messages in one inbox: WhatsApp (via WATI), Facebook Messenger,
 | **Operations** | Qi En (decided 4 Nov) |
 | **Support** (default) | everything else |
 
-Members, decided 4 Nov: Finance is Mischa, Tech is JM, Operations is Qi En. Which team takes "everything else", Support or Operations, isn't decided yet.
+Members, decided 4 Nov: Finance is Mischa, Tech is JM, Operations is Qi En. "Everything else" goes to a **separate Support team** (decided 4 Nov). Its members aren't named yet.
 
 Facebook Messenger is assumed until the feature map confirms it. The email provider for the support inbox isn't chosen yet.
 
@@ -54,7 +54,7 @@ Facebook Messenger is assumed until the feature map confirms it. The email provi
   - `general` → Support
 
 **`team` and `team_member`.**
-- Teams: Finance (Mischa), Tech (JM), Operations (Qi En), and Support or another default team (to decide).
+- Teams: Finance (Mischa), Tech (JM), Operations (Qi En), and Support, the default team (members to name).
 - Members: `app_user` rows. One person can be in several teams.
 
 **`ticket_rule`.** An ordered list. The first rule that matches wins.

@@ -111,7 +111,7 @@ Tables the new repo would add, in its own `sales` schema (names provisional; see
 | LMS funding-label list; certificate template and number format; what "onboarded" means in the LMS | LMS dev / our team |
 | Import old Stripe data? Run `data-check` (#42) first, then decide | JM |
 | Messenger and email providers. Email service: keep SalesProcess's (named by the REA feature map) | Wei Ping / Alicia |
-| Which team takes "everything else" tickets: Support or Operations | Team |
+| Members of the Support team, which takes "everything else" tickets (a separate team, decided 4 Nov) | User |
 | Approval of shared-DB schema changes | Shawn |
 | Create the repo `theleadio/lead_sales` (Claude can't create repos) | User |
 
