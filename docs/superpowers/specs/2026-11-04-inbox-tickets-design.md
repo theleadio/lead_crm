@@ -85,7 +85,7 @@ Facebook Messenger is assumed until the feature map confirms it. The email provi
 - **Tickets:**
   - List, filtered by team, status and assignee. "My tickets" is the default.
   - Detail page with status, category, assignee, the linked conversation, internal notes and history.
-- **Help form:** on the new website. Category dropdown, name, email or phone, message, and an attachment. Consent wording as in the CRM's public forms.
+- **Help form:** on the new website. Category dropdown, name, email or phone, message, and an attachment. Consent wording as in the CRM's public forms. Open to anyone (decided 4 Nov), so it reuses the CRM's public-form protection: the CAPTCHA check and rate limit in `lib/public/guard.ts`.
 - **Settings:**
   - Teams and members.
   - Categories.
@@ -97,7 +97,7 @@ Facebook Messenger is assumed until the feature map confirms it. The email provi
 - A team member sees and works the tickets of their own teams.
 - `super_admin` and `management` see everything.
 - Finance tickets can contain invoice data, so other teams can't open them.
-- Conversations are visible to `support`, `sales` and team members. Who exactly is still open (§7).
+- Conversations are visible to `support`, `sales`, team members for their own tickets, `super_admin` and `management` (decided 4 Nov).
 
 ## 7. Open questions
 

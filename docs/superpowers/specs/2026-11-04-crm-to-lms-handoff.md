@@ -67,7 +67,7 @@ Envelope shared by all messages:
 1. Find the participant by email (case-insensitive), or create one.
 2. Upsert the course and the cohort.
 3. Upsert the enrollment with `id = enrolment.id`.
-4. Send the student their login details, if the LMS does that (§7).
+4. Email the student a temporary password at their registered email (decided 4 Nov).
 
 ```json
 {
@@ -106,7 +106,7 @@ Envelope shared by all messages:
 
 The CRM data is incomplete for this message:
 - **Email may be missing.** The CRM allows a person with no email. The LMS can't create a login without one, so the CRM must not send then. Instead it creates an Ops task saying "Add an email so the LMS account can be made".
-- **Funding types don't line up.** The LMS has `leaders_club`, and the CRM `funding_type` doesn't. That needs agreeing (§7).
+- **Funding types don't line up.** The LMS has `leaders_club`, and the CRM `funding_type` doesn't. Leaders Club is a membership, not a funding type (decided 4 Nov). The LMS's full list is still needed (§7).
 
 ### 4.2 `enrolment.cancelled`
 
@@ -117,6 +117,8 @@ The CRM data is incomplete for this message:
 ### 4.3 `enrolment.transferred`
 
 **Trigger:** the existing `EnrolmentTransferred` event. **Data:** `{ "enrolmentId", "fromClassId", "toClassId", "newEnrolmentId" }`, plus the `class` and `course` blocks for the new class.
+
+The event's payload today has only `enrolmentId`, `fromClassId` and `toClassId` (`lib/events/types.ts`). The handler reads `newEnrolmentId` from `enrolment.transferred_to_enrolment_id`.
 
 **What the LMS does:** move the student to the new cohort under `newEnrolmentId`, and cancel the old enrollment.
 

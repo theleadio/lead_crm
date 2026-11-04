@@ -29,11 +29,11 @@ The Salesprocess dashboard could not be opened: the host was blocked in the rese
 | Where the work goes | Small changes go in `lead_crm` (section 3). New modules go in a **new repo, `lead_sales`** (section 4). |
 | New repo stack | Same as `lead_crm`: Next.js 16, Supabase auth, raw SQL, Tailwind/shadcn, Netlify. |
 | Data | The new repo **shares the CRM Supabase DB**: same `person`, `company`, `deal`, `enrolment` and `event_outbox`, plus its own new tables. |
-| SalesProcess modules to replace | Conversations inbox, Workflows/automation, Funnels/websites/forms, Email marketing and social planner. |
+| SalesProcess modules to replace | Conversations inbox, Workflows/automation, Funnels/websites/forms, Email marketing, Social planner, Payments (v1 scope, decided 4 Nov). |
 | "Track SSM" | The company's SSM (Suruhanjaya Syarikat Malaysia) registration number. |
 | Corporate pipeline | engage → funding → submitted → approved, plus lost. |
-| LMS | The CRM writes to the LMS: it creates the student account, enrols the student in the course or class, and auto-issues the certificate. |
-| Ticket sources | WATI WhatsApp, a website help form, and email. |
+| LMS | The CRM sends the LMS a signed notice (confirmed, cancelled, transferred). The LMS creates the account, emails a temporary password, and adds the student to the class. The LMS owns completion and certificates. Details in `2026-11-04-crm-to-lms-handoff.md`. |
+| Ticket sources | WATI WhatsApp, Messenger (to confirm), a website help form open to anyone, and email. |
 
 ## 3. Changes to `lead_crm`
 
@@ -84,22 +84,22 @@ These are small. Every schema change goes through Shawn, because of the schema f
    - Full contract: `2026-11-04-crm-to-lms-handoff.md`.
    - Signed with a shared secret (HMAC header), retried by the outbox, idempotent on the enrolment id.
    - Our team owns the LMS, so we also build the receiving endpoint, in the LMS repo. That repo is not attached to the session that wrote this spec; it has to be added before that work starts.
-   - Still to agree: the funding-type mapping, the login link type, and the certificate template (LMS side).
+   - Still to agree: the LMS's full funding-type list, where the LMS endpoint lives, and the certificate template (LMS side).
    - Name stays **Enrolments** (decided 4 Nov; no rename to Onboarding).
 
 ## 4. New repo modules (phased)
 
 | Phase | Module | Owner / requester | Notes |
 |---|---|---|---|
-| 1 | **Inbox and tickets** | — | WATI webhook, Messenger and email go into one conversations inbox. Any message, or a website help-form submission, can become a ticket. Rules route by category: **Finance** (e-invoice, receipt) or **Tech** (voucher, API key) get an owner. Statuses and SLA to be decided. |
-| 1 | **Meta Lead Ads intake** | Alicia | Webhook → `person` + `enquiry` in the shared DB, reusing the dedupe in `lib/people/`. |
-| 2 | **Automation engine** | Alicia | Trigger → condition → action, driven from `event_outbox`. First flows: new lead gets a tag; enrolment confirmed sends the onboarding email and WhatsApp. |
-| 2 | **Stripe payments** | JM | Stripe webhook records `payment` in the CRM first, then the LMS writer (3.6) runs. Importing old Stripe data is open. |
+| 1 | **Inbox and tickets** | — | WATI webhook, Messenger and email go into one conversations inbox. Any message, or a website help-form submission, can become a ticket. Rules route by category: **Finance** (e-invoice, receipt) or **Tech** (voucher, API key) get an owner. First reply due the next working day. Draft: `2026-11-04-inbox-tickets-design.md`. |
+| 1 | **Meta Lead Ads intake** | Alicia | Webhook → the CRM's existing `captureLead()` → person, touchpoint, consent and deal, the same as a website lead. Draft: `2026-11-04-meta-lead-ads-intake.md`. |
+| 2 | **Automation engine** | Alicia | Trigger → condition → action, driven from `event_outbox`. First flows: new lead gets a tag; enrolment confirmed sends the onboarding email and WhatsApp. Draft: `2026-11-04-automations-design.md`. |
+| 2 | **Stripe payments** | JM | Stripe webhook records `payment` in the CRM first, then the LMS notice (3.6) goes out. The webhook belongs in `lead_crm`. Importing old Stripe data is open. Draft: `2026-11-04-stripe-payments-design.md`. |
 | 3 | **Email marketing and social** | Wei Ping | Newsletters, tagging SOP, image library, scheduled posting to all social channels, and where a contact's email change is applied (single source of truth). |
 | 3 | **Website and landing pages** | — | LEAD's own site. Brand: white, bright, Apple-like. Replaces SalesProcess funnels and forms, and hosts the help form that feeds tickets. |
 | 4 | **AI support** | — | Answers common questions first, and hands off to a ticket when it can't. |
 
-Shared tables the new repo would add (names provisional): `conversation`, `message`, `ticket`, `ticket_rule`, `automation`, `automation_run`, `social_post`, `media_asset`. They need Shawn's review, like any change to the shared DB.
+Tables the new repo would add, in its own `sales` schema (names provisional; see the build plan): `conversation`, `ticket`, `ticket_category`, `ticket_rule`, `team`, `team_member`, `holiday`, `automation`, `automation_step`, `automation_run`, `social_post`, `media_asset`. Where inbox messages are stored is an open conflict (§7.1). They need Shawn's review, like any change to the shared DB.
 
 ## 5. Open questions
 
@@ -141,3 +141,76 @@ Shared tables the new repo would add (names provisional): `conversation`, `messa
 | Wei Ping: payment, newsletter, tagging SOP, images, posting, email change | 4 (email and social, Stripe) |
 | Alicia: Meta Lead Ads → CRM, automation, social posting, onboarding email | 4 (lead intake, automation) |
 | JM: Stripe → CRM → LMS, old Stripe data | 4 (Stripe), 5 |
+
+## 7. Review findings: gaps across the drafts (4 Nov)
+
+A read-through of all the drafts found these. Each needs a decision before the module it touches is built.
+
+### 7.1 Conflict: where inbox messages are stored
+
+- The inbox draft extends the CRM's `message_log`, so each person keeps one history.
+- The build plan says `lead_sales` writes CRM tables only through CRM code (ground rule 4).
+- Both can't hold as written. Options:
+  - **(a)** Inbox messages go in `sales.message`, and the CRM person timeline reads that too, through a view. Rule 4 holds. Recommended.
+  - **(b)** `lead_sales` writes `message_log` through an internal CRM endpoint. One table, but every inbound message makes an extra hop.
+
+### 7.2 Email change: one source of truth (Wei Ping's "if change email where change")
+
+The same student's email lives in three places: CRM `person.email`, LMS `participants.email`, and the newsletter service's list.
+- The LMS sync matches people **by email**. If a student's email is changed in the CRM only, the next sync can't find the person and may create a duplicate.
+- Proposal:
+  - The CRM is the source of truth.
+  - An email change raises a new `PersonContactChanged` event.
+  - That event sends a `person.updated` notice to the LMS and updates the newsletter list.
+- Needs a new event and a fourth LMS notice.
+
+### 7.3 Class changes don't reach the LMS
+
+`ClassChanged` (date, venue, online link) and `ClassCancelled` exist in the CRM. The LMS draft only sends enrolment notices.
+- Cancelled classes are covered: each enrolment gets its own `EnrolmentCancelled`.
+- A date or link change isn't covered. Add a `class.updated` notice, or decide the LMS team edits cohorts by hand.
+
+### 7.4 English and Chinese
+
+LEAD runs `en` and `zh` classes, and people have `preferred_language`. Onboarding, reminders, the help form, ticket categories and auto-replies all need both languages. Which one is used: the class language, or the person's preference?
+
+### 7.5 Receipts and e-invoices
+
+Finance tickets are about e-invoices and receipts, but nothing produces them yet.
+- Stripe can send its own receipts, but that's not an e-invoice.
+- Malaysia's e-invoicing via LHDN MyInvois may apply to LEAD. **I'm not certain of the current rules, thresholds or timeline; Finance should confirm.**
+- If it does apply, it ties into the SSM-number question (3.2) and is a module of its own.
+
+### 7.6 Payments that don't go through Stripe
+
+HRDC, bank transfer and invoice payments are recorded by hand, through `app/api/payments/manual`.
+- They confirm the enrolment the same way, so the LMS notice and onboarding still fire.
+- Ops need to know that recording the payment is what triggers the student's onboarding.
+
+### 7.7 Go-live gate: the Stripe webhook
+
+The original spec (§15.2) says that without the webhook, a paid reservation expires after 24 hours and the student loses the seat. This is the most urgent item in all the drafts, and it has no confirmed owner.
+
+### 7.8 A safe place to build
+
+Both apps share one database, so `lead_sales` development must not run against production. It needs a staging database, e.g. a Supabase branch or a separate project, with test WATI, Meta and Stripe accounts.
+
+### 7.9 Who builds `lead_sales`
+
+The drafts name requesters (Alicia, JM, Wei Ping) but no builders. Each phase in the build plan needs an owner.
+
+### 7.10 Inbox details not yet designed
+
+- **After hours:** an auto-reply such as "we reply by the next working day", in both languages.
+- **Overdue tickets:** who is alerted, and how.
+- **Customer reply on a resolved ticket:** it reopens the ticket.
+
+### 7.11 Monitoring
+
+The CRM spec already plans an integration-health page (§11.4). WATI, Meta, the LMS notices and Stripe should all report to it, so a broken connection is seen the same day.
+
+### 7.12 Data protection (PDPA)
+
+- Conversations and attachments can hold IDs, invoices and payment details.
+- Decide how long they're kept, and who can export or delete them. The CRM already has a person data export, `exportPersonData`.
+- Confirm whether onboarding messages need marketing consent (automations draft §4).
