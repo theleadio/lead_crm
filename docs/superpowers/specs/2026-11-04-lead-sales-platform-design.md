@@ -123,7 +123,8 @@ Tables the new repo would add, in its own `sales` schema (names provisional; see
 - Enrolments keeps its name.
 - New repo name: `theleadio/lead_sales`.
 - LMS: the CRM sends sign-up data to an LMS endpoint our team builds (3.6).
-- Read-only checks: `.github/workflows/data-check.yml`, started by hand, runs `scripts/check-stripe-summary.ts` and `scripts/check-salesprocess-channels.ts`. They print counts only, because Actions logs are public.
+- Read-only checks: `.github/workflows/data-check.yml`, started by hand, runs `scripts/check-stripe-summary.ts` and `scripts/check-salesprocess-channels.ts`. They print counts only, because Actions logs are public. They ship separately to `main` in PR #42 (they must be on the default branch to run).
+- All `lead_sales` work goes to the `lead-sales/main` branch: one sub-branch and PR per module (e.g. `lead-sales/inbox`), so `main` stays untouched (decided 4 Nov). The Stripe webhook (PR #41) is a CRM fix and goes to `main`.
 
 ## 6. Team notes and where they went
 
