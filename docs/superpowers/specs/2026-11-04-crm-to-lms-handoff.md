@@ -175,5 +175,5 @@ The LMS marks completion, because attendance lives there, and it issues the cert
 - ~~Login link~~: the onboarding message links to `https://class.thelead.io/` (decided 4 Nov). It is the same link for everyone, so the LMS does not need to return a personal link. First sign-in uses a temporary password the LMS emails to the student's registered email (decided 4 Nov).
 - ~~Leaders Club~~: it's a membership, not a funding type (decided 4 Nov). It does not become a CRM `funding_type`. Record it as a tag or price type and pay it as `self` or `company`. The LMS's full `funding_type` list is still needed to finish the mapping.
 - **LMS endpoint:** the LMS only needs the student's contact data (name, email, phone) plus the class, and does the rest (confirmed 4 Nov). Where its receiving address lives, an LMS app route or a Supabase Edge Function, is for the LMS dev.
-- **Old classes:** for classes created in the CRM before go-live, send a one-off backfill, or only send new confirmations?
+- ~~Old enrolments~~: a one-off backfill at go-live sends `enrolment.confirmed` for every confirmed enrolment in upcoming classes (decided 4 Nov). It's safe to re-run, because the LMS upserts by enrolment id.
 - **Certificate:** which template, what does the certificate number look like, and is there a PDF link? The LMS owns this now.

@@ -64,7 +64,7 @@ Tables (proposed, in the `lead_sales` schema; see the build plan):
 
 ## 6. Open questions
 
-- Which email service sends onboarding and transactional email? Not chosen yet.
+- ~~Email service~~: keep whatever SalesProcess uses today (decided 4 Nov). Which one that is comes from the REA feature map.
 - Which WhatsApp templates are already approved in WATI?
-- Who may create or edit automations? Proposed: `marketing` and `management`.
+- ~~Who may edit automations~~: `management`, `super_admin` and `sales`, not `marketing` (decided 4 Nov).
 - Should existing SalesProcess workflows be rebuilt one-to-one? The feature map will list them.

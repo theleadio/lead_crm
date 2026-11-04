@@ -21,7 +21,7 @@
 
 **Builders:** Zhixuan and Shawn (decided 4 Nov). Each phase still needs a named owner below.
 
-**Where:** all `lead_sales` work goes on `lead-sales/*` sub-branches in `lead_crm`, with PRs into `lead-sales/main`, until the `lead_sales` repo exists. Development and testing use a **separate staging Supabase project** with fake data and test WATI, Meta and Stripe accounts, never production (decided 4 Nov).
+**Where:** all `lead_sales` work goes on `lead-sales/*` sub-branches in `lead_crm`, with PRs into `lead-sales/main`, until the `lead_sales` repo exists. Development and testing use a **separate staging Supabase project** with fake data and test WATI, Meta and Stripe accounts, never production (decided 4 Nov). Whoever is building merges `main` into `lead-sales/main` every week, so the shared database code stays in step.
 
 | Phase | Delivers | Needs first | Done when |
 |---|---|---|---|

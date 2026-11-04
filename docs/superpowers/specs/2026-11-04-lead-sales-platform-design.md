@@ -154,12 +154,20 @@ All decided on 4 Nov unless marked otherwise.
 | 7.1 | Where inbox messages are stored | `lead_sales`' own `sales.message` table. The CRM person timeline reads it through a view. |
 | 7.2 | Email change (Wei Ping) | The CRM is the master. A change raises a new `PersonContactChanged` event, which sends `person.updated` to the LMS and updates the newsletter list. |
 | 7.3 | Class changes don't reach the LMS | A 4th LMS notice, `class.updated`, sent on every `ClassChanged`. Cancellations were already covered by `EnrolmentCancelled`. |
-| 7.4 | English and Chinese | Messages use the class language. **Not confirmed:** the person's `preferred_language` as the fallback where there's no class. |
+| 7.4 | English and Chinese | Messages use the class language. Where there's no class (help-form replies, newsletters), they use the person's `preferred_language`. |
 | 7.5 | Receipts and e-invoices | Stripe's automatic receipt emails are enough for now (a Stripe dashboard setting; no code). No e-invoice module yet. **Not confirmed:** whether LHDN MyInvois e-invoicing applies to LEAD, and from when. Finance should check before it becomes urgent. |
 | 7.6 | Payments outside Stripe | No change needed. Manual HRDC, bank and invoice payments confirm the enrolment the same way, so the LMS notice and onboarding fire too. Ops should know that recording the payment is what starts onboarding. |
 | 7.7 | Stripe webhook (go-live gate) | Built in PR #41 (to `main`), waiting for Shawn's review and the Stripe dashboard setup. |
 | 7.8 | A safe place to build | A **separate Supabase project** as staging, with fake data, plus test WATI, Meta and Stripe accounts. Production is never used for development. |
 | 7.9 | Who builds `lead_sales` | **Zhixuan and Shawn.** Per-phase owners are set in the build plan. |
-| 7.10 | Inbox details | After-hours auto-reply: yes, once per conversation per evening, in the class language or else the person's. Overdue tickets: **dashboard only**, as a red overdue list, with no notifications. A customer reply on a resolved ticket reopens it (proposed, not objected to). |
-| 7.11 | Monitoring | Proposed, not yet confirmed: WATI, Meta, the LMS notices and Stripe all report to the integration-health page the CRM spec already plans (§11.4). |
+| 7.10 | Inbox details | After-hours auto-reply: yes, once per conversation per evening, in the class language or else the person's. Overdue tickets: **dashboard only**, as a red overdue list, with no notifications. A customer reply on a resolved ticket **opens a new ticket** linked to the old one, which stays closed. Instagram DMs are included alongside Messenger. |
+| 7.11 | Monitoring | WATI, Meta, the LMS notices and Stripe all report to the integration-health page the CRM spec already plans (§11.4). |
 | 7.12 | Data protection (PDPA) | Conversations and attachments are **kept indefinitely and deleted on request**, the same as CRM people (export with `exportPersonData`, then erase). Onboarding messages are **service messages**: they go to paying students without marketing consent. Marketing consent applies only to promotions and newsletters. |
+
+### More decisions, 4 Nov
+
+- **Email service:** keep whatever SalesProcess uses today, for both newsletters and onboarding. Which service that is comes from the REA feature map.
+- **Instagram DMs:** in the inbox, alongside Facebook Messenger.
+- **Automations editors:** `management`, `super_admin` and `sales`. Marketing can't edit automations; Alicia's team asks one of them to change a flow.
+- **LMS backfill:** when the CRM → LMS link goes live, a one-off backfill sends `enrolment.confirmed` for every confirmed enrolment in upcoming classes. It's idempotent on the enrolment id, so students already in the LMS aren't duplicated.
+- **Branch sync:** whoever is building merges `main` into `lead-sales/main` every week.
