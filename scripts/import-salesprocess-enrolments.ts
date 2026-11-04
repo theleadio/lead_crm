@@ -21,7 +21,6 @@ import {
   isNoSeats,
   orderState,
   pickClass,
-  type ClassCandidate,
   type Txn,
 } from "../lib/import/salesprocess-enrolments.ts";
 

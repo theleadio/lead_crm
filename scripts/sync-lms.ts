@@ -418,7 +418,7 @@ async function once() {
     const cut = cutOverCancels(importEnrols, ownedClassIds, matched, classStarts, kl_today);
     if (cut.length)
       await tx`UPDATE enrolment SET status = 'cancelled', cancelled_reason = 'Not in the LMS at class start' WHERE id = ANY(${cut}) AND status = ANY(${CANCELLABLE_STATUSES})`;
-    for (const _ of cut) bump("enrolment: cut over", "update");
+    cut.forEach(() => bump("enrolment: cut over", "update"));
 
     // A full class refuses the seat (no_seats): skip that row, not the whole sync.
     const codeOf = new Map(src.cohorts.map((k) => [classOf.get(k.id), k.slug]));
