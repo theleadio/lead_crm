@@ -24,7 +24,6 @@ permissions:
 
 env:
   DATABASE_URL: ${{ secrets.DATABASE_URL }}
-  NODE_OPTIONS: --import=./scripts/ci-errors.mjs
 
 jobs:
   ads:
@@ -35,7 +34,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: npm }
       - run: npm ci --ignore-scripts
-      - run: node scripts/sync-meta-ads.ts
+      - run: node --import=./scripts/ci-errors.mjs scripts/sync-meta-ads.ts
         env:
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
           META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
@@ -48,7 +47,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: npm }
       - run: npm ci --ignore-scripts
-      - run: node scripts/sync-lms.ts --apply
+      - run: node --import=./scripts/ci-errors.mjs scripts/sync-lms.ts --apply
         env:
           LMS_DATABASE_URL: ${{ secrets.LMS_DATABASE_URL }}
 
@@ -64,6 +63,6 @@ jobs:
         with: { node-version: 24, cache: npm }
       - run: npm ci --ignore-scripts
       # Attribution matches only people the import has already created.
-      - run: node scripts/import-ghl-contacts.ts --from-api --apply
-      - run: node scripts/import-ghl-attribution.ts --apply --accept-approx-dates
-      - run: node scripts/sync-salesprocess-payments.ts --apply
+      - run: node --import=./scripts/ci-errors.mjs scripts/import-ghl-contacts.ts --from-api --apply
+      - run: node --import=./scripts/ci-errors.mjs scripts/import-ghl-attribution.ts --apply --accept-approx-dates
+      - run: node --import=./scripts/ci-errors.mjs scripts/sync-salesprocess-payments.ts --apply
