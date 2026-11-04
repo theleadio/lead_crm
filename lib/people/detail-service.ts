@@ -6,6 +6,7 @@ import {
   type Viewer,
 } from "../auth/permissions.ts";
 import { writeAudit } from "../audit.ts";
+import { raiseEvent } from "../events/raise.ts";
 import { normalizeEmail } from "../format/email.ts";
 import { maskEmail, maskPhone } from "../format/mask.ts";
 import { formatMoneyMyr } from "../format/money.ts";
@@ -530,6 +531,26 @@ export async function updatePerson(
       before: Object.fromEntries(columns.map((c) => [c, row[c] ?? null])),
       after: set,
     });
+
+    // The CRM is the master for contact details (lead_sales spec §7.2): the
+    // LMS, and later the newsletter list, follow from this event. Raised only
+    // when a field the LMS keeps actually changed.
+    const changed = (col: string) =>
+      col in set && (set[col] ?? null) !== (row[col] ?? null);
+    if (changed("email") || changed("phone_e164") || changed("full_name"))
+      await raiseEvent(
+        "PersonContactChanged",
+        id,
+        {
+          personId: id,
+          previousEmail: (p.email as string | null) ?? null,
+          email:
+            "email" in set
+              ? ((set.email as string | null) ?? null)
+              : ((p.email as string | null) ?? null),
+        },
+        viewer.id,
+      );
 
     const [fresh] = await sql<
       PersonRow[]

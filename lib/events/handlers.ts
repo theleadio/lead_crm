@@ -1,7 +1,18 @@
 import type postgres from "postgres";
 import { z } from "zod";
+import {
+  buildLmsMessage,
+  everConfirmed,
+  queueLmsNotice,
+} from "../lms/notices.ts";
+import {
+  makeLmsSender,
+  type LmsNoticeKind,
+  type LmsSender,
+} from "../lms/send.ts";
 import { dutySuperAdmin } from "../people/duplicate-review.ts";
 import { db } from "../sql.ts";
+import { raiseEvent } from "./raise.ts";
 import type { EventType } from "./types.ts";
 
 export type EventHandler = (event: {
@@ -18,10 +29,32 @@ export type Ports = {
   // Stripe test keys exist (spec O36); the real one must treat "already
   // expired or completed" as success, because a handler can run twice.
   expireCheckoutSession: (sessionId: string) => Promise<void>;
+  // Send one CRM → LMS notice (lib/lms/send.ts). Default: the real signed
+  // client, configured by LMS_WEBHOOK_URL / LMS_WEBHOOK_SECRET. Notices are
+  // only queued while LMS_HANDOFF_ENABLED is "true" (lib/lms/notices.ts).
+  sendToLms?: LmsSender;
 };
 
 const uuid = z.uuid();
 const enrolmentCancelled = z.object({ enrolmentId: uuid, reason: z.string() });
+const enrolmentRef = z.object({ enrolmentId: uuid });
+const personContactChanged = z.object({
+  personId: uuid,
+  previousEmail: z.string().nullable(),
+  email: z.string().nullable(),
+});
+const lmsNotice = z
+  .object({
+    kind: z.enum([
+      "enrolment.confirmed",
+      "enrolment.cancelled",
+      "enrolment.transferred",
+      "class.updated",
+      "person.updated",
+    ]),
+    refId: uuid,
+  })
+  .loose();
 const classCancelled = z.object({
   classId: uuid,
   reason: z.string(),
@@ -57,11 +90,92 @@ async function opsTask(
 export function makeHandlers(
   ports: Ports = { expireCheckoutSession: async () => {} },
 ): Partial<Record<EventType, EventHandler>> {
+  const sendToLms = ports.sendToLms ?? makeLmsSender();
   return {
+    // CRM → LMS (handoff spec §4.1): the LMS makes the account and adds the
+    // student to the class.
+    EnrolmentConfirmed: async (e) => {
+      const p = enrolmentRef.parse(e.payload);
+      await queueLmsNotice("enrolment.confirmed", p.enrolmentId);
+    },
+
+    // Handoff spec §4.3.
+    EnrolmentTransferred: async (e) => {
+      const p = enrolmentRef.parse(e.payload);
+      await queueLmsNotice("enrolment.transferred", p.enrolmentId);
+    },
+
+    // The CRM is the master for contact details (lead_sales spec §7.2).
+    // An email added where there was none means the LMS never got this
+    // student (§4.1 skips a person with no email), so their live enrolments
+    // are sent now; otherwise the LMS is told what changed (§4.5).
+    PersonContactChanged: async (e) => {
+      const p = personContactChanged.parse(e.payload);
+      if (!p.previousEmail && p.email) {
+        const live = await db()`
+          SELECT e.id FROM enrolment e JOIN class c ON c.id = e.class_id
+          WHERE e.person_id = ${p.personId}
+            AND e.status IN ('confirmed','onboarded')
+            AND c.end_date >= (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date
+          ORDER BY e.id`;
+        for (const r of live)
+          await queueLmsNotice("enrolment.confirmed", r.id as string);
+        return;
+      }
+      if (p.previousEmail)
+        await queueLmsNotice("person.updated", p.personId, {
+          previousEmail: p.previousEmail,
+        });
+    },
+
+    // The only handler that calls the LMS. A non-2xx answer throws, so the
+    // drain retries with its backoff and dead-letters after the last try.
+    LmsNotice: async (e) => {
+      const p = lmsNotice.parse(e.payload);
+      const { kind, refId, ...extra } = p as {
+        kind: LmsNoticeKind;
+        refId: string;
+      } & Record<string, unknown>;
+      const built = await buildLmsMessage(kind, refId, extra);
+      if (built.kind === "skip") {
+        if (built.enrolmentId && built.personId)
+          await opsTask(
+            `${e.id}:lms-no-email`,
+            "Add an email so the LMS account can be made",
+            {
+              id: built.enrolmentId,
+              person_id: built.personId,
+            } as postgres.Row,
+            "The student has no email, so the LMS can't create their login. Adding one sends them to the LMS automatically.",
+          );
+        return;
+      }
+      await sendToLms({
+        messageId: e.id,
+        type: kind,
+        sentAt: new Date().toISOString(),
+        data: built.data,
+      });
+      // Onboarding starts from this, so the account and the temp-password
+      // email already exist when the student gets the link.
+      if (kind === "enrolment.confirmed")
+        await raiseEvent(
+          "LmsAccountReady",
+          refId,
+          { enrolmentId: refId },
+          null,
+        );
+    },
+
     // Ops are told, except for the two reasons that already have their own
-    // path. The student is never messaged.
+    // path. The student is never messaged. The LMS is told whenever the
+    // student had been confirmed, so it was ever sent there (handoff §4.2).
     EnrolmentCancelled: async (e) => {
       const p = enrolmentCancelled.parse(e.payload);
+      if (await everConfirmed(p.enrolmentId))
+        await queueLmsNotice("enrolment.cancelled", p.enrolmentId, {
+          reason: p.reason,
+        });
       if (p.reason === "class_cancelled" || p.reason === "reservation_expired")
         return;
       const [enrolment] = await db()`
@@ -115,8 +229,12 @@ export function makeHandlers(
     // "Clears the schedule cache": no schedule cache exists yet (the public
     // schedule route is not built), so there is nothing to clear. The payload
     // is still checked so a malformed event is not silently swallowed.
+    // The LMS keeps its cohort in step (handoff spec §4.4).
     ClassChanged: async (e) => {
-      classChanged.parse(e.payload);
+      const p = classChanged.parse(e.payload);
+      await queueLmsNotice("class.updated", p.classId, {
+        changedFields: p.changedFields,
+      });
     },
   };
 }
