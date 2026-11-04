@@ -60,12 +60,14 @@ These are small. Every schema change goes through Shawn, because of the schema f
    - Today: `--lead-blue: #4f6bed` and `--lead-yellow: #f5be2e` in `app/globals.css`, with dark-mode variants at lines 93 and 206, and `design.pen`.
    - Change: switch to the exact logo blue and yellow. Hex codes are pending.
 5. **Dashboard.** Move the Upcoming classes panel (`app/(app)/(crm)/dashboard/classes-panel.tsx`) to the top of `dashboard/page.tsx`.
-6. **Enrolment → LMS writer.**
-   - Today: the LMS is read-only (`lib/lms/read.ts`).
-   - Change: add outbox handlers in `lib/events/handlers.ts`:
-     - on `EnrolmentConfirmed`, create the LMS student account (or find an existing one), then enrol the student in the course or class
-     - on completion, issue the certificate and write `enrolment.certificate_no`
-   - Needs LMS **write** access and its schema or API, from the LMS owner.
+6. **Enrolment → LMS: send the sign-up data to the LMS** (decided 4 Nov).
+   - Today: the CRM only reads the LMS (`lib/lms/read.ts`; separate Supabase project, the LMS owns its rows).
+   - Plan: the CRM never writes into the LMS database. Outbox handlers in `lib/events/handlers.ts` POST a signed message to an endpoint in the LMS:
+     - `enrolment.confirmed` → the LMS creates the student account (or finds the existing one) and enrols the student in the course/class
+     - `enrolment.completed` → the LMS issues the certificate and answers with its number, stored in `enrolment.certificate_no`
+   - Signed with a shared secret (HMAC header), retried by the outbox, idempotent on the enrolment id.
+   - Our team owns the LMS, so we also build the receiving endpoint, in the LMS repo. That repo is not attached to the session that wrote this spec; it has to be added before that work starts.
+   - Still to agree: the exact fields, and the certificate template.
    - Name stays **Enrolments** (decided 4 Nov; no rename to Onboarding).
 
 ## 4. New repo modules (phased)
@@ -89,15 +91,17 @@ Shared tables the new repo would add (names provisional): `conversation`, `messa
 | Exact logo blue and yellow hex codes | Marketing |
 | Mapping of old corporate stages to new ones (e.g. new/discovery→engage, proposal_sent→submitted, won→approved?) | Sales — asked 4 Nov, awaiting answer |
 | What "track SSM" requires beyond storing the number (relabel, format check, required for corporate deals, e-invoice use) | Finance — asked 4 Nov, awaiting answer |
-| LMS write API or DB credentials and schema; certificate template | LMS owner |
-| Keep or import old Stripe data | JM |
-| Messenger and email providers (inbound support inbox, newsletter ESP) | Wei Ping / Alicia |
+| LMS endpoint fields and certificate template (our team builds the receiver in the LMS repo) | Our team |
+| Keep or import old Stripe data. Run `data-check` (stripe) for counts and totals per year first | JM |
+| Messenger and email providers (inbound support inbox, newsletter ESP). Run `data-check` (salesprocess) to count conversations per channel first. Email-sending settings are likely not in that data and may still need someone with a SalesProcess login | Wei Ping / Alicia |
 | Approval of shared-DB schema changes | Shawn |
 | Who creates the new repo `theleadio/lead_sales` | Shawn / team |
 
 ### Decided 4 Nov
 - Enrolments keeps its name.
 - New repo name: `theleadio/lead_sales`.
+- LMS: the CRM sends sign-up data to an LMS endpoint our team builds (3.6).
+- Read-only checks: `.github/workflows/data-check.yml`, started by hand, runs `scripts/check-stripe-summary.ts` and `scripts/check-salesprocess-channels.ts`. They print counts only, because Actions logs are public.
 
 ## 6. Team notes and where they went
 
