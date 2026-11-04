@@ -98,6 +98,8 @@ Shared tables the new repo would add (names provisional): `conversation`, `messa
 | Who creates the new repo `theleadio/lead_sales` | Shawn / team |
 
 ### Decided 4 Nov
+- Zhixuan handles 3.1 (30-seat cap) and 3.5 (dashboard order).
+- Drafts: `2026-11-04-crm-to-lms-handoff.md` (message contract for 3.6) and `2026-11-04-inbox-tickets-design.md` (section 4, inbox and tickets).
 - `lead_sales` is a full web app like SalesProcess, not a set of add-ons. Version 1 rebuilds Conversations, Automations, Funnels/Websites/Forms, Email marketing, Social planner and Payments. Contacts and opportunities stay in `lead_crm`; `lead_sales` uses them through the shared DB.
 - Section 4 gets rewritten from a SalesProcess feature map, which is being researched separately.
 - Enrolments keeps its name.
