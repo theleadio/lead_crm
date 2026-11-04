@@ -15,7 +15,7 @@ Decided 4 Nov: the CRM sends sign-up data to the LMS. Our team owns both ends. T
 
 ## 2. The decision this forces: one owner per field
 
-Once the CRM sends enrolments to the LMS, the daily sync must stop writing enrolment **status** into the CRM. Otherwise it can put a CRM-cancelled enrolment back to `confirmed`: it upserts with `ON CONFLICT DO UPDATE` whenever the price differs.
+Once the CRM sends enrolments to the LMS, the daily sync must stop writing enrolment **status** into the CRM, except for the completion step described in the table. Otherwise it can put a CRM-cancelled enrolment back to `confirmed`: it upserts with `ON CONFLICT DO UPDATE` whenever the price differs.
 
 Proposal:
 
@@ -23,8 +23,7 @@ Proposal:
 |---|---|---|
 | Enrolment exists, status, price, payer | **CRM** | Stops writing these |
 | Course and class (cohort) details | CRM for new ones; LMS-created ones are still imported | Keeps importing, insert only |
-| Certificate number | **LMS** (issues it) | Comes back in the reply (§5); the sync may also copy it |
-| Attendance and completion | **LMS** | Reported back with `enrolment.completed`, or by the sync. Decide which (§7) |
+| Attendance, completion, certificate number | **LMS** (decided 4 Nov) | The sync copies `completed`, `completed_at` and `certificate_no` into the CRM. It may only move an enrolment forward from `confirmed`, `onboarded` or `attended`, and never touches `cancelled`, `transferred` or `refunded` |
 
 ## 3. Transport
 
@@ -121,20 +120,16 @@ The CRM data is incomplete for this message:
 
 **What the LMS does:** move the student to the new cohort under `newEnrolmentId`, and cancel the old enrollment.
 
-### 4.4 `enrolment.completed`
+### 4.4 Completion: no message (decided 4 Nov)
 
-**Trigger:** a new outbox event, `EnrolmentCompleted`, raised when the CRM status moves to `completed`. **Data:** `{ "enrolmentId", "completedAt" }`.
-
-**What the LMS does:** issue the certificate, then reply with its number (§5).
-
-Whether this message is needed depends on who marks completion (§7). If the LMS marks it, the direction flips: the LMS tells the CRM, or the sync copies `certificate_no` back.
+The LMS marks completion, because attendance lives there, and it issues the certificate itself. The CRM sends no completion message. The daily `scripts/sync-lms.ts` brings `completed`, `completed_at` and `certificate_no` back into the CRM, under the rule in §2. No `EnrolmentCompleted` event is needed.
 
 ## 5. Replies
 
 | LMS answer | Meaning | CRM does |
 |---|---|---|
 | `200` + JSON body | Done (also for a repeat `messageId`) | Marks the outbox row processed and stores any returned fields |
-| `409` | The LMS isn't ready, e.g. completed arrived before confirmed | Throws, so the outbox retries later |
+| `409` | The LMS isn't ready, e.g. cancelled arrived before confirmed | Throws, so the outbox retries later |
 | `400` / `422` | The message is invalid | Throws. The row becomes a dead letter after 5 tries, and an Ops task shows the error |
 | `401` | Bad signature or clock skew | Throws. Check the secret or the clock |
 | `5xx`, timeout | The LMS is down | Throws, so the outbox retries |
@@ -143,27 +138,33 @@ Whether this message is needed depends on who marks completion (§7). If the LMS
 
 ```json
 // enrolment.confirmed
-{ "participantId": "LMS id", "enrollmentId": "= enrolment.id", "accountCreated": true }
-
-// enrolment.completed
-{ "certificateNo": "text", "certificateUrl": "https://… or null" }
+{
+  "participantId": "LMS id",
+  "enrollmentId": "= enrolment.id",
+  "accountCreated": true,
+  "loginUrl": "https://… link the student uses to sign in or set a password"
+}
 ```
 
-The CRM writes `certificateNo` to `enrolment.certificate_no`, which is unique in the schema. A clash comes back as an error, not a silent overwrite.
+**Login details go out in the CRM's onboarding message** (decided 4 Nov), not from the LMS. So:
+- The LMS returns `loginUrl`. The CRM stores it on the enrolment; that needs a new column, e.g. `lms_login_url`, which goes through Shawn.
+- The onboarding send has to wait until that reply has arrived. If it goes first, the message has no link.
+- If `loginUrl` is a one-time set-password link, the LMS decides how long it stays valid. The onboarding message must go out well within that time.
+- The LMS must **not** email the login details itself, so the student doesn't get two messages.
 
 ## 6. Build steps, once agreed
 
-1. **CRM:** add an `EnrolmentCompleted` event, if §7 keeps it.
-2. **CRM:** add a `lib/lms/send.ts` client that signs requests, has a timeout, and returns the parsed reply. Then add the handlers for the four messages.
-3. **CRM:** change `scripts/sync-lms.ts` to follow the ownership table in §2. **This must ship at the same time as the handlers.**
-4. **LMS:** add the endpoint: verify, check idempotency, then upsert. Its tests use the same sample bodies as the CRM's.
-5. **Both:** test against a staging LMS, then switch on with an env flag, `LMS_HANDOFF_ENABLED`.
+1. **CRM:** add a `lib/lms/send.ts` client that signs requests, has a timeout, and returns the parsed reply. Then add the handlers for the three messages, and store `loginUrl`.
+2. **CRM:** change `scripts/sync-lms.ts` to follow the ownership table in §2. **This must ship at the same time as the handlers.**
+3. **LMS:** add the endpoint: verify, check idempotency, then upsert. Its tests use the same sample bodies as the CRM's.
+4. **Both:** test against a staging LMS, then switch on with an env flag, `LMS_HANDOFF_ENABLED`.
 
 ## 7. Open questions (our team)
 
-- **Completion:** does the LMS mark completion (attendance lives there), or does the CRM? This decides whether `enrolment.completed` goes CRM → LMS or the other way.
-- **Login details:** does the LMS email the student their login? Or does the CRM's onboarding message include a link?
+- ~~Completion~~: the LMS marks it (decided 4 Nov).
+- ~~Login details~~: the CRM's onboarding message carries the `loginUrl` (decided 4 Nov).
+- **Login link:** is `loginUrl` a permanent sign-in page or a one-time set-password link, and how long does it stay valid?
 - **Funding types:** how do the CRM's `funding_type` values map to the LMS's, including `leaders_club`?
 - **LMS endpoint:** where does it live: an LMS app route, or a Supabase Edge Function?
 - **Old classes:** for classes created in the CRM before go-live, send a one-off backfill, or only send new confirmations?
-- **Certificate:** which template, what does the certificate number look like, and is a PDF link returned?
+- **Certificate:** which template, what does the certificate number look like, and is there a PDF link? The LMS owns this now.

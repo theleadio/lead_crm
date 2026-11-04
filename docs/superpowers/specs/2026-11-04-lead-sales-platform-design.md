@@ -72,16 +72,19 @@ These are small. Every schema change goes through Shawn, because of the schema f
      - Dark `#0A0A0A` on logo blue: 9.83:1, passes. On logo yellow: 15.23:1, passes.
      - Logo blue on the dark theme's `#1B1D29`: 8.32:1, passes. Logo yellow on it: 12.88:1, passes.
    - Proposal: use the logo blue and yellow as **fills with dark text**, and for accents, badges and charts. Don't use them for white-text buttons or for text on white. For primary buttons and links on light backgrounds, use a darker blue built from the same hue. Its exact value is a design decision for marketing.
-   - Who changes `app/globals.css` and `design.pen` is not decided yet.
+   - Zhixuan changes `app/globals.css` and `design.pen`, once marketing confirms the hex codes (decided 4 Nov).
 5. **Dashboard.** Move the Upcoming classes panel (`app/(app)/(crm)/dashboard/classes-panel.tsx`) to the top of `dashboard/page.tsx`.
 6. **Enrolment → LMS: send the sign-up data to the LMS** (decided 4 Nov).
    - Today: the CRM only reads the LMS (`lib/lms/read.ts`; separate Supabase project, the LMS owns its rows).
    - Plan: the CRM never writes into the LMS database. Outbox handlers in `lib/events/handlers.ts` POST a signed message to an endpoint in the LMS:
      - `enrolment.confirmed` → the LMS creates the student account (or finds the existing one) and enrols the student in the course/class
-     - `enrolment.completed` → the LMS issues the certificate and answers with its number, stored in `enrolment.certificate_no`
+     - `enrolment.cancelled` and `enrolment.transferred` keep the LMS in step
+     - The confirmed reply carries a `loginUrl`. The CRM's onboarding message sends it to the student (decided 4 Nov)
+   - Completion and certificates are the LMS's (decided 4 Nov). The daily LMS sync copies `completed` and `certificate_no` back into the CRM.
+   - Full contract: `2026-11-04-crm-to-lms-handoff.md`.
    - Signed with a shared secret (HMAC header), retried by the outbox, idempotent on the enrolment id.
    - Our team owns the LMS, so we also build the receiving endpoint, in the LMS repo. That repo is not attached to the session that wrote this spec; it has to be added before that work starts.
-   - Still to agree: the exact fields, and the certificate template.
+   - Still to agree: the funding-type mapping, the login link type, and the certificate template (LMS side).
    - Name stays **Enrolments** (decided 4 Nov; no rename to Onboarding).
 
 ## 4. New repo modules (phased)
