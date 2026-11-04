@@ -98,6 +98,8 @@ Shared tables the new repo would add (names provisional): `conversation`, `messa
 | Who creates the new repo `theleadio/lead_sales` | Shawn / team |
 
 ### Decided 4 Nov
+- `lead_sales` is a full web app like SalesProcess, not a set of add-ons. Version 1 rebuilds Conversations, Automations, Funnels/Websites/Forms, Email marketing, Social planner and Payments. Contacts and opportunities stay in `lead_crm`; `lead_sales` uses them through the shared DB.
+- The SalesProcess feature map will come from REA, run on the user's own computer against their logged-in browser (`docs/superpowers/notes/2026-11-04-rea-salesprocess-research.md`). Section 4 gets rewritten from that map.
 - Enrolments keeps its name.
 - New repo name: `theleadio/lead_sales`.
 - LMS: the CRM sends sign-up data to an LMS endpoint our team builds (3.6).
