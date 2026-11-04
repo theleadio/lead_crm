@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { kualaLumpurDay } from "@/lib/validation/report";
 import { ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { classStatusBadge, seatBarColor } from "@/lib/classes/types";
@@ -33,9 +34,7 @@ export function ClassesPanel({
   classes: HomeClass[];
   windowLabel: string;
 }) {
-  const today = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Kuala_Lumpur",
-  }).format(new Date());
+  const today = kualaLumpurDay();
 
   return (
     <section className="flex flex-col gap-3.5">

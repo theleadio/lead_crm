@@ -1,8 +1,8 @@
 "use client";
 
+import { LinkRow } from "@/components/link-row";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { EyeOff, Globe, MapPin, Monitor } from "lucide-react";
 import {
   EmptyRow,
@@ -356,7 +356,6 @@ export function ClassesList({
 }
 
 function ClassRow({ cls }: { cls: ClassListItem }) {
-  const router = useRouter();
   const href = `/classes/${cls.id}`;
   const badge = classStatusBadge(cls.status);
   const sold = cls.confirmedCount + cls.reservedCount;
@@ -366,13 +365,7 @@ function ClassRow({ cls }: { cls: ClassListItem }) {
   return (
     // The whole row opens the class, as on People (§9): the code stays a real
     // link for keyboard and middle-click, and clicks on it aren't hijacked.
-    <TableRow
-      className="cursor-pointer"
-      onClick={(e) => {
-        if ((e.target as HTMLElement).closest("a, button")) return;
-        router.push(href);
-      }}
-    >
+    <LinkRow href={href}>
       <TableCell>
         {/* Opening a class is a read, so every role that sees the row gets the
             link — not only the two that see Edit (§9.10). */}
@@ -433,7 +426,7 @@ function ClassRow({ cls }: { cls: ClassListItem }) {
           {cls.isPublic ? "On website" : "Hidden"}
         </span>
       </TableCell>
-    </TableRow>
+    </LinkRow>
   );
 }
 

@@ -54,7 +54,6 @@ export default async function ClassDetailPage(
   const cls = await getClass(id, user);
   if (!cls) notFound();
 
-  const course = await getCourse(cls.courseId);
   const tabs = tabsFor(user);
   const search = await props.searchParams;
   const tab: Tab =
@@ -63,13 +62,14 @@ export default async function ClassDetailPage(
   // §9.9 edit, in place of the read-only details (?edit=1). Saving or
   // cancelling drops the flag and shows the details again.
   const editing = canWrite && tab === "details" && search.edit === "1";
-  const courses = editing
-    ? // Every course, retired ones included: a class already on a retired
-      // course must stay editable without silently moving it (§9.5 v1.6).
-      await listCourses(
-        courseListQuerySchema.parse({ sort: "name", limit: "100" }),
-      )
-    : null;
+  const [course, courses] = await Promise.all([
+    getCourse(cls.courseId),
+    editing
+      ? // Every course, retired ones included: a class already on a retired
+        // course must stay editable without silently moving it (§9.5 v1.6).
+        listCourses(courseListQuerySchema.parse({ sort: "name", limit: "100" }))
+      : null,
+  ]);
 
   return (
     <div className="space-y-6">

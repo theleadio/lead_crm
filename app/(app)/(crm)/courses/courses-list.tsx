@@ -1,7 +1,7 @@
 "use client";
 
+import { LinkRow } from "@/components/link-row";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   EmptyRow,
@@ -258,16 +258,9 @@ export function CoursesList({
 // and Edit live. A retired course is marked so it is not mistaken for one on
 // sale.
 function CourseRow({ course: c }: { course: CourseListItem }) {
-  const router = useRouter();
   const href = `/courses/${c.id}`;
   return (
-    <TableRow
-      className={`cursor-pointer ${c.isActive ? "" : "text-ink-muted"}`}
-      onClick={(e) => {
-        if ((e.target as HTMLElement).closest("a, button")) return;
-        router.push(href);
-      }}
-    >
+    <LinkRow href={href} className={c.isActive ? undefined : "text-ink-muted"}>
       {/* Codes are long hyphenated slugs: they wrap at the hyphens rather
           than hide their endings, which is where codes differ. */}
       <TableCell className="font-medium break-words whitespace-normal">
@@ -314,6 +307,6 @@ function CourseRow({ course: c }: { course: CourseListItem }) {
           <Badge variant="secondary">Retired</Badge>
         )}
       </TableCell>
-    </TableRow>
+    </LinkRow>
   );
 }

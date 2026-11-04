@@ -1,9 +1,9 @@
 "use client";
 
+import { LinkRow } from "@/components/link-row";
 import { formatMoneyMyr } from "@/lib/format/money";
 import { DateField } from "@/components/date-field";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   EmptyRow,
@@ -60,7 +60,6 @@ export function EnrolmentsList({
   courses: { id: string; nameEn: string }[];
   classes: { id: string; code: string }[];
 }) {
-  const router = useRouter();
   const [when, setWhen] = useState(initialQuery.when);
   const [search, setSearch] = useState(initialQuery.q ?? "");
   const [q, setQ] = useState(initialQuery.q ?? "");
@@ -427,14 +426,7 @@ export function EnrolmentsList({
             {rows.map((row) => (
               // The whole row opens the enrolment (§9.11), as every list row
               // opens its record; the class code is a separate link.
-              <TableRow
-                key={row.id}
-                className="cursor-pointer"
-                onClick={(e) => {
-                  if ((e.target as HTMLElement).closest("a, button")) return;
-                  router.push(`/enrolments/${row.id}`);
-                }}
-              >
+              <LinkRow key={row.id} href={`/enrolments/${row.id}`}>
                 <TableCell className="font-semibold">
                   <Link
                     href={`/enrolments/${row.id}`}
@@ -484,7 +476,7 @@ export function EnrolmentsList({
                 <TableCell className="text-ink-muted">
                   {formatDate(row.createdAt)}
                 </TableCell>
-              </TableRow>
+              </LinkRow>
             ))}
           </TableBody>
         </Table>
