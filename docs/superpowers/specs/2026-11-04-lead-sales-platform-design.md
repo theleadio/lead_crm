@@ -105,14 +105,15 @@ Tables the new repo would add, in its own `sales` schema (names provisional; see
 
 | Question | Owner |
 |---|---|
-| Confirm logo hex codes against the original vector file, and choose the darker blue for buttons and links | Marketing |
-| Mapping of old corporate stages to new ones (e.g. new/discovery→engage, proposal_sent→submitted, won→approved?) | Sales — asked 4 Nov, awaiting answer |
-| What "track SSM" requires beyond storing the number (relabel, format check, required for corporate deals, e-invoice use) | Finance — asked 4 Nov, awaiting answer |
-| LMS endpoint fields and certificate template (our team builds the receiver in the LMS repo) | Our team |
-| Keep or import old Stripe data. Run `data-check` (stripe) for counts and totals per year first | JM |
-| Messenger and email providers (inbound support inbox, newsletter ESP). Run `data-check` (salesprocess) to count conversations per channel first. Email-sending settings are likely not in that data and may still need someone with a SalesProcess login | Wei Ping / Alicia |
+| ~~Logo hex codes~~: `#A1BACE` and `#FBE33B` are final (4 Nov). Still to do: choose the darker blue for buttons and links | Marketing |
+| ~~Stage mapping~~: decided 4 Nov (3.3) | — |
+| ~~Track SSM~~: rename the label only (4 Nov) | — |
+| LMS funding-label list; certificate template and number format; what "onboarded" means in the LMS | LMS dev / our team |
+| Import old Stripe data? Run `data-check` (#42) first, then decide | JM |
+| Messenger and email providers. Email service: keep SalesProcess's (named by the REA feature map) | Wei Ping / Alicia |
+| Which team takes "everything else" tickets: Support or Operations | Team |
 | Approval of shared-DB schema changes | Shawn |
-| Who creates the new repo `theleadio/lead_sales` | Shawn / team |
+| Create the repo `theleadio/lead_sales` (Claude can't create repos) | User |
 
 ### Decided 4 Nov
 - Zhixuan handles 3.1 (30-seat cap) and 3.5 (dashboard order).
