@@ -77,6 +77,8 @@ export type EnrolmentListItem = {
   payerType: string;
   pricePaidMyr: string | null;
   createdAt: string;
+  // When a reserved seat's hold runs out (§12.1); null when nothing is held.
+  seatReservedUntil: string | null;
 };
 
 type BadgeVariant =

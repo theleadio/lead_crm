@@ -1,5 +1,7 @@
 "use client";
 
+import { LinkRow } from "@/components/link-row";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   EmptyRow,
@@ -23,26 +25,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  CourseFormDialog,
-  EMPTY_COURSE,
-  valuesFrom,
-  type CourseFormValues,
-} from "./course-form-dialog";
+import { CourseFormDialog, EMPTY_COURSE } from "./course-form-dialog";
 import type { CourseListItem } from "@/lib/courses/service";
 import { formatMoneyMyr } from "@/lib/format/money";
 import type { ListResponse } from "@/lib/people/types";
 
 const LIMIT = 25;
-// Code, name, Chinese name, track, duration, price, HRDC, status (+ Edit).
-const COLUMNS = 8;
+// Code, name (English over Chinese), track (over duration), list price (over
+// HRDC), status. No edit column: the row opens the course's page, and Edit
+// lives there, as on every other record.
+const COLUMNS = 5;
 
 type State =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "ready"; result: ListResponse<CourseListItem> };
-
-type Editing = { id: string; version: number; values: CourseFormValues };
 
 // Spec §9.7 Courses: plain table + modal form. Active and retired together by
 // default, because a retired course still has deals and classes on it (§9.5).
@@ -65,7 +62,6 @@ export function CoursesList({
   // (clearing the filter) skips the fetch and leaves the old rows up.
   const showingInitial = useRef(true);
   const [addOpen, setAddOpen] = useState(false);
-  const [editing, setEditing] = useState<Editing | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const dismissToast = useCallback(() => setToast(null), []);
 
@@ -175,8 +171,11 @@ export function CoursesList({
         <TableCard>
           {/* table-fixed with a width per column: on auto layout the widest
               cell sets each width, so every filter reshuffled the table.
-              Name takes whatever is left. */}
-          <Table className="table-fixed">
+              Related facts share a column on two lines, so the table fits
+              1280px with the sidebar open. Shares, not pixels, so spare width on a
+              wide screen spreads across every column instead of all landing
+              in Name; under the min-width the table scrolls. */}
+          <Table className="min-w-[796px] table-fixed">
             <TableHeader>
               <TableRow>
                 <SortableHead
@@ -184,28 +183,25 @@ export function CoursesList({
                   column="code"
                   sort={sort}
                   onSort={onSort}
-                  className="w-56"
+                  className="w-[26%]"
                 />
                 <SortableHead
                   label="Name"
                   column="name"
                   sort={sort}
                   onSort={onSort}
+                  className="w-[34%]"
                 />
-                <TableHead className="w-44">Chinese name</TableHead>
-                <TableHead className="w-36">Track</TableHead>
-                <TableHead className="w-28">Duration</TableHead>
-                <TableHead className="w-32">List price</TableHead>
-                <TableHead className="w-28">HRDC</TableHead>
-                <TableHead className="w-28">Status</TableHead>
-                {canWrite && <TableHead className="w-20" />}
+                <TableHead className="w-[14%]">Track</TableHead>
+                <TableHead className="w-[14%]">List price</TableHead>
+                <TableHead className="w-[12%]">Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {state.status === "loading" ? (
-                <SkeletonRows columns={COLUMNS + (canWrite ? 1 : 0)} />
+                <SkeletonRows columns={COLUMNS} />
               ) : rows.length === 0 ? (
-                <EmptyRow columns={COLUMNS + (canWrite ? 1 : 0)}>
+                <EmptyRow columns={COLUMNS}>
                   {active ? (
                     <>
                       No {active === "true" ? "active" : "retired"} courses.{" "}
@@ -225,20 +221,7 @@ export function CoursesList({
                   )}
                 </EmptyRow>
               ) : (
-                rows.map((c) => (
-                  <CourseRow
-                    key={c.id}
-                    course={c}
-                    canWrite={canWrite}
-                    onEdit={() =>
-                      setEditing({
-                        id: c.id,
-                        version: c.version,
-                        values: valuesFrom(c),
-                      })
-                    }
-                  />
-                ))
+                rows.map((c) => <CourseRow key={c.id} course={c} />)
               )}
             </TableBody>
           </Table>
@@ -266,23 +249,6 @@ export function CoursesList({
             }}
             onStale={reload}
           />
-          {editing && (
-            <CourseFormDialog
-              open
-              onOpenChange={(open) => !open && setEditing(null)}
-              courseId={editing.id}
-              version={editing.version}
-              initial={editing.values}
-              onSaved={(c) => {
-                setToast(`Saved ${c.nameEn}.`);
-                reload();
-              }}
-              onStale={() => {
-                setEditing(null);
-                reload();
-              }}
-            />
-          )}
         </>
       )}
       <Toast message={toast} onDismiss={dismissToast} />
@@ -290,39 +256,51 @@ export function CoursesList({
   );
 }
 
-// Spec §9.7: no detail screen — Edit opens the same modal as Add. A retired
-// course is marked so it is not mistaken for one on sale.
-function CourseRow({
-  course: c,
-  canWrite,
-  onEdit,
-}: {
-  course: CourseListItem;
-  canWrite: boolean;
-  onEdit: () => void;
-}) {
+// Every list row opens its record: the course's own page, where its classes
+// and Edit live. A retired course is marked so it is not mistaken for one on
+// sale.
+function CourseRow({ course: c }: { course: CourseListItem }) {
+  const href = `/courses/${c.id}`;
   return (
-    <TableRow className={c.isActive ? undefined : "text-ink-muted"}>
-      <TableCell className="truncate font-medium" title={c.code}>
+    <LinkRow href={href} className={c.isActive ? undefined : "text-ink-muted"}>
+      {/* Codes are long hyphenated slugs: they wrap at the hyphens rather
+          than hide their endings, which is where codes differ. */}
+      <TableCell className="font-medium break-words whitespace-normal">
         {c.code}
       </TableCell>
-      <TableCell className="truncate" title={c.nameEn}>
-        {c.nameEn}
-      </TableCell>
-      <TableCell className="truncate" title={c.nameZh ?? undefined}>
-        {c.nameZh ?? "—"}
-      </TableCell>
-      <TableCell className="truncate">{c.track}</TableCell>
       <TableCell>
-        {c.durationDays} {c.durationDays === 1 ? "day" : "days"}
+        <Link
+          href={href}
+          title={c.nameEn}
+          className="hover:text-blue-ink block truncate font-semibold"
+        >
+          {c.nameEn}
+        </Link>
+        <span
+          lang="zh-Hans"
+          className="text-ink-muted block truncate text-xs"
+          title={c.nameZh ?? undefined}
+        >
+          {c.nameZh ?? "No Chinese name"}
+        </span>
       </TableCell>
       <TableCell>
-        {c.listPriceMyr === null ? "—" : formatMoneyMyr(c.listPriceMyr)}
+        <span className="block truncate" title={c.track}>
+          {c.track}
+        </span>
+        <span className="text-ink-muted block text-xs">
+          {c.durationDays} {c.durationDays === 1 ? "day" : "days"}
+        </span>
       </TableCell>
       <TableCell>
-        <Badge variant={c.hrdcClaimable ? "default" : "outline"}>
-          {c.hrdcClaimable ? "Claimable" : "No"}
-        </Badge>
+        <span className="block">
+          {c.listPriceMyr === null ? "—" : formatMoneyMyr(c.listPriceMyr)}
+        </span>
+        <span
+          className={`block text-xs ${c.hrdcClaimable ? "text-blue-ink" : "text-ink-muted"}`}
+        >
+          {c.hrdcClaimable ? "HRDC claimable" : "Not HRDC"}
+        </span>
       </TableCell>
       <TableCell>
         {c.isActive ? (
@@ -331,13 +309,6 @@ function CourseRow({
           <Badge variant="secondary">Retired</Badge>
         )}
       </TableCell>
-      {canWrite && (
-        <TableCell>
-          <Button variant="link" onClick={onEdit}>
-            Edit
-          </Button>
-        </TableCell>
-      )}
-    </TableRow>
+    </LinkRow>
   );
 }

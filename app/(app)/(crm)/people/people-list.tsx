@@ -1,5 +1,6 @@
 "use client";
 
+import { DateField } from "@/components/date-field";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -106,6 +107,10 @@ export function PeopleList({
   const [owners, setOwners] = useState<OwnerOption[]>([]);
   const [tags, setTags] = useState<TagOption[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Bulk assign/tag is a mode, not a standing column: the checkboxes only
+  // appear after "Assign owner", and while they are up a row click ticks
+  // the person instead of opening them, so a near miss never navigates.
+  const [selecting, setSelecting] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const dismissToast = useCallback(() => setToast(null), []);
@@ -236,7 +241,14 @@ export function PeopleList({
     });
   }
 
-  const columnCount = canWrite ? 10 : 9;
+  // Name (with phone and email under it), language, stage, owner, last
+  // activity, created, tags (+ the select column for roles that may write).
+  const columnCount = selecting ? 8 : 7;
+
+  function stopSelecting() {
+    setSelecting(false);
+    setSelected(new Set());
+  }
 
   return (
     <div className="space-y-4">
@@ -246,6 +258,11 @@ export function PeopleList({
             <a href={`/api/people/export?${filterParams(q, filters)}`}>
               Export CSV
             </a>
+          </Button>
+        )}
+        {canWrite && !selecting && (
+          <Button variant="outline" onClick={() => setSelecting(true)}>
+            Assign owner
           </Button>
         )}
         {canAdd && <Button onClick={() => setAddOpen(true)}>Add person</Button>}
@@ -313,20 +330,18 @@ export function PeopleList({
         />
         <label className="text-ink-muted flex items-center gap-2 text-sm">
           Created
-          <input
-            type="date"
+          <DateField
             aria-label="Created from"
             value={filters.createdFrom}
-            onChange={(e) => updateFilter("createdFrom", e.target.value)}
-            className="border-line-strong bg-surface-sunken text-ink h-9 rounded-sm border px-2"
+            onChange={(v) => updateFilter("createdFrom", v)}
+            className="w-40"
           />
           to
-          <input
-            type="date"
+          <DateField
             aria-label="Created to"
             value={filters.createdTo}
-            onChange={(e) => updateFilter("createdTo", e.target.value)}
-            className="border-line-strong bg-surface-sunken text-ink h-9 rounded-sm border px-2"
+            onChange={(v) => updateFilter("createdTo", v)}
+            className="w-40"
           />
         </label>
         {hasFilters && (
@@ -336,7 +351,7 @@ export function PeopleList({
         )}
       </FilterRow>
 
-      {canWrite && selected.size > 0 && (
+      {canWrite && selecting && (
         <BulkBar
           count={selected.size}
           owners={owners}
@@ -344,9 +359,10 @@ export function PeopleList({
           ids={[...selected]}
           onDone={(message) => {
             setToast(message);
-            setSelected(new Set());
+            stopSelecting();
             reload();
           }}
+          onClose={stopSelecting}
         />
       )}
 
@@ -363,7 +379,7 @@ export function PeopleList({
           <Table>
             <TableHeader>
               <TableRow>
-                {canWrite && (
+                {selecting && (
                   <TableHead className="w-8">
                     <input
                       type="checkbox"
@@ -379,8 +395,6 @@ export function PeopleList({
                   sort={sort}
                   onSort={changeSort}
                 />
-                <TableHead>Phone</TableHead>
-                <TableHead>Email</TableHead>
                 <TableHead>Language</TableHead>
                 <TableHead>Stage</TableHead>
                 <TableHead>Owner</TableHead>
@@ -428,7 +442,7 @@ export function PeopleList({
                   <PersonRow
                     key={p.id}
                     person={p}
-                    selectable={canWrite}
+                    selectable={selecting}
                     selected={selected.has(p.id)}
                     onToggle={() => toggleOne(p.id)}
                   />
@@ -478,12 +492,14 @@ function BulkBar({
   owners,
   tags,
   onDone,
+  onClose,
 }: {
   count: number;
   ids: string[];
   owners: OwnerOption[];
   tags: TagOption[];
   onDone: (message: string) => void;
+  onClose: () => void;
 }) {
   const [owner, setOwner] = useState("");
   const [tag, setTag] = useState("");
@@ -522,7 +538,11 @@ function BulkBar({
 
   return (
     <div className="border-line bg-blue-soft flex flex-wrap items-center gap-3 rounded-md border px-4 py-2 text-sm">
-      <span className="text-blue-ink font-medium">{count} selected</span>
+      <span className="text-blue-ink font-medium">
+        {count === 0
+          ? "Tick the people to update"
+          : `${count} ${count === 1 ? "person" : "people"} selected`}
+      </span>
       <select
         aria-label="Assign owner"
         value={owner}
@@ -540,7 +560,7 @@ function BulkBar({
       <Button
         size="sm"
         variant="outline"
-        disabled={!owner || saving}
+        disabled={!owner || !count || saving}
         onClick={() =>
           apply(
             {
@@ -558,7 +578,7 @@ function BulkBar({
         aria-label="Add tag"
         value={tag}
         onChange={(e) => setTag(e.target.value)}
-        className="border-line-strong bg-surface-sunken h-8 rounded-md border px-2"
+        className="border-line-strong bg-surface-sunken h-8 max-w-60 truncate rounded-md border px-2"
       >
         <option value="">Add tag…</option>
         {tags.map((t) => (
@@ -570,7 +590,7 @@ function BulkBar({
       <Button
         size="sm"
         variant="outline"
-        disabled={!tag || saving}
+        disabled={!tag || !count || saving}
         onClick={() =>
           apply(
             { action: "add_tag", tagId: tag },
@@ -586,6 +606,15 @@ function BulkBar({
           {error}
         </span>
       )}
+      <Button
+        size="sm"
+        variant="ghost"
+        className="ml-auto"
+        disabled={saving}
+        onClick={onClose}
+      >
+        Done
+      </Button>
     </div>
   );
 }
@@ -604,7 +633,9 @@ function TagFilter({
       <summary className="border-line-strong bg-surface-sunken text-ink flex h-9 cursor-pointer list-none items-center rounded-sm border px-3 text-sm">
         {value.length ? `Tags: ${value.length} selected` : "Tags: all"}
       </summary>
-      <div className="border-line bg-surface-raised absolute z-10 mt-1 w-56 space-y-1 rounded-md border p-2 shadow-md">
+      {/* Anchored to the right edge: Tags is the last filter in the row,
+          so a left-anchored panel ran past the window at 1280px. */}
+      <div className="border-line bg-surface-raised absolute right-0 z-10 mt-1 w-56 space-y-1 rounded-md border p-2">
         {options.map((o) => (
           <label key={o.id} className="flex items-center gap-2 text-sm">
             <input
@@ -639,20 +670,29 @@ function PersonRow({
 }) {
   // Spec §11.2: WhatsApp-only contacts may have no name — show the phone.
   const name = displayName(person.fullName, person.phone);
-  const shownTags = person.tags.slice(0, 3);
-  const hiddenTags = person.tags.slice(3);
+  // Two tags and a count keep the column narrow enough for 1280px.
+  const shownTags = person.tags.slice(0, 2);
+  const hiddenTags = person.tags.slice(2);
+  // Phone and email ride under the name. When the name itself fell back to
+  // the phone (§11.2), the phone is not repeated.
+  const contact = [person.fullName?.trim() ? person.phone : null, person.email]
+    .filter(Boolean)
+    .join(" · ");
   const router = useRouter();
   const href = `/people/${person.id}`;
 
   // Spec §9: row click opens detail. The name is a real link for keyboard
-  // and middle-click; clicks on the checkbox or link aren't hijacked.
+  // and middle-click; clicks on the checkbox or link aren't hijacked. While
+  // selecting, the whole row ticks the person instead, and the name is plain
+  // text, so nothing in the row can open the person by accident.
   return (
     <TableRow
       data-state={selected ? "selected" : undefined}
       className="cursor-pointer"
       onClick={(e) => {
         if ((e.target as HTMLElement).closest("a, input, button")) return;
-        router.push(href);
+        if (selectable) onToggle();
+        else router.push(href);
       }}
     >
       {selectable && (
@@ -662,11 +702,14 @@ function PersonRow({
             aria-label={`Select ${name}`}
             checked={selected}
             onChange={onToggle}
+            className="size-4 cursor-pointer"
           />
         </TableCell>
       )}
-      <TableCell className="font-medium">
-        <span className="inline-flex items-center gap-2">
+      {/* Same table trick as Tags: the cell owns a share of the row, so the
+          contact line only shows "…" when that share is really too small. */}
+      <TableCell className="w-[24%] max-w-0 font-medium">
+        <span className="flex min-w-0 items-center gap-2">
           {person.needsReview && (
             <span
               className="bg-warning inline-block size-2 rounded-full"
@@ -677,13 +720,23 @@ function PersonRow({
               </span>
             </span>
           )}
-          <Link href={href} className="hover:underline">
-            {name}
-          </Link>
+          {selectable ? (
+            <span>{name}</span>
+          ) : (
+            <Link href={href} className="hover:text-blue-ink truncate">
+              {name}
+            </Link>
+          )}
         </span>
+        {contact && (
+          <span
+            className="text-ink-muted block truncate text-xs font-normal"
+            title={contact}
+          >
+            {contact}
+          </span>
+        )}
       </TableCell>
-      <TableCell>{person.phone ?? "—"}</TableCell>
-      <TableCell>{person.email ?? "—"}</TableCell>
       <TableCell>{LANGUAGE_LABEL[person.preferredLanguage]}</TableCell>
       <TableCell>
         <Badge variant={STAGE_VARIANT[person.stage]} className="capitalize">
@@ -693,15 +746,29 @@ function PersonRow({
       <TableCell>{person.owner?.fullName ?? "—"}</TableCell>
       <TableCell>{formatLastActivity(person.lastActivityAt)}</TableCell>
       <TableCell>{formatDate(person.createdAt)}</TableCell>
-      <TableCell>
+      {/* Tags get about a third of the row (a percentage width + max-width 0
+          is the table trick for "fill, but never push the table wider"), so a
+          tag only shows "…" when the space really runs out. */}
+      <TableCell className="w-[30%] max-w-0">
         <span className="flex flex-wrap gap-1">
           {shownTags.map((tag) => (
-            <Badge key={tag} variant="outline">
-              {tag}
+            // A tag is a label, not a state: no status dot (dots mark
+            // statuses only, 4 Nov 2026).
+            <Badge
+              key={tag}
+              variant="outline"
+              className="max-w-full before:hidden"
+              title={tag}
+            >
+              <span className="truncate">{tag}</span>
             </Badge>
           ))}
           {hiddenTags.length > 0 && (
-            <Badge variant="outline" title={hiddenTags.join(", ")}>
+            <Badge
+              variant="outline"
+              className="before:hidden"
+              title={hiddenTags.join(", ")}
+            >
               +{hiddenTags.length}
             </Badge>
           )}

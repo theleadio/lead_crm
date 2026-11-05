@@ -39,6 +39,7 @@ export function LostReasonDialog({
       title="Mark deal as lost"
       body={<p>Why was the deal with {personName} lost?</p>}
       confirmLabel="Mark lost"
+      cancelLabel="Keep deal open"
       canConfirm={Boolean(reasonId)}
       onConfirm={async () => onConfirm(reasonId)}
     >

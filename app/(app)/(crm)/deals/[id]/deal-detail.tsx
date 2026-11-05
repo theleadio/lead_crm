@@ -1,5 +1,6 @@
 "use client";
 
+import { DateField } from "@/components/date-field";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { LostReasonDialog } from "../lost-reason-dialog";
@@ -87,6 +88,9 @@ export function DealDetailView({
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
   const [toast, setToast] = useState<React.ReactNode | null>(null);
+  // One edit pattern across the CRM: a record opens read-only, and Edit
+  // (top right) turns its details into the form until Save or Cancel.
+  const [editing, setEditing] = useState(false);
   const dismissToast = useCallback(() => setToast(null), []);
 
   useEffect(() => {
@@ -153,7 +157,7 @@ export function DealDetailView({
           <>
             <Link
               href={`/people/${d.person.id}`}
-              className="text-blue-ink underline"
+              className="text-blue-ink hover:underline"
             >
               {d.person.name || "Unnamed"}
             </Link>
@@ -199,26 +203,35 @@ export function DealDetailView({
           </>
         }
         actions={
-          <DealActions
-            deal={d}
-            canWrite={canWrite}
-            onNotice={setToast}
-            onReload={reload}
-          />
+          <>
+            {canWrite && !editing && (
+              <Button variant="outline" onClick={() => setEditing(true)}>
+                Edit
+              </Button>
+            )}
+            <DealActions
+              deal={d}
+              canWrite={canWrite}
+              onNotice={setToast}
+              onReload={reload}
+            />
+          </>
         }
       />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="border-line bg-surface-raised rounded-md border p-4">
           <h2 className="mb-4 font-semibold">Details</h2>
-          {canWrite ? (
+          {canWrite && editing ? (
             <EditForm
               key={d.id}
               deal={d}
               onSaved={(deal) => {
                 setState({ status: "ready", deal });
+                setEditing(false);
                 setToast("Saved changes to this deal.");
               }}
+              onCancel={() => setEditing(false)}
               onReload={reload}
             />
           ) : (
@@ -472,10 +485,12 @@ const fieldLabel = (f: string) => FIELD_LABELS[f] ?? f;
 function EditForm({
   deal,
   onSaved,
+  onCancel,
   onReload,
 }: {
   deal: DealDetail;
   onSaved: (deal: DealDetail) => void;
+  onCancel: () => void;
   onReload: () => void;
 }) {
   const [form, setForm] = useState<Form>(() => toForm(deal));
@@ -507,6 +522,8 @@ function EditForm({
   >([]);
   const [reasons, setReasons] = useState<{ id: string; labelEn: string }[]>([]);
   const [saving, setSaving] = useState(false);
+  // §13: never lose typed input silently — Cancel with changes asks first.
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const [error, setError] = useState<{
     message: string;
     stale?: boolean;
@@ -723,7 +740,7 @@ function EditForm({
         <Input
           id="amountMyr"
           inputMode="decimal"
-          placeholder="4500.00"
+          placeholder="e.g. 4500"
           value={form.amountMyr}
           onChange={(e) => set("amountMyr")(e.target.value)}
         />
@@ -791,11 +808,10 @@ function EditForm({
             required
             error={fieldErrors.hrdcApprovalDate}
           >
-            <Input
+            <DateField
               id="hrdcApprovalDate"
-              type="date"
               value={form.hrdcApprovalDate}
-              onChange={(e) => set("hrdcApprovalDate")(e.target.value)}
+              onChange={(v) => set("hrdcApprovalDate")(v)}
             />
           </Field>
           <Field
@@ -804,11 +820,10 @@ function EditForm({
             required
             error={fieldErrors.hrdcDeadlineDate}
           >
-            <Input
+            <DateField
               id="hrdcDeadlineDate"
-              type="date"
               value={form.hrdcDeadlineDate}
-              onChange={(e) => set("hrdcDeadlineDate")(e.target.value)}
+              onChange={(v) => set("hrdcDeadlineDate")(v)}
             />
           </Field>
           <p className="text-ink-muted text-xs">
@@ -873,15 +888,14 @@ function EditForm({
         <Button type="submit" disabled={saving || !changed.length}>
           {saving ? "Saving…" : "Save changes"}
         </Button>
-        {changed.length > 0 && !saving && (
-          <button
-            type="button"
-            onClick={() => setForm(initial)}
-            className="text-ink-muted text-sm underline"
-          >
-            Discard changes
-          </button>
-        )}
+        <Button
+          type="button"
+          variant="outline"
+          disabled={saving}
+          onClick={() => (changed.length ? setConfirmCancel(true) : onCancel())}
+        >
+          Cancel
+        </Button>
       </div>
 
       {/* Cancelling sends nothing and leaves the typed values alone. */}
@@ -906,12 +920,22 @@ function EditForm({
             </>
           }
           confirmLabel="Save and close reminder"
+          tone="primary"
           onConfirm={async () => {
             setConfirmClose(false);
             await save();
           }}
         />
       )}
+      <ConfirmDialog
+        open={confirmCancel}
+        onOpenChange={setConfirmCancel}
+        title="Discard your changes?"
+        body={<p>What you changed in this form is not saved.</p>}
+        confirmLabel="Discard changes"
+        cancelLabel="Keep editing"
+        onConfirm={async () => onCancel()}
+      />
     </form>
   );
 }
@@ -936,14 +960,32 @@ function ReadOnlyDetails({ deal }: { deal: DealDetail }) {
     ["Lost reason", deal.lostReason?.labelEn ?? null],
   ];
   return (
-    <dl className="grid grid-cols-[9rem_1fr] gap-x-4 gap-y-2 text-sm">
-      {rows.map(([k, v]) => (
-        <div key={k} className="contents">
-          <dt className="text-ink-muted">{k}</dt>
-          <dd className="whitespace-pre-wrap capitalize">{v ?? "—"}</dd>
-        </div>
-      ))}
-    </dl>
+    <div className="space-y-3">
+      <dl className="grid grid-cols-[9rem_1fr] gap-x-4 gap-y-2 text-sm">
+        {rows.map(([k, v]) => (
+          <div key={k} className="contents">
+            <dt className="text-ink-muted">{k}</dt>
+            <dd className="whitespace-pre-wrap capitalize">{v ?? "—"}</dd>
+          </div>
+        ))}
+      </dl>
+      {/* The header's "Checkout link sent" points here, so the link shows
+          whether or not the form is open. */}
+      {deal.checkoutUrl && (
+        <p className="text-ink-muted text-sm">
+          Checkout link:{" "}
+          <a
+            href={deal.checkoutUrl}
+            className="text-blue-ink underline"
+            rel="noreferrer"
+            target="_blank"
+          >
+            open
+          </a>
+          {deal.checkoutSentAt && ` — sent ${formatDate(deal.checkoutSentAt)}`}
+        </p>
+      )}
+    </div>
   );
 }
 

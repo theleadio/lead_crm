@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { formatMoneyMyr } from "@/lib/format/money";
+import { LinkRow } from "@/components/link-row";
 import { EmptyRow, TableCard } from "@/components/list-kit";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -70,7 +72,6 @@ export function RosterTab({
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
-              <TableHead>Enrolment</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Seat</TableHead>
               <TableHead>Level</TableHead>
@@ -83,27 +84,20 @@ export function RosterTab({
           </TableHeader>
           <TableBody>
             {rows.length === 0 && (
-              <EmptyRow columns={10}>
+              <EmptyRow columns={9}>
                 Nobody is enrolled in this class yet.
               </EmptyRow>
             )}
             {rows.map((row) => (
-              <TableRow key={row.id}>
+              // §9.11: the row opens the enrolment itself, where its status,
+              // payments and transfer live; the person is one click on.
+              <LinkRow key={row.id} href={`/enrolments/${row.id}`}>
                 <TableCell className="font-semibold">
                   <Link
-                    href={`/people/${row.personId}`}
-                    className="text-blue-ink underline"
+                    href={`/enrolments/${row.id}`}
+                    className="hover:text-blue-ink"
                   >
                     {row.personName}
-                  </Link>
-                </TableCell>
-                <TableCell>
-                  {/* §9.11: the enrolment itself, not the person. */}
-                  <Link
-                    href={`/enrolments/${row.id}`}
-                    className="text-blue-ink underline"
-                  >
-                    Open
                   </Link>
                 </TableCell>
                 <TableCell>{enumLabel(row.status)}</TableCell>
@@ -115,7 +109,8 @@ export function RosterTab({
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  <span className="flex flex-wrap gap-1">
+                  {/* Level badges are labels, not a state, so no dot. */}
+                  <span className="flex flex-wrap gap-1 [&>[data-slot=badge]]:before:hidden">
                     {row.firstTimer && <Badge>First-timer</Badge>}
                     {row.priorMastery && (
                       <Badge variant="secondary">Mastery</Badge>
@@ -138,7 +133,7 @@ export function RosterTab({
                   {row.bookerName ?? "—"}
                 </TableCell>
                 <TableCell className="text-ink-muted">
-                  {row.pricePaidMyr ?? "—"}
+                  {row.pricePaidMyr ? formatMoneyMyr(row.pricePaidMyr) : "—"}
                 </TableCell>
                 <TableCell className="text-ink-muted">
                   {row.seatReservedUntil
@@ -148,7 +143,7 @@ export function RosterTab({
                 <TableCell className="text-ink-muted">
                   {formatDate(row.createdAt)}
                 </TableCell>
-              </TableRow>
+              </LinkRow>
             ))}
           </TableBody>
         </Table>

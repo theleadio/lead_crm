@@ -1,10 +1,32 @@
 import Link from "next/link";
-import { ChevronRight, MapPin, Monitor } from "lucide-react";
+import { kualaLumpurDay } from "@/lib/validation/report";
+import { ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { classStatusBadge, seatBarColor } from "@/lib/classes/types";
 import { formatDateRange } from "@/lib/format/date";
 import type { HomeClass } from "@/lib/home/types";
 
+const DAY = 24 * 60 * 60 * 1000;
+
+// "Push" hint: a class at most this many days out that is under half sold.
+// A display aid for sales, not a stored state; tune here.
+const PUSH_WITHIN_DAYS = 7;
+const PUSH_BELOW_SHARE = 0.5;
+
+// Whole days from today (Malaysian calendar, §4) to a YYYY-MM-DD date.
+function daysUntil(date: string, today: string): number {
+  return Math.round((Date.parse(date) - Date.parse(today)) / DAY);
+}
+
+function startsLabel(days: number): string {
+  if (days <= 0) return "Starts today";
+  if (days === 1) return "Starts tomorrow";
+  return `Starts in ${days} days`;
+}
+
+// Spec §9.0 Home. One card per class starting in the next 14 days, built
+// like the deals stage cards: seats sold is the headline number, so sales
+// can see at a glance which class still needs selling.
 export function ClassesPanel({
   classes,
   windowLabel,
@@ -12,12 +34,19 @@ export function ClassesPanel({
   classes: HomeClass[];
   windowLabel: string;
 }) {
+  const today = kualaLumpurDay();
+
   return (
-    <section className="border-line bg-surface-raised flex flex-col overflow-hidden rounded-md border">
-      <header className="flex flex-wrap items-center justify-between gap-3 px-5 py-4.5">
-        <div className="flex flex-col gap-0.5">
-          <h2 className="text-base font-bold">Upcoming classes</h2>
-          <p className="text-ink-muted text-xs">Next 14 days · {windowLabel}</p>
+    <section className="flex flex-col gap-3.5">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <h2 className="text-lg font-bold">Upcoming classes</h2>
+          <span className="bg-surface-sunken text-ink-muted rounded-full px-2 py-0.5 text-xs font-semibold">
+            {classes.length}
+          </span>
+          <span className="text-ink-muted text-[13px]">
+            Next 14 days · {windowLabel}
+          </span>
         </div>
         <Link
           href="/classes"
@@ -29,7 +58,7 @@ export function ClassesPanel({
       </header>
 
       {classes.length === 0 ? (
-        <div className="border-line text-ink-muted border-t px-5 py-10 text-center text-sm">
+        <div className="border-line bg-surface-raised text-ink-muted rounded-md border px-5 py-6 text-sm">
           <p className="text-ink font-medium">No class starts in 14 days.</p>
           <p className="mt-1">
             Scheduled classes appear here as their start date comes up.{" "}
@@ -40,82 +69,83 @@ export function ClassesPanel({
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[860px] text-left">
-            <thead className="border-line bg-surface-muted border-y">
-              <tr className="text-ink-subtle text-[11px] font-bold tracking-wide">
-                <th className="px-5 py-2.5 font-bold">CLASS</th>
-                <th className="py-2.5 pr-4 font-bold">DATES</th>
-                <th className="py-2.5 pr-4 font-bold">LANGUAGE</th>
-                <th className="py-2.5 pr-4 font-bold">VENUE</th>
-                <th className="w-55 py-2.5 pr-4 font-bold">SEATS SOLD</th>
-                <th className="w-28 py-2.5 pr-5 font-bold">STATUS</th>
-              </tr>
-            </thead>
-            <tbody>
-              {classes.map((c) => {
-                const status = classStatusBadge(c.status);
-                const pct = Math.min(
-                  100,
-                  Math.round((c.sold / c.capacity) * 100),
-                );
-                return (
-                  <tr key={c.id} className="border-line border-b last:border-0">
-                    <td className="px-5 py-3">
-                      <span className="block text-[13px] font-bold">
-                        {c.code}
-                      </span>
-                      <span className="text-ink-muted block text-xs">
-                        {c.courseName}
-                      </span>
-                    </td>
-                    <td className="py-3 pr-4 text-[13px]">
-                      {formatDateRange(c.startDate, c.endDate)}
-                    </td>
-                    <td className="text-ink-muted py-3 pr-4 text-[13px]">
-                      {c.language === "zh" ? "中文" : "English"}
-                    </td>
-                    <td className="text-ink-muted py-3 pr-4 text-[13px]">
-                      <span className="flex items-center gap-1.5">
-                        {c.mode === "online" ? (
-                          <Monitor
-                            aria-hidden="true"
-                            className="text-ink-subtle size-3.5"
-                          />
-                        ) : (
-                          <MapPin
-                            aria-hidden="true"
-                            className="text-ink-subtle size-3.5"
-                          />
-                        )}
-                        {c.mode === "online"
-                          ? "Online"
-                          : [c.venue, c.city].filter(Boolean).join(", ")}
-                      </span>
-                    </td>
-                    <td className="py-3 pr-4">
-                      <span className="flex items-center gap-2.5">
-                        <span className="bg-surface-sunken h-1.5 flex-1 overflow-hidden rounded-full">
-                          <span
-                            className={`block h-full rounded-full ${seatBarColor(c.status)}`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </span>
-                        <span className="w-11 text-xs font-semibold">
-                          {c.sold}/{c.capacity}
-                        </span>
-                      </span>
-                    </td>
-                    <td className="py-3 pr-5">
-                      <Badge variant={status.variant}>{status.label}</Badge>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {classes.map((c) => (
+            <li key={c.id}>
+              <SeatCard cls={c} days={daysUntil(c.startDate, today)} />
+            </li>
+          ))}
+        </ul>
       )}
     </section>
+  );
+}
+
+function SeatCard({ cls: c, days }: { cls: HomeClass; days: number }) {
+  const status = classStatusBadge(c.status);
+  const share = c.capacity > 0 ? c.sold / c.capacity : 0;
+  const pct = Math.min(100, Math.round(share * 100));
+  const left = Math.max(0, c.capacity - c.sold);
+  // Draft and full classes take no bookings to push.
+  const needsPush =
+    ["open", "few_seats"].includes(c.status) &&
+    days <= PUSH_WITHIN_DAYS &&
+    share < PUSH_BELOW_SHARE;
+  const where =
+    c.mode === "online"
+      ? "Online"
+      : [c.venue, c.city].filter(Boolean).join(", ") || "Venue not set";
+
+  return (
+    <Link
+      href={`/classes/${c.id}`}
+      className="border-line bg-surface-raised hover:bg-surface-muted focus-visible:outline-focus-ring flex h-full flex-col gap-4 rounded-md border p-5 focus-visible:outline-2 focus-visible:outline-offset-2"
+    >
+      <span className="flex items-start justify-between gap-3">
+        <span className="flex min-w-0 flex-col gap-0.5">
+          <span className="truncate text-[13px] font-bold">{c.code}</span>
+          <span className="text-ink-muted truncate text-xs">
+            {c.courseName}
+          </span>
+        </span>
+        <Badge variant={status.variant}>{status.label}</Badge>
+      </span>
+
+      <span className="text-ink-muted text-xs">
+        {formatDateRange(c.startDate, c.endDate)} ·{" "}
+        {c.language === "zh" ? "中文" : "English"} · {where}
+      </span>
+
+      {/* Seats sold leads the card. The count is written out beside the
+          bar, so the colour is never the only signal (§13). */}
+      <span className="flex flex-col gap-2">
+        <span className="flex items-end justify-between gap-2">
+          <span className="flex items-end gap-1.5">
+            <span className="text-[28px] leading-none font-bold tabular-nums">
+              {c.sold}
+            </span>
+            <span className="text-ink-muted text-[13px]">
+              / {c.capacity} seats sold
+            </span>
+          </span>
+          <span className="text-ink-muted text-[13px] tabular-nums">
+            {pct}%
+          </span>
+        </span>
+        <span className="bg-surface-sunken h-2 overflow-hidden rounded-full">
+          <span
+            className={`block h-full rounded-full ${seatBarColor(c.status)}`}
+            style={{ width: `${pct}%` }}
+          />
+        </span>
+      </span>
+
+      <span className="mt-auto flex min-h-6 flex-wrap items-center justify-between gap-2 text-xs">
+        <span className="text-ink-muted">
+          {left} {left === 1 ? "seat" : "seats"} left · {startsLabel(days)}
+        </span>
+        {needsPush && <Badge variant="warning">Needs a push</Badge>}
+      </span>
+    </Link>
   );
 }

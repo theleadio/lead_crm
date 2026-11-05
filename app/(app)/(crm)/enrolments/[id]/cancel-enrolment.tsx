@@ -75,6 +75,7 @@ export function CancelEnrolment({
           </>
         }
         confirmLabel="Cancel enrolment"
+        cancelLabel="Keep enrolment"
         canConfirm={Boolean(reason.trim())}
         onConfirm={cancel}
       >

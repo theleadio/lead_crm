@@ -99,7 +99,7 @@ export function CompanyPicker({
           <Link
             id="company"
             href={`/companies/${company.id}`}
-            className="text-blue-ink underline"
+            className="text-blue-ink hover:underline"
           >
             {company.name}
           </Link>

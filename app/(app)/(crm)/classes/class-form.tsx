@@ -1,5 +1,6 @@
 "use client";
 
+import { DateField } from "@/components/date-field";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -42,7 +43,8 @@ const EMPTY: Values = {
   venueAddress: "",
   city: "",
   onlineUrl: "",
-  capacity: "20",
+  // LEAD runs classes of up to 30 (user, 4 Nov 2026); staff can still change it.
+  capacity: "30",
   fewSeatsThreshold: "5",
   priceMyr: "",
   hrdcClaimable: false,
@@ -168,7 +170,9 @@ export function ClassForm({
         return;
       }
       setDirty(false);
-      router.push("/classes");
+      // Back to the class itself, where the change shows; the list made
+      // staff find the row again to check their edit.
+      router.push(`/classes/${payload.id ?? existing?.id ?? ""}`);
       router.refresh();
     } catch {
       setError(
@@ -181,9 +185,13 @@ export function ClassForm({
 
   return (
     <div className="max-w-3xl space-y-4">
-      <h1 className="text-xl font-semibold">
-        {existing ? `Edit ${existing.code}` : "Add class"}
-      </h1>
+      {/* Editing happens on the class's own page, under its h1; only Add
+          class is a page of its own. */}
+      {existing ? (
+        <h2 className="text-base font-semibold">Edit class details</h2>
+      ) : (
+        <h1 className="text-xl font-semibold">Add class</h1>
+      )}
 
       {error && (
         <div
@@ -243,21 +251,21 @@ export function ClassForm({
         <div className="grid grid-cols-2 gap-3">
           <Field label="Start date" required error={fieldErrors.startDate}>
             {(id) => (
-              <Input
+              <DateField
+                required
                 id={id}
-                type="date"
                 value={form.startDate}
-                onChange={(e) => set("startDate", e.target.value)}
+                onChange={(v) => set("startDate", v)}
               />
             )}
           </Field>
           <Field label="End date" required error={fieldErrors.endDate}>
             {(id) => (
-              <Input
+              <DateField
+                required
                 id={id}
-                type="date"
                 value={form.endDate}
-                onChange={(e) => set("endDate", e.target.value)}
+                onChange={(v) => set("endDate", v)}
               />
             )}
           </Field>
@@ -427,7 +435,9 @@ export function ClassForm({
           <Button
             type="button"
             variant="outline"
-            onClick={() => router.push("/classes")}
+            onClick={() =>
+              router.push(existing ? `/classes/${existing.id}` : "/classes")
+            }
           >
             Cancel
           </Button>

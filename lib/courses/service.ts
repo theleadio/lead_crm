@@ -82,6 +82,18 @@ export async function listCourses(
   };
 }
 
+// One course, for the course page and for the class page's website check.
+// Every role reads courses (§6 course/class row), so there is no viewer.
+export async function getCourse(id: string): Promise<CourseListItem | null> {
+  if (!isUuid(id)) return null;
+  const sql = db();
+  const [r] = await sql`
+    SELECT id, code, name_en, name_zh, track, duration_days, list_price_myr,
+           hrdc_claimable, is_active, version
+    FROM course WHERE id = ${id}`;
+  return r ? toItem(r) : null;
+}
+
 function toItem(r: Record<string, unknown>): CourseListItem {
   return {
     id: r.id as string,

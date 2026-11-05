@@ -21,7 +21,7 @@ export function Toast({
   return (
     <div
       role="status"
-      className="bg-charcoal border-line fixed right-6 bottom-6 z-50 flex items-center gap-4 rounded-md border px-4 py-3 text-sm text-white shadow-lg"
+      className="bg-charcoal border-line fixed right-6 bottom-6 z-50 flex items-center gap-4 rounded-md border px-4 py-3 text-sm text-white"
     >
       <span>{message}</span>
       <button

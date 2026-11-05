@@ -101,3 +101,11 @@ test("q is trimmed and capped", () => {
   assert.equal(r.data.q, "Tan Mei Ling");
   assert.equal(parse({ q: "x".repeat(201) }).success, false);
 });
+
+test("the needs-action queue is a filter, off unless asked for", () => {
+  assert.equal(parse({}).data?.needsAction, undefined);
+  const r = parse({ "filter[needsAction]": "true" });
+  assert.ok(r.success);
+  assert.equal(r.data.needsAction, true);
+  assert.equal(parse({ "filter[needsAction]": "yes" }).success, false);
+});

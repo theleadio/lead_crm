@@ -1,0 +1,381 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-02T00:00:00+08:00",
+  "title": "Design System: LEAD CRM",
+  "extensions": {
+    "colorMeta": {
+      "lead-blue": {
+        "role": "primary",
+        "displayName": "LEAD Blue",
+        "canonical": "#a1bace",
+        "tonalRamp": [
+          "#24292f",
+          "#33404d",
+          "#48647f",
+          "#8aa3b9",
+          "#a1bace",
+          "#b8cadb",
+          "#bccde0",
+          "#e6edf4"
+        ]
+      },
+      "lead-blue-hover": {
+        "role": "primary",
+        "displayName": "Lifted Blue",
+        "canonical": "#b8cadb"
+      },
+      "blue-wash": {
+        "role": "primary",
+        "displayName": "Blue Wash",
+        "canonical": "#24292f"
+      },
+      "lead-yellow": {
+        "role": "secondary",
+        "displayName": "LEAD Yellow",
+        "canonical": "#fbe33b",
+        "tonalRamp": [
+          "#3a2f10",
+          "#5c4a14",
+          "#8a6a10",
+          "#b97f00",
+          "#d9a21c",
+          "#fbe33b",
+          "#fdf08f",
+          "#fdf3d6"
+        ]
+      },
+      "on-yellow": {
+        "role": "secondary",
+        "displayName": "Ink on Yellow",
+        "canonical": "#1b1d29"
+      },
+      "yellow-wash": {
+        "role": "secondary",
+        "displayName": "Yellow Wash",
+        "canonical": "#3a2f10"
+      },
+      "chart-violet": {
+        "role": "tertiary",
+        "displayName": "Chart Violet",
+        "canonical": "#8b7cf6"
+      },
+      "chart-apricot": {
+        "role": "tertiary",
+        "displayName": "Chart Apricot",
+        "canonical": "#f59e5b"
+      },
+      "night-canvas": {
+        "role": "neutral",
+        "displayName": "Night Canvas",
+        "canonical": "#0e0f13",
+        "tonalRamp": [
+          "#0e0f13",
+          "#17181e",
+          "#1e2028",
+          "#272a34",
+          "#3a3e4a",
+          "#6e7486",
+          "#a3a8b8",
+          "#f4f5f8"
+        ]
+      },
+      "raised-slate": {
+        "role": "neutral",
+        "displayName": "Raised Slate",
+        "canonical": "#17181e"
+      },
+      "muted-slate": {
+        "role": "neutral",
+        "displayName": "Muted Slate",
+        "canonical": "#1e2028"
+      },
+      "sunken-slate": {
+        "role": "neutral",
+        "displayName": "Sunken Slate",
+        "canonical": "#272a34"
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#262932"
+      },
+      "hairline-strong": {
+        "role": "neutral",
+        "displayName": "Strong Hairline",
+        "canonical": "#3a3e4a"
+      },
+      "chalk": {
+        "role": "neutral",
+        "displayName": "Chalk",
+        "canonical": "#f4f5f8"
+      },
+      "chalk-muted": {
+        "role": "neutral",
+        "displayName": "Chalk Muted",
+        "canonical": "#a3a8b8"
+      },
+      "chalk-subtle": {
+        "role": "neutral",
+        "displayName": "Chalk Subtle",
+        "canonical": "#8e94a6"
+      },
+      "charcoal-rail": {
+        "role": "neutral",
+        "displayName": "Charcoal Rail",
+        "canonical": "#1a1b22"
+      },
+      "charcoal-raised": {
+        "role": "neutral",
+        "displayName": "Charcoal Raised",
+        "canonical": "#2b2d35"
+      },
+      "on-charcoal": {
+        "role": "neutral",
+        "displayName": "On Charcoal",
+        "canonical": "#9ea3b3"
+      },
+      "on-action": {
+        "role": "neutral",
+        "displayName": "White",
+        "canonical": "#ffffff"
+      },
+      "success": {
+        "role": "status",
+        "displayName": "Success",
+        "canonical": "#34d399"
+      },
+      "success-wash": {
+        "role": "status",
+        "displayName": "Success Wash",
+        "canonical": "#11301f"
+      },
+      "warning": {
+        "role": "status",
+        "displayName": "Warning",
+        "canonical": "#f5be2e"
+      },
+      "warning-wash": {
+        "role": "status",
+        "displayName": "Warning Wash",
+        "canonical": "#3a2f10"
+      },
+      "danger": {
+        "role": "status",
+        "displayName": "Danger",
+        "canonical": "#f87171"
+      },
+      "danger-wash": {
+        "role": "status",
+        "displayName": "Danger Wash",
+        "canonical": "#3a1616"
+      },
+      "on-blue": {
+        "role": "primary",
+        "displayName": "Ink on Blue",
+        "canonical": "#0e0f13"
+      },
+      "logo-disc": {
+        "role": "tertiary",
+        "displayName": "Logo Disc",
+        "canonical": "#3d3d3d"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Dashboard greeting and big stat numerals."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "The one H1 on each public page; 24px on mobile, 30px from 640px."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "CRM list and detail headers."
+      },
+      "title-card": {
+        "displayName": "Card Title",
+        "purpose": "Class names on public schedule cards."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Forms, descriptions, most CRM copy."
+      },
+      "body-dense": {
+        "displayName": "Body Dense",
+        "purpose": "Table cells, sidebar items, search pill, stat captions."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase table column headers."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Codes and figures that must align."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "state-transition",
+        "value": "all 150ms cubic-bezier(0.4, 0, 0.2, 1)",
+        "purpose": "Tailwind's default transition on buttons, badges and table rows: colour and tone shifts only."
+      },
+      {
+        "name": "press",
+        "value": "translateY(1px)",
+        "purpose": "Buttons move down 1px while pressed."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "crm-min",
+        "value": "1280px"
+      },
+      {
+        "name": "public-min",
+        "value": "360px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Every CRM action. A LEAD blue pill.",
+      "html": "<button class=\"ds-btn-primary\">Save changes</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 16px; border: 1px solid transparent; border-radius: 9999px; background: #a1bace; color: #0e0f13; font: 600 14px/1 Inter, system-ui, sans-serif; cursor: pointer; transition: background-color 150ms, transform 150ms; } .ds-btn-primary:hover { background: #b8cadb; } .ds-btn-primary:active { transform: translateY(1px); } .ds-btn-primary:focus-visible { outline: none; border-color: #a1bace; box-shadow: 0 0 0 3px rgba(161,186,206,0.5); }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secondary actions beside a primary button.",
+      "html": "<button class=\"ds-btn-outline\">Cancel</button>",
+      "css": ".ds-btn-outline { display: inline-flex; align-items: center; justify-content: center; height: 36px; padding: 0 16px; border: 1px solid #3a3e4a; border-radius: 9999px; background: rgba(58,62,74,0.3); color: #f4f5f8; font: 600 14px/1 Inter, system-ui, sans-serif; cursor: pointer; transition: background-color 150ms; } .ds-btn-outline:hover { background: rgba(58,62,74,0.5); } .ds-btn-outline:active { transform: translateY(1px); } .ds-btn-outline:focus-visible { outline: none; border-color: #a1bace; box-shadow: 0 0 0 3px rgba(161,186,206,0.5); }"
+    },
+    {
+      "name": "Destructive Button",
+      "kind": "button",
+      "refersTo": "button-destructive",
+      "description": "Danger text on a danger tint. Never a solid red fill.",
+      "html": "<button class=\"ds-btn-danger\">Erase person</button>",
+      "css": ".ds-btn-danger { display: inline-flex; align-items: center; justify-content: center; height: 36px; padding: 0 16px; border: 1px solid rgba(248,113,113,0.6); border-radius: 9999px; background: rgba(248,113,113,0.2); color: #f87171; font: 600 14px/1 Inter, system-ui, sans-serif; cursor: pointer; transition: background-color 150ms; } .ds-btn-danger:hover { background: rgba(248,113,113,0.3); } .ds-btn-danger:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(248,113,113,0.4); }"
+    },
+    {
+      "name": "Register Button",
+      "kind": "button",
+      "refersTo": "button-register",
+      "description": "Public site only: the one money action on a class card.",
+      "html": "<a class=\"ds-btn-register\" href=\"#\">Register</a>",
+      "css": ".ds-btn-register { display: inline-flex; align-items: center; padding: 8px 16px; border-radius: 9999px; background: #fbe33b; color: #1b1d29; font: 600 14px/1.43 Inter, system-ui, sans-serif; text-decoration: none; white-space: nowrap; } .ds-btn-register:focus-visible { outline: none; box-shadow: 0 0 0 2px #a1bace; }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Forms in both surfaces. 16px text on phones, 14px from 768px.",
+      "html": "<input class=\"ds-input\" placeholder=\"Email\" />",
+      "css": ".ds-input { height: 36px; width: 260px; padding: 4px 12px; border: 1px solid #3a3e4a; border-radius: 10px; background: rgba(58,62,74,0.3); color: #f4f5f8; font: 400 14px/1.43 Inter, system-ui, sans-serif; outline: none; transition: border-color 150ms, box-shadow 150ms; } .ds-input::placeholder { color: #a3a8b8; } .ds-input:focus-visible { border-color: #a1bace; box-shadow: 0 0 0 3px rgba(161,186,206,0.5); } .ds-input[aria-invalid=true] { border-color: rgba(248,113,113,0.5); box-shadow: 0 0 0 3px rgba(248,113,113,0.4); }"
+    },
+    {
+      "name": "Sidebar Navigation",
+      "kind": "nav",
+      "refersTo": "nav-item",
+      "description": "The CRM's charcoal rail with the real LEAD logo at the top (public/brand/lead-logo-white.webp in the app; drawn here). It closes to a 56px icon rail; the active page is a solid logo-blue pill with dark text.",
+      "html": "<nav class=\"ds-rail\"><div class=\"ds-mark\"><span class=\"ds-mark-disc\"><span class=\"ds-mark-bar\"></span><span class=\"ds-mark-strokes\"><span></span><span></span><span></span></span></span><span class=\"ds-mark-word\">LEAD</span></div><a class=\"ds-nav-item\" aria-current=\"page\" href=\"#\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"3\" width=\"7\" height=\"9\"/><rect x=\"14\" y=\"3\" width=\"7\" height=\"5\"/><rect x=\"14\" y=\"12\" width=\"7\" height=\"9\"/><rect x=\"3\" y=\"16\" width=\"7\" height=\"5\"/></svg>Dashboard</a><a class=\"ds-nav-item\" href=\"#\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"/><circle cx=\"9\" cy=\"7\" r=\"4\"/></svg>People</a><a class=\"ds-nav-item\" href=\"#\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"4\" width=\"18\" height=\"18\" rx=\"2\"/><path d=\"M16 2v4M8 2v4M3 10h18\"/></svg>Classes</a></nav>",
+      "css": ".ds-rail { width: 224px; padding: 20px 14px; border: 1px solid #262932; border-radius: 24px; background: #1a1b22; display: flex; flex-direction: column; gap: 2px; } .ds-mark { display: flex; align-items: center; gap: 10px; padding: 0 6px 8px; margin-bottom: 16px; } .ds-mark-disc { width: 30px; height: 30px; border-radius: 9999px; background: #3d3d3d; display: flex; align-items: center; justify-content: center; gap: 2px; } .ds-mark-bar { width: 4px; height: 14px; border-radius: 1px; background: #fbe33b; } .ds-mark-strokes { display: flex; flex-direction: column; gap: 2px; } .ds-mark-strokes span { display: block; height: 2.5px; border-radius: 1px; background: #a1bace; } .ds-mark-strokes span:nth-child(1), .ds-mark-strokes span:nth-child(3) { width: 9px; } .ds-mark-strokes span:nth-child(2) { width: 7px; } .ds-mark-word { color: #ffffff; font: 700 16px/1 Inter, system-ui, sans-serif; letter-spacing: 0.05em; } .ds-nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 9999px; color: #9ea3b3; font: 400 13px/1.4 Inter, system-ui, sans-serif; text-decoration: none; transition: background-color 150ms, color 150ms; } .ds-nav-item:hover { background: #2b2d35; color: #ffffff; } .ds-nav-item[aria-current=page] { background: #a1bace; color: #0e0f13; font-weight: 600; } .ds-nav-item:focus-visible { outline: 2px solid #a1bace; outline-offset: 2px; }"
+    },
+    {
+      "name": "Status Badges",
+      "kind": "chip",
+      "refersTo": "badge",
+      "description": "Status as text on its own wash, led by a 6px dot.",
+      "html": "<div class=\"ds-badges\"><span class=\"ds-badge\">Lead</span><span class=\"ds-badge ds-badge-success\">Confirmed</span><span class=\"ds-badge ds-badge-warning\">Few seats left</span><span class=\"ds-badge ds-badge-danger\">Cancelled</span></div>",
+      "css": ".ds-badges { display: flex; gap: 8px; flex-wrap: wrap; } .ds-badge { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 2px 10px; border-radius: 9999px; background: #24292f; color: #a1bace; font: 600 12px/1 Inter, system-ui, sans-serif; white-space: nowrap; } .ds-badge::before { content: ''; width: 6px; height: 6px; border-radius: 9999px; background: currentColor; } .ds-badge-success { background: #11301f; color: #34d399; } .ds-badge-warning { background: #3a2f10; color: #f5be2e; } .ds-badge-danger { background: rgba(248,113,113,0.2); color: #f87171; }"
+    },
+    {
+      "name": "Class Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Public schedule card: course, badges, dates, venue, price, Register.",
+      "html": "<article class=\"ds-card\"><h3 class=\"ds-card-title\">AI Agentic Automation Certification</h3><div class=\"ds-card-badges\"><span class=\"ds-card-badge\">English</span><span class=\"ds-card-badge ds-card-badge-hrdc\">HRDC claimable</span></div><dl class=\"ds-card-facts\"><dd>11–12 Nov 2026 <span class=\"ds-subtle\">· 9:00am–5:00pm</span></dd><dd>AI365 Hub, Oval Damansara</dd><dd class=\"ds-price\">RM 3,200</dd></dl><div class=\"ds-card-foot\"><span class=\"ds-seats\">Few seats left</span><a class=\"ds-card-cta\" href=\"#\">Register</a></div></article>",
+      "css": ".ds-card { width: 320px; padding: 20px; border: 1px solid #262932; border-radius: 16px; background: #17181e; color: #f4f5f8; display: flex; flex-direction: column; gap: 12px; font-family: Inter, system-ui, sans-serif; } .ds-card-title { margin: 0; font: 600 18px/1.4 Inter, system-ui, sans-serif; } .ds-card-badges { display: flex; gap: 6px; flex-wrap: wrap; } .ds-card-badge { height: 24px; padding: 2px 10px; display: inline-flex; align-items: center; border-radius: 9999px; background: #24292f; color: #a1bace; font: 600 12px/1 Inter, system-ui, sans-serif; } .ds-card-badge-hrdc { background: #11301f; color: #34d399; } .ds-card-facts { margin: 0; display: grid; gap: 4px; color: #a3a8b8; font-size: 14px; } .ds-card-facts dd { margin: 0; } .ds-subtle { color: #8e94a6; } .ds-price { color: #f4f5f8; font-weight: 500; } .ds-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 4px; } .ds-seats { color: #a3a8b8; font-size: 14px; } .ds-card-cta { padding: 8px 16px; border-radius: 9999px; background: #fbe33b; color: #1b1d29; font: 600 14px/1.43 Inter, system-ui, sans-serif; text-decoration: none; } .ds-card-cta:focus-visible { outline: none; box-shadow: 0 0 0 2px #a1bace; }"
+    },
+    {
+      "name": "Data Table",
+      "kind": "custom",
+      "refersTo": "table-head",
+      "description": "Every CRM list: uppercase sunken header, 13px rows, hairline dividers.",
+      "html": "<table class=\"ds-table\"><thead><tr><th>Name</th><th>Stage</th><th>Last activity</th></tr></thead><tbody><tr><td>Tan Mei Ling</td><td>Lead</td><td>3 days ago</td></tr><tr><td>Ahmad Faiz</td><td>Customer</td><td>14 Aug 2026</td></tr></tbody></table>",
+      "css": ".ds-table { width: 480px; border-collapse: collapse; border: 1px solid #262932; border-radius: 16px; overflow: hidden; background: #17181e; color: #f4f5f8; font-family: Inter, system-ui, sans-serif; } .ds-table thead { background: rgba(39,42,52,0.6); } .ds-table th { height: 40px; padding: 0 16px; text-align: left; color: #6e7486; font-size: 11px; font-weight: 700; letter-spacing: 0.025em; text-transform: uppercase; border-bottom: 1px solid #262932; } .ds-table td { padding: 12px 16px; font-size: 13px; border-bottom: 1px solid #262932; } .ds-table tbody tr:last-child td { border-bottom: 0; } .ds-table tbody tr { transition: background-color 150ms; } .ds-table tbody tr:hover { background: rgba(39,42,52,0.5); }"
+    },
+    {
+      "name": "Deals Hero Card",
+      "kind": "custom",
+      "refersTo": "card",
+      "description": "The dashboard's one gradient. Never repeated elsewhere.",
+      "html": "<div class=\"ds-hero\"><span class=\"ds-hero-cap\">Open deals</span><span class=\"ds-hero-num\">RM 48,600</span><span class=\"ds-hero-chip\">12 open</span></div>",
+      "css": ".ds-hero { width: 240px; padding: 20px; border-radius: 16px; background: linear-gradient(135deg, #bccde0 0%, #a1bace 55%, #8aa3b9 100%); display: flex; flex-direction: column; gap: 12px; font-family: Inter, system-ui, sans-serif; } .ds-hero-cap { color: #2c3742; font-size: 13px; } .ds-hero-num { color: #0e0f13; font-size: 28px; font-weight: 700; line-height: 1; } .ds-hero-chip { width: fit-content; padding: 3px 8px; border-radius: 9999px; background: #fbe33b; color: #1b1d29; font-size: 11px; font-weight: 700; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Control Desk",
+    "overview": "A calm, dark operator console. The room is near-black and quiet. The tools sit on raised slate panels, and the controls are pill-shaped. Two colours carry all the meaning. Blue is the hand that acts: the primary button, the active nav item, the link. Yellow is the flag that asks for attention: a highlight, a count, a \"needs you\" chip, and on the public site, the one buy action. Everything else is a step of grey.\n\nThe same system serves two surfaces. The CRM is a dense desk for staff who work in it all day at 1280px and wider. The public schedule, register and enquiry pages are the same desk turned to face a buyer on a phone: wider spacing, bigger headings, one yellow Register button per class card. Both render dark by default (`<html class=\"dark\">`). `app/globals.css` also holds a light counterpart of every token, from `design.pen`. That light set is not the shipped look and is not documented here.\n\nComponents are quiet and exact. Rounding is generous, but density, alignment and tabular order lead. There are no shadows. Depth comes from tonal steps between slate surfaces and a one-pixel hairline.",
+    "keyCharacteristics": [
+      "Dark by default: a near-black canvas, raised slate panels, chalk text.",
+      "Two signal colours with fixed jobs: blue acts, yellow flags.",
+      "Fully rounded pills for every control; 16px corners for panels.",
+      "Flat: tonal layering and hairlines, no shadows.",
+      "One typeface, Inter, at small sizes with semibold and bold doing the hierarchy work.",
+      "The LEAD mark: a yellow upright bar beside three periwinkle strokes."
+    ],
+    "rules": [
+      {
+        "name": "The Blue Acts, Yellow Flags Rule",
+        "body": "In the CRM, every clickable action is blue, and yellow only draws the eye to a number or a state. On the public site, yellow is the Register button and nothing else. Blue covers the secondary links there.",
+        "section": "colors"
+      },
+      {
+        "name": "The No Solid Status Rule",
+        "body": "Success, warning and danger show as text on their wash. A full-strength status fill is never used for a surface.",
+        "section": "colors"
+      },
+      {
+        "name": "The Weight Not Size Rule",
+        "body": "The CRM stays between 11px and 28px. Hierarchy comes from weight and colour step (chalk, muted, subtle) before it comes from a bigger size.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tonal Step Rule",
+        "body": "To separate a layer, step the surface tone and add a hairline. Never add a shadow.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** use LEAD blue for every CRM action and keep yellow for highlights and counts. On the public site, keep yellow for Register only.",
+      "**Do** separate layers with a tonal step and a 1px hairline.",
+      "**Do** keep every control a full pill and every panel at 16px corners.",
+      "**Do** show status as coloured text on its own wash, with the 6px dot.",
+      "**Do** keep CRM text between 11px and 28px and build hierarchy with weight and the chalk steps.",
+      "**Do** use Body Dense (13px) for table cells and sidebar items, so a 1280px screen shows a full working list."
+    ],
+    "donts": [
+      "**Don't** add shadows. The system is flat.",
+      "**Don't** add a second gradient. The deals hero card is the only one.",
+      "**Don't** use yellow for a CRM button, or blue for the public Register button.",
+      "**Don't** use a solid status fill (green, amber or red) as a surface.",
+      "**Don't** put Chalk Subtle on text a user must read. It measures 4.1:1 on the canvas and 3.8:1 on raised slate, which is below the 4.5:1 the spec requires (§14). Today it carries table headers and metadata, and that is a known gap.",
+      "**Don't** treat the current white-on-blue primary button as settled. It measures 3.97:1, below 4.5:1 for 14px text. The blue badge measures 3.58:1. Both are known gaps against §14."
+    ]
+  }
+}

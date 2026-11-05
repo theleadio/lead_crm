@@ -89,12 +89,24 @@ export default async function DashboardPage() {
         {canReadDeals && (
           <Link
             href="/deals"
-            className="bg-primary focus-visible:outline-focus-ring rounded-full px-4.5 py-2.5 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2"
+            className="bg-primary focus-visible:outline-focus-ring text-on-blue rounded-full px-4.5 py-2.5 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
           >
             Open deals board
           </Link>
         )}
       </header>
+
+      {/* Upcoming classes lead: staff named them the first thing they check
+          each morning (user, 4 Nov 2026). */}
+      {classes &&
+        (classes.ok ? (
+          <ClassesPanel
+            classes={classes.data}
+            windowLabel={`${formatDate(now)} – ${formatDate(new Date(now.getTime() + 14 * DAY))}`}
+          />
+        ) : (
+          <PanelError what="upcoming classes" />
+        ))}
 
       {deals &&
         (deals.ok ? (
@@ -120,16 +132,6 @@ export default async function DashboardPage() {
             </div>
           ))}
       </div>
-
-      {classes &&
-        (classes.ok ? (
-          <ClassesPanel
-            classes={classes.data}
-            windowLabel={`${formatDate(now)} – ${formatDate(new Date(now.getTime() + 14 * DAY))}`}
-          />
-        ) : (
-          <PanelError what="upcoming classes" />
-        ))}
     </div>
   );
 }

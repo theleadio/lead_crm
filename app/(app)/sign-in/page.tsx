@@ -1,5 +1,7 @@
+import Image from "next/image";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/server";
+import leadLogoWhite from "@/public/brand/lead-logo-white.webp";
 import { SignInForm } from "./sign-in-form";
 
 export default async function SignInPage() {
@@ -8,21 +10,21 @@ export default async function SignInPage() {
 
   return (
     <main className="bg-surface flex min-h-screen items-center justify-center">
-      <div className="border-line bg-surface-raised w-full max-w-sm rounded-md border p-8 shadow-sm">
-        <h1 className="mb-6 flex items-center gap-2.5">
-          <span
-            aria-hidden="true"
-            className="bg-charcoal flex size-[30px] items-center justify-center gap-0.5 rounded-full"
-          >
-            <span className="bg-lead-yellow h-3.5 w-1 rounded-[1px]" />
-            <span className="flex flex-col gap-0.5">
-              <span className="h-[2.5px] w-[9px] rounded-[1px] bg-[#8FA6F5]" />
-              <span className="h-[2.5px] w-[7px] rounded-[1px] bg-[#8FA6F5]" />
-              <span className="h-[2.5px] w-[9px] rounded-[1px] bg-[#8FA6F5]" />
-            </span>
-          </span>
-          <span className="text-ink text-xl font-bold tracking-wider">
-            LEAD CRM
+      <div className="border-line bg-surface-raised w-full max-w-sm rounded-md border p-8">
+        <h1 className="mb-6 flex items-center gap-3">
+          <Image
+            src={leadLogoWhite}
+            alt="LEAD"
+            width={85}
+            loading="eager"
+            className="h-8 w-auto"
+          />
+          {/* A quiet suffix, not a second wordmark: caps sized to the logo's
+              lettering (about 13px tall at this height), muted, and nudged
+              2px down because the lettering sits below the image's centre. */}
+          <span aria-hidden="true" className="bg-line-strong h-5 w-px" />
+          <span className="text-ink-muted translate-y-0.5 text-lg leading-none font-semibold tracking-[0.12em]">
+            CRM
           </span>
         </h1>
         <SignInForm />

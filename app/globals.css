@@ -20,21 +20,25 @@
   --charcoal: #2b2d35;
   --charcoal-raised: #383b45;
   --on-charcoal: #a9aebd;
-  --lead-yellow: #f5be2e;
+  /* Brand yellow and blue are sampled from the LEAD logo
+     (public/brand/lead-logo.webp): yellow #fbe33b, blue #a1bace. Light mode
+     uses a darker step of the logo blue so white text and links pass 4.5:1. */
+  --lead-yellow: #fbe33b;
   --on-yellow: #1b1d29;
   --yellow-soft: #fdf3d6;
   --yellow-ink: #b97f00;
-  --lead-blue: #4f6bed;
-  --lead-blue-hover: #3e57d4;
-  --blue-soft: #e8ecfd;
-  --blue-ink: #4f6bed;
+  --lead-blue: #48647f;
+  --lead-blue-hover: #3a536a;
+  --on-blue: #ffffff;
+  --blue-soft: #e6edf4;
+  --blue-ink: #48647f;
   --success: #12a150;
   --success-soft: #e2f5ea;
   --warning: #b97f00;
   --warning-soft: #fdf3d6;
   --danger: #e5484d;
   --danger-soft: #fde9e9;
-  --focus-ring: #4f6bed;
+  --focus-ring: #48647f;
 
   /* shadcn/ui tokens, mapped to the brand tokens above instead of shadcn's
      generic neutral defaults, so every shadcn component picks up brand
@@ -46,7 +50,7 @@
   --popover: var(--surface-raised);
   --popover-foreground: var(--ink);
   --primary: var(--lead-blue);
-  --primary-foreground: #ffffff;
+  --primary-foreground: var(--on-blue);
   --secondary: var(--surface-sunken);
   --secondary-foreground: var(--ink);
   --muted: var(--surface-sunken);
@@ -61,7 +65,7 @@
   --sidebar: var(--charcoal);
   --sidebar-foreground: var(--on-charcoal);
   --sidebar-primary: var(--lead-blue);
-  --sidebar-primary-foreground: #ffffff;
+  --sidebar-primary-foreground: var(--on-blue);
   --sidebar-accent: var(--charcoal-raised);
   --sidebar-accent-foreground: #ffffff;
   --sidebar-border: var(--line);
@@ -84,23 +88,24 @@
     --line-strong: #3a3e4a;
     --ink: #f4f5f8;
     --ink-muted: #a3a8b8;
-    --ink-subtle: #6e7486;
+    --ink-subtle: #8e94a6;
     --charcoal: #1a1b22;
     --charcoal-raised: #2b2d35;
     --on-charcoal: #9ea3b3;
     --yellow-soft: #3a2f10;
-    --yellow-ink: #f5be2e;
-    --lead-blue: #5b76f0;
-    --lead-blue-hover: #7189f5;
-    --blue-soft: #1f2850;
-    --blue-ink: #5b76f0;
+    --yellow-ink: #fbe33b;
+    --lead-blue: #a1bace;
+    --lead-blue-hover: #b8cadb;
+    --on-blue: #0e0f13;
+    --blue-soft: #24292f;
+    --blue-ink: #a1bace;
     --success: #34d399;
     --success-soft: #11301f;
     --warning: #f5be2e;
     --warning-soft: #3a2f10;
     --danger: #f87171;
     --danger-soft: #3a1616;
-    --focus-ring: #5b76f0;
+    --focus-ring: #a1bace;
   }
 }
 
@@ -126,6 +131,7 @@
   --color-on-yellow: var(--on-yellow);
   --color-lead-blue: var(--lead-blue);
   --color-lead-blue-hover: var(--lead-blue-hover);
+  --color-on-blue: var(--on-blue);
   --color-yellow-soft: var(--yellow-soft);
   --color-yellow-ink: var(--yellow-ink);
   --color-blue-soft: var(--blue-soft);
@@ -197,23 +203,24 @@
   --line-strong: #3a3e4a;
   --ink: #f4f5f8;
   --ink-muted: #a3a8b8;
-  --ink-subtle: #6e7486;
+  --ink-subtle: #8e94a6;
   --charcoal: #1a1b22;
   --charcoal-raised: #2b2d35;
   --on-charcoal: #9ea3b3;
   --yellow-soft: #3a2f10;
-  --yellow-ink: #f5be2e;
-  --lead-blue: #5b76f0;
-  --lead-blue-hover: #7189f5;
-  --blue-soft: #1f2850;
-  --blue-ink: #5b76f0;
+  --yellow-ink: #fbe33b;
+  --lead-blue: #a1bace;
+  --lead-blue-hover: #b8cadb;
+  --on-blue: #0e0f13;
+  --blue-soft: #24292f;
+  --blue-ink: #a1bace;
   --success: #34d399;
   --success-soft: #11301f;
   --warning: #f5be2e;
   --warning-soft: #3a2f10;
   --danger: #f87171;
   --danger-soft: #3a1616;
-  --focus-ring: #5b76f0;
+  --focus-ring: #a1bace;
 }
 
 @layer base {

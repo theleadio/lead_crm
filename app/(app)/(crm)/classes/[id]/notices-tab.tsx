@@ -267,6 +267,8 @@ function Notice({
           </>
         }
         confirmLabel="Approve and send"
+        cancelLabel="Not yet"
+        tone="primary"
         onConfirm={saveThenApprove}
       />
     </Panel>

@@ -1,5 +1,6 @@
 "use client";
 
+import { DateField } from "@/components/date-field";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -10,7 +11,6 @@ import {
 } from "@/components/list-kit";
 import { Toast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { boardParams, PER_COLUMN, type BoardFilters } from "@/lib/deals/board";
 import { addMyr } from "@/lib/deals/format";
 import {
@@ -393,21 +393,19 @@ export function DealsBoard({
         />
         <label className="text-ink-muted flex items-center gap-2 text-sm">
           Created
-          <Input
-            type="date"
+          <DateField
             aria-label="Created from"
             value={filters.from}
             max={filters.to || undefined}
-            onChange={(e) => update({ from: e.target.value })}
+            onChange={(v) => update({ from: v })}
             className="w-40"
           />
           to
-          <Input
-            type="date"
+          <DateField
             aria-label="Created to"
             value={filters.to}
             min={filters.from || undefined}
-            onChange={(e) => update({ to: e.target.value })}
+            onChange={(v) => update({ to: v })}
             className="w-40"
           />
         </label>

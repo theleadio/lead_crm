@@ -98,6 +98,7 @@ export function TransferDialog({
           </p>
         }
         confirmLabel="Transfer"
+        tone="primary"
         canConfirm={Boolean(chosen)}
         onConfirm={transfer}
       >
