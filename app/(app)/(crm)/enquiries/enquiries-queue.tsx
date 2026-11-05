@@ -171,6 +171,13 @@ export function EnquiriesQueue({
   const result = state.status === "ready" ? state.result : null;
   const selectedRow = rows.find((r) => r.id === selected) ?? null;
   const showActions = access.canWrite;
+
+  // Under 1536px the panel sits below the table, out of sight: bring it in.
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (selected && window.innerWidth < 1536)
+      panelRef.current?.scrollIntoView({ block: "start" });
+  }, [selected]);
   // Filtered to one status, every badge would say the same word the filter
   // already says.
   const showStatus = view.status === "all";
@@ -330,7 +337,9 @@ export function EnquiriesQueue({
       <div
         className={
           selected
-            ? "grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start"
+            ? // Beside the table only from 1536px: at 1280 the table needs
+              // all of its width for the actions (§14).
+              "grid gap-4 2xl:grid-cols-[minmax(0,1fr)_20rem] 2xl:items-start"
             : ""
         }
       >
@@ -338,7 +347,7 @@ export function EnquiriesQueue({
           <TableCard>
             {/* Tighter cells than other lists: nine columns share the
                 width with the person panel. */}
-            <Table className="[&_td]:px-3 [&_th]:px-3">
+            <Table className="[&_td]:px-2 [&_th]:px-2">
               <TableHeader>
                 <TableRow>
                   <TableHead>Person</TableHead>
@@ -462,7 +471,7 @@ export function EnquiriesQueue({
                                   `Category set to ${enquiryLabel(u.category ?? "")}.`,
                               )
                             }
-                            className={`${SELECT_CLASS} w-36`}
+                            className={`${SELECT_CLASS} w-32`}
                           >
                             <option value="" disabled>
                               Set category
@@ -502,7 +511,7 @@ export function EnquiriesQueue({
                                   : "Now assigned to nobody.",
                               );
                             }}
-                            className={`${SELECT_CLASS} w-36`}
+                            className={`${SELECT_CLASS} w-32`}
                           >
                             <option value="">Nobody</option>
                             {/* A current assignee who is no longer
@@ -542,8 +551,13 @@ export function EnquiriesQueue({
                         }`}
                       >
                         {cells[7]}
+                        {/* Under the age, not beside it: on one line the
+                            row is wider than the 1280px table (§14). */}
                         {row.pastSla && (
-                          <Badge variant="destructive" className="ml-2">
+                          <Badge
+                            variant="destructive"
+                            className="mt-1 flex w-fit"
+                          >
                             {PAST_SLA_MARKER}
                           </Badge>
                         )}
@@ -609,11 +623,13 @@ export function EnquiriesQueue({
         </div>
 
         {selectedRow && (
-          <ContextPanel
-            key={selectedRow.id}
-            enquiry={selectedRow}
-            closeHref={closeHref}
-          />
+          <div ref={panelRef} className="scroll-mt-4">
+            <ContextPanel
+              key={selectedRow.id}
+              enquiry={selectedRow}
+              closeHref={closeHref}
+            />
+          </div>
         )}
       </div>
 
@@ -639,7 +655,12 @@ export function EnquiriesQueue({
             { action: "close", status: closeStatus, note: closeNote },
             (u) => `Enquiry closed as ${enquiryLabel(u.status).toLowerCase()}.`,
           );
-          if (!message) setClosing(null);
+          if (!message) {
+            setClosing(null);
+            // Refetch: a closed enquiry leaves the open view rather than
+            // lingering there with no actions.
+            setReloadKey((k) => k + 1);
+          }
           return message;
         }}
       >
