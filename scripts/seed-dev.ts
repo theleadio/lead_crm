@@ -49,7 +49,19 @@ const DAY = 24 * 60 * 60 * 1000;
 const NOW = Date.now();
 const daysAgo = (d: number) => new Date(NOW - d * DAY);
 
+// A seed makes under 100 people. Far more means real imported records (the
+// dev database has held them since 30 Oct 2026), which --reset would delete.
+const SEED_PEOPLE_CEILING = 1000;
+
 async function reset() {
+  const [{ n }] = await sql`SELECT count(*)::int AS n FROM person`;
+  if (n > SEED_PEOPLE_CEILING) {
+    console.error(
+      `Refusing --reset: person has ${n} rows, more than a seed makes. ` +
+        "This looks like real data. Point DATABASE_URL at a test database.",
+    );
+    process.exit(1);
+  }
   // TRUNCATE skips the append-only row triggers. CASCADE on app_user also
   // empties lost_reason and app_setting (their created_by/updated_by FKs);
   // restoreReferenceData() puts the migration's rows back.
@@ -233,11 +245,31 @@ async function seed() {
       }
 
       // Enquiries; Lee Yee (part-time) is assigned every fifth one (§6 v1.2).
-      if (i % 2 === 0 || i % 5 === 1)
+      // First messages spread across the 60-minute SLA (§9.13): well inside,
+      // at it, just over, days old. A few have a reply, inside or outside the
+      // limit, so both branches of the SLA show without the WATI intake.
+      if (i % 2 === 0 || i % 5 === 1) {
+        const waited = [
+          5,
+          30,
+          59,
+          61,
+          75,
+          180,
+          26 * 60,
+          3 * 24 * 60,
+          9 * 24 * 60,
+        ][i % 9];
+        const replyAfter = i % 3 === 0 ? (i % 2 ? 180 : 10) : null;
+        const firstMessage = new Date(Date.now() - waited * 60e3);
         await tx`
-          INSERT INTO enquiry (person_id, channel, category, status, handled_by, assigned_user_id)
+          INSERT INTO enquiry (person_id, channel, category, status, handled_by,
+                               assigned_user_id, first_message_at, first_response_at)
           VALUES (${p.id}, 'whatsapp', 'hrdc', ${i % 4 === 0 ? "human_resolved" : "open"},
-                  ${i % 4 === 0 ? "user" : "ai"}, ${i % 5 === 1 ? SEED_USERS.leeYee : null})`;
+                  ${i % 4 === 0 ? "user" : "ai"}, ${i % 5 === 1 ? SEED_USERS.leeYee : null},
+                  ${firstMessage},
+                  ${replyAfter !== null && replyAfter < waited ? new Date(firstMessage.getTime() + replyAfter * 60e3) : null})`;
+      }
 
       await tx`
         INSERT INTO consent (person_id, purpose, is_granted, source, recorded_at) VALUES
