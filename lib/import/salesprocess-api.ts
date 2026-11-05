@@ -1,5 +1,5 @@
 // SalesProcess (GoHighLevel) API reads, as the API returns them. Used by
-// ghl:import --from-api, ghl:attribution and ghl:payments.
+// ghl:import --from-api, ghl:attribution, ghl:payments and ghl:enrolments.
 // Needs SALESPROCESS_API_TOKEN and SALESPROCESS_LOCATION_ID.
 const BASE = "https://services.leadconnectorhq.com";
 
@@ -66,4 +66,14 @@ export async function fetchTransactions<T>(): Promise<T[]> {
     all.push(...page);
     if (page.length < 100) return all;
   }
+}
+
+// One order with its line items (the class date lives there). The response
+// also carries the buyer's contact data: callers must not log or store it.
+export async function fetchOrder<T>(orderId: string): Promise<T> {
+  const { loc, headers } = config();
+  return getPage<T>(
+    `${BASE}/payments/orders/${orderId}?altId=${loc}&altType=location`,
+    headers,
+  );
 }

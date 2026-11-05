@@ -66,3 +66,4 @@ jobs:
       - run: node --import=./scripts/ci-errors.mjs scripts/import-ghl-contacts.ts --from-api --apply
       - run: node --import=./scripts/ci-errors.mjs scripts/import-ghl-attribution.ts --apply --accept-approx-dates
       - run: node --import=./scripts/ci-errors.mjs scripts/sync-salesprocess-payments.ts --apply
+      - run: node --import=./scripts/ci-errors.mjs scripts/import-salesprocess-enrolments.ts --apply
