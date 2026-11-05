@@ -1,5 +1,6 @@
 // SalesProcess (GoHighLevel) API reads, as the API returns them. Used by
-// ghl:import --from-api, ghl:attribution, ghl:payments and ghl:enrolments.
+// ghl:import --from-api, ghl:attribution, ghl:payments, ghl:enrolments and
+// ghl:opportunities.
 // Needs SALESPROCESS_API_TOKEN and SALESPROCESS_LOCATION_ID.
 const BASE = "https://services.leadconnectorhq.com";
 
@@ -76,4 +77,41 @@ export async function fetchOrder<T>(orderId: string): Promise<T> {
     `${BASE}/payments/orders/${orderId}?altId=${loc}&altType=location`,
     headers,
   );
+}
+
+// Every opportunity of the location, any status (the search returns only
+// open ones unless asked), paged by the API's nextPageUrl.
+export async function fetchOpportunities<T>(): Promise<T[]> {
+  const { loc, headers } = config();
+  const all: T[] = [];
+  let next: string | undefined =
+    `${BASE}/opportunities/search?location_id=${loc}&status=all&limit=100`;
+  while (next) {
+    const body: { opportunities?: T[]; meta?: { nextPageUrl?: string } } =
+      await getPage(next, headers);
+    const page = body.opportunities ?? [];
+    all.push(...page);
+    next = page.length ? body.meta?.nextPageUrl : undefined;
+  }
+  return all;
+}
+
+// The location's pipelines with their stages (names for the stage ids).
+export async function fetchPipelines<T>(): Promise<T[]> {
+  const { loc, headers } = config();
+  const body = await getPage<{ pipelines?: T[] }>(
+    `${BASE}/opportunities/pipelines?locationId=${loc}`,
+    headers,
+  );
+  return body.pipelines ?? [];
+}
+
+// The location's users (an opportunity's assignedTo), for their emails.
+export async function fetchUsers<T>(): Promise<T[]> {
+  const { loc, headers } = config();
+  const body = await getPage<{ users?: T[] }>(
+    `${BASE}/users/?locationId=${loc}`,
+    headers,
+  );
+  return body.users ?? [];
 }
