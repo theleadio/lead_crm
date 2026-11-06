@@ -1,12 +1,13 @@
 "use client";
 
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DateField } from "@/components/date-field";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { ClassRecord } from "@/lib/classes/service";
-import { CLASS_MODES } from "@/lib/classes/types";
+import { CLASS_MODES, ROOM_SEATS } from "@/lib/classes/types";
 import { NoticeDialog } from "./notice-dialog";
 
 export type CourseOption = { id: string; nameEn: string; code: string };
@@ -44,7 +45,7 @@ const EMPTY: Values = {
   city: "",
   onlineUrl: "",
   // LEAD runs classes of up to 30 (user, 4 Nov 2026); staff can still change it.
-  capacity: "30",
+  capacity: String(ROOM_SEATS),
   fewSeatsThreshold: "5",
   priceMyr: "",
   hrdcClaimable: false,
@@ -99,6 +100,11 @@ export function ClassForm({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   // Set when the server answers 409 notice_decision_required (§7.1).
   const [noticeFor, setNoticeFor] = useState<number | null>(null);
+  // More seats than the room fits is allowed on request, so it is asked, not refused.
+  const [confirmSeats, setConfirmSeats] = useState(false);
+  const overRoom =
+    Number(form.capacity) > ROOM_SEATS &&
+    Number(form.capacity) !== existing?.capacity;
 
   const set = <K extends keyof Values>(key: K, value: Values[K]) => {
     setDirty(true);
@@ -216,7 +222,8 @@ export function ClassForm({
         className="space-y-3"
         onSubmit={(e) => {
           e.preventDefault();
-          save();
+          if (overRoom) setConfirmSeats(true);
+          else save();
         }}
       >
         <div className="grid grid-cols-2 gap-3">
@@ -443,6 +450,19 @@ export function ClassForm({
           </Button>
         </div>
       </form>
+
+      <ConfirmDialog
+        open={confirmSeats}
+        onOpenChange={setConfirmSeats}
+        tone="primary"
+        title={`${form.capacity} seats?`}
+        body={`The room fits ${ROOM_SEATS}. Save this class with ${form.capacity} seats anyway?`}
+        confirmLabel={`Save with ${form.capacity} seats`}
+        onConfirm={async () => {
+          setConfirmSeats(false);
+          await save();
+        }}
+      />
 
       <NoticeDialog
         recipientCount={noticeFor}
