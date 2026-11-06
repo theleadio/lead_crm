@@ -63,6 +63,22 @@ export function cohortsOnCancelledClass(
 
 export type ImportSeat = { id: string; person_id: string; class_id: string; status: string };
 
+// CRM seats an LMS enrollment can adopt: the SalesProcess import's (refunded
+// ones included, so a refund is not undone), plus any active seat staff added
+// by hand. Until the CRM→LMS handoff is on, Ops add that student in the LMS
+// under a new id; adopting keeps one seat instead of a nightly clash warning.
+// shortcut: hand seats only matter until the handoff sends CRM ids; drop the OR then.
+export async function seatsToAdopt(
+  tx: Sql | TransactionSql,
+  importIds: string[],
+  lmsIds: string[],
+): Promise<ImportSeat[]> {
+  return tx<ImportSeat[]>`
+    SELECT id, person_id, class_id, status FROM enrolment
+    WHERE id = ANY(${importIds})
+       OR (status <> ALL(${INACTIVE}) AND id <> ALL(${lmsIds}))`;
+}
+
 // person|class → the import enrolment there; an active one wins over a refunded one.
 export function importSeatsByKey(rows: ImportSeat[]): Map<string, ImportSeat> {
   const seats = new Map<string, ImportSeat>();

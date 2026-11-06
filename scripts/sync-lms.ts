@@ -9,6 +9,7 @@
 // class and enrolment ids are the LMS ids, so a re-run updates in place.
 // Exception: a class or enrolment the SalesProcess import made is adopted and
 // keeps its own id; from the class start date the LMS decides who has a seat.
+// A seat staff added by hand is adopted the same way, but never cut over.
 // A participant whose email already exists in the CRM maps to that person,
 // which is left untouched.
 //
@@ -23,6 +24,7 @@ import {
   cancelCutOver,
   cutOverCancels,
   importSeatsByKey,
+  seatsToAdopt,
   type Cohort,
   type ImportClass,
   type ImportSeat,
@@ -349,7 +351,10 @@ async function once() {
       WHERE id = ANY(${(
         await tx`SELECT DISTINCT order_id FROM salesprocess_payment WHERE order_id IS NOT NULL`
       ).map((r) => enrolmentIdFor(r.order_id))})`;
-    const importOf = importSeatsByKey(importEnrols);
+    // Seats an LMS enrollment adopts: the import's, plus ones staff added by hand.
+    const importOf = importSeatsByKey(
+      await seatsToAdopt(tx, importEnrols.map((e) => e.id), src.enrols.map((e) => e.id)),
+    );
     const matched = new Set<string>();
     const adopt: { id: string; status: string; completed_at: Date }[] = [];
     const enrols: Record<string, unknown>[] = [];
