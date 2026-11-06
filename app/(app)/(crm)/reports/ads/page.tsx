@@ -154,8 +154,8 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
             displayFor.set(s.campaignId, s.campaign ?? s.campaignId);
       const named = (key: string) => displayFor.get(key) ?? key;
 
-      // Revenue is SalesProcess payments credited to each buyer's first
-      // campaign. Grant money is not in SalesProcess, so `hrdc` is unknown
+      // Revenue is SalesProcess and CRM payments credited to each buyer's
+      // first campaign. Grant money is in neither, so `hrdc` is unknown
       // (null), not zero; the grant share of signups sits beside it instead.
       const hrdcShare = new Map(
         (signups.ok ? signups.data : []).map((s) => [

@@ -140,3 +140,19 @@ it("revenue: refunded, pending, out-of-range and paid-before-first-touch CRM pay
 
   assert.equal(await revenueOf(v, campaign), undefined);
 });
+
+it("revenue: an unmatched CRM payment (no enrolment, no deal) is not credited", async () => {
+  const v = await viewer();
+  const campaign = `c-${uid()}`;
+  const classId = await newClass();
+  await crmPayment({ enrolment: await seat(await lead(campaign), classId), amount: 680 });
+  await db()`
+    INSERT INTO payment (match_status, method, status, amount_myr, paid_at)
+    VALUES ('unmatched', 'stripe_card', 'succeeded', 1000, '2031-03-15T04:00:00Z')`;
+
+  assert.deepEqual(await revenueOf(v, campaign), {
+    campaignId: campaign,
+    revenue: "680.00",
+    orders: 1,
+  });
+});

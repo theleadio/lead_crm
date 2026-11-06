@@ -78,7 +78,7 @@ export type AdsWeeks = {
 // touch per person (`touchpoint.is_first_touch`): a buyer with two purchases
 // credits the campaign that first found them. O30 is what stops this being
 // per deal, and the panel says which model it used.
-// What a campaign's first-touch buyers paid through SalesProcess, in range.
+// What a campaign's first-touch buyers paid (SalesProcess and CRM payments), in range.
 export type CampaignPaid = {
   campaignId: string;
   revenue: string;
