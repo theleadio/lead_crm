@@ -23,6 +23,7 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/014_meta_ad_insight.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/015_touchpoint_campaign_ids.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/016_salesprocess_payment.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/017_deal_external_ref.sql
     psql -d <db> -f lib/db/tests/schema_constraints.sql
     psql -d <db> -f lib/db/tests/002_merge_erase_tests.sql
     psql -d <db> -f lib/db/tests/003_company_from_form_tests.sql
@@ -36,6 +37,7 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -f lib/db/tests/011_task_source_key_tests.sql
     psql -d <db> -f lib/db/tests/012_rate_limit_tests.sql
     psql -d <db> -f lib/db/tests/013_click_ids_tests.sql
+    psql -d <db> -f lib/db/tests/017_deal_external_ref_tests.sql
 
 Current result on PostgreSQL 16 with 001–008 applied: 38 of 38, 42 of 42, 26 of 26, 8 of 8, 9 of 9, 26 of 26, 14 of 14 and 6 of 6. 001–007 were also run with and without Supabase's `anon`/`authenticated` roles present; 008 was run without them (it creates no functions, so privileges don't apply).
 
