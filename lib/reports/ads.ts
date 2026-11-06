@@ -474,7 +474,8 @@ function firstCampaignSql(sql: postgres.Sql) {
 }
 
 // §9.18 ROAS revenue: SalesProcess payments (migration 016, Shawn's PR #34)
-// credited to the buyer's first campaign, the same model as signups.
+// plus CRM `payment` rows, credited to the buyer's first campaign, the same
+// model as signups.
 //
 // Revenue is `amount_myr - refunded_myr` on live, succeeded or partially
 // refunded payments, ranged on `paid_at` in Kuala Lumpur days. A payment
@@ -506,6 +507,23 @@ export async function revenuePerCampaign(
         AND sp.currency = 'MYR'
         AND sp.paid_at >= (${q.from}::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
         AND sp.paid_at < ((${q.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
+      UNION ALL
+      -- CRM payments (Stripe webhook, manual): the sales that move off
+      -- SalesProcess. The buyer is the enrolment's person, else the deal's;
+      -- an unmatched payment has neither and drops out. One order per
+      -- enrolment (else deal), so instalments count once.
+      -- shortcut: no dedupe against salesprocess_payment; a sale is in one
+      -- table or the other until someone imports old Stripe history into
+      -- payment, then match on the Stripe payment intent.
+      SELECT coalesce(e.person_id, d.person_id), pn.id::text,
+             'crm:' || coalesce(pn.enrolment_id, pn.deal_id)::text,
+             pn.paid_at, pn.net_myr
+      FROM payment_net pn
+      LEFT JOIN enrolment e ON e.id = pn.enrolment_id
+      LEFT JOIN deal d ON d.id = pn.deal_id
+      WHERE pn.status IN ('succeeded', 'partially_refunded')
+        AND pn.paid_at >= (${q.from}::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
+        AND pn.paid_at < ((${q.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
     )
     -- An ad cannot have sold what was paid before it was seen. An order
     -- paid in instalments counts once.
