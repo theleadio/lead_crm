@@ -23,7 +23,7 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/014_meta_ad_insight.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/015_touchpoint_campaign_ids.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/016_salesprocess_payment.sql
-    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/017_enquiry_resolution.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/018_enquiry_resolution.sql
     psql -d <db> -f lib/db/tests/schema_constraints.sql
     psql -d <db> -f lib/db/tests/002_merge_erase_tests.sql
     psql -d <db> -f lib/db/tests/003_company_from_form_tests.sql
@@ -37,7 +37,7 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -f lib/db/tests/011_task_source_key_tests.sql
     psql -d <db> -f lib/db/tests/012_rate_limit_tests.sql
     psql -d <db> -f lib/db/tests/013_click_ids_tests.sql
-    psql -d <db> -f lib/db/tests/017_enquiry_resolution_tests.sql
+    psql -d <db> -f lib/db/tests/018_enquiry_resolution_tests.sql
 
 Current result on PostgreSQL 16 with 001–008 applied: 38 of 38, 42 of 42, 26 of 26, 8 of 8, 9 of 9, 26 of 26, 14 of 14 and 6 of 6. 001–007 were also run with and without Supabase's `anon`/`authenticated` roles present; 008 was run without them (it creates no functions, so privileges don't apply).
 
@@ -194,9 +194,9 @@ Drop the table and function if the host gets an edge rate limiter you trust (ope
 
 `touchpoint` gains `gbraid`, `wbraid` (Google, iOS clicks), `li_fat_id` (LinkedIn) and `ttclid` (TikTok), nullable, no backfill, no index (O61). Append-only like every other touchpoint column, with no change to `forbid_change()`. The public form writes them from §8.2's `gbraid`, `wbraid`, `liFatId`, `ttclid`.
 
-## Migration 017 — enquiry resolution note (6 Nov)
+## Migration 018 — enquiry resolution note (6 Nov)
 
-`enquiry.resolution`, nullable text, no backfill, no index: the outcome note support writes when closing an enquiry (§9.13), kept apart from `summary`. The note is free text about a person, so `erase_person()` now clears it together with `summary` (migration 003's body with one added column). Keep the note's text out of `audit_log`: that table is append-only, so anything written there can never be erased. Tested on PostgreSQL 16 after 001–017: `017_enquiry_resolution_tests.sql` 9 of 9, and `schema_constraints.sql` 38, 002 42, 003 26, 005 9 still pass. `009_pre_freeze_tests.sql` reports one failure, "24 tables", which is already there without 017: migrations 014 and 016 added tables after that check was written.
+`enquiry.resolution`, nullable text, no backfill, no index: the outcome note support writes when closing an enquiry (§9.13), kept apart from `summary`. The note is free text about a person, so `erase_person()` now clears it together with `summary` (migration 003's body with one added column). Keep the note's text out of `audit_log`: that table is append-only, so anything written there can never be erased. Tested on PostgreSQL 16 after 001–016 and 018: `018_enquiry_resolution_tests.sql` 9 of 9, and `schema_constraints.sql` 38, 002 42, 003 26, 005 9 still pass. `009_pre_freeze_tests.sql` reports one failure, "24 tables", which is already there without 018: migrations 014 and 016 added tables after that check was written.
 
 ## Where this is stricter or more specific than the spec
 

@@ -1,4 +1,4 @@
--- Tests for migration 017. Run on an empty database after 001-017. Rolled back.
+-- Tests for migration 018. Run on an empty database after 001-018. Rolled back.
 BEGIN;
 CREATE TEMP TABLE results (name text, ok boolean);
 CREATE FUNCTION pg_temp.expect_fail(test_name text, stmt text, expect text) RETURNS void LANGUAGE plpgsql AS $$

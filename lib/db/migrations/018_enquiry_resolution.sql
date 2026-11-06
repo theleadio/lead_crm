@@ -1,5 +1,5 @@
 -- =============================================================================
--- LEAD CRM — migration 017
+-- LEAD CRM — migration 018
 -- enquiry.resolution: the outcome note written when support closes an enquiry
 -- (§9.13; PR #48, open question 3).
 --
