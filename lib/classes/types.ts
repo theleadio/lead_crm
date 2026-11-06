@@ -17,6 +17,9 @@ export type ClassStatus = (typeof CLASS_STATUSES)[number];
 export const CLASS_LANGUAGES = ["en", "zh"] as const;
 export type ClassLanguage = (typeof CLASS_LANGUAGES)[number];
 
+// The classroom fits 30. More is allowed on request, so this is a default and
+// a confirmation in the class form, not a database rule (4 Nov 2026).
+export const ROOM_SEATS = 30;
 export const CLASS_MODES = ["in_person", "online", "hybrid"] as const;
 export type ClassMode = (typeof CLASS_MODES)[number];
 
