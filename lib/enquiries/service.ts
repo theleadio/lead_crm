@@ -18,6 +18,10 @@ export type EnquiryWriteResult =
   | { kind: "inactive_user" }
   | { kind: "not_open"; status: EnquiryStatus };
 
+// Free text about a person. audit_log is append-only and erase_person() can't
+// reach it, so these columns are never copied into an audit row (#48 review).
+const UNAUDITED = new Set(["summary", "resolution"]);
+
 type Change = {
   set: Record<string, string | null>;
   // Stamp closed_at with the database's clock in the same UPDATE.
@@ -64,7 +68,9 @@ async function writeEnquiry(
     // change to the read can never turn into a silent overwrite.
     if (!updated) return { kind: "stale" };
 
-    const audited = closing ? [...columns, "closed_at"] : columns;
+    const audited = [...columns, ...(closing ? ["closed_at"] : [])].filter(
+      (c) => !UNAUDITED.has(c),
+    );
     await writeAudit({
       userId: viewer.id,
       action: "update",
@@ -111,8 +117,9 @@ export async function setEnquiryCategory(
 }
 
 // The one writer of the outcome note. It goes to `summary` (proposal open
-// question 3) and, through the audit row, is kept even if that column's
-// meaning is later split. Closing is final: no reopen (§9.13 names none).
+// question 3) until #53's `resolution` column lands. The audit row records the
+// close (status, handled_by, closed_at), never the note's text. Closing is
+// final: no reopen (§9.13 names none).
 export async function closeEnquiry(
   id: string,
   close: { status: "human_resolved" | "closed"; note: string },

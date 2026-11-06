@@ -312,10 +312,16 @@ it("closing stores the note, stamps the time, and a second close is 422", async 
     new Date(after.closed_at).getTime(),
     new Date(closed.closed_at).getTime(),
   );
-  // One audit row: the first close, holding the note.
+  // One audit row: the first close, without the note's text (erasable data
+  // must not reach the append-only audit_log).
   const audits = await auditRows(id);
   assert.equal(audits.length, 1);
-  assert.equal(audits[0].after.summary, "Sent the HRDC form");
+  assert.deepEqual(Object.keys(audits[0].after).sort(), ["closed_at", "handled_by", "status"]);
+  assert.equal(audits[0].after.status, "human_resolved");
+  assert.equal(audits[0].after.handled_by, "user");
+  assert.ok(audits[0].after.closed_at);
+  assert.equal(audits[0].before.status, "open");
+  assert.ok(!JSON.stringify(audits[0]).includes("Sent the HRDC form"));
 });
 
 it("a part-timer acts on their own enquiry and nobody else's", async () => {
