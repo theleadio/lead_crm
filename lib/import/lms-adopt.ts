@@ -1,3 +1,4 @@
+import type { Sql, TransactionSql } from "postgres";
 import { CANCELLABLE_STATUSES } from "../classes/seats.ts";
 import { pickClass } from "./salesprocess-enrolments.ts";
 
@@ -110,4 +111,35 @@ export function cutOverCancels(
         !matchedIds.has(e.id),
     )
     .map((e) => e.id);
+}
+
+export const CUT_OVER_REASON = "Not in the LMS at class start";
+// Shown to Ops in the cancel task's notes.
+const CUT_OVER_TASK_REASON = `${CUT_OVER_REASON}. Check the LMS for this buyer under another email before refunding.`;
+
+// Each cancelled seat gets an audit_log row (no user: the sync did it) and,
+// like every other cancel (§11.1), an EnrolmentCancelled event in the same
+// statement. Its handler gives Ops a task per seat: refund, or the buyer is
+// in the LMS under another email (then a second person record holds the seat).
+// Returns the ids it cancelled; a seat no longer cancellable is skipped.
+export async function cancelCutOver(tx: Sql | TransactionSql, cut: string[]): Promise<string[]> {
+  if (!cut.length) return [];
+  const rows = await tx`
+    WITH old AS (
+      SELECT id, status FROM enrolment
+      WHERE id = ANY(${cut}) AND status = ANY(${CANCELLABLE_STATUSES}) FOR UPDATE
+    ), done AS (
+      UPDATE enrolment e SET status = 'cancelled', cancelled_reason = ${CUT_OVER_REASON}
+      FROM old WHERE e.id = old.id RETURNING e.id, old.status AS was
+    ), raised AS (
+      INSERT INTO event_outbox (type, aggregate_type, aggregate_id, payload)
+      SELECT 'EnrolmentCancelled', 'enrolment', id,
+             jsonb_build_object('enrolmentId', id, 'reason', ${CUT_OVER_TASK_REASON}::text)
+      FROM done
+    )
+    INSERT INTO audit_log (user_id, action, entity, entity_id, before, after)
+    SELECT NULL, 'update', 'enrolment', id, jsonb_build_object('status', was),
+           jsonb_build_object('status', 'cancelled', 'reason', ${CUT_OVER_REASON}::text, 'by', 'sync-lms')
+    FROM done RETURNING entity_id`;
+  return rows.map((r) => r.entity_id as string);
 }

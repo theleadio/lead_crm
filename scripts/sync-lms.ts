@@ -16,11 +16,11 @@
 // Switch to a Supabase Realtime / LISTEN trigger on the LMS if it grows.
 import postgres from "postgres";
 import { normalizePhoneE164 } from "../lib/format/phone.ts";
-import { CANCELLABLE_STATUSES } from "../lib/classes/seats.ts";
 import {
   adoptEnrolment,
   classIdForCohort,
   cohortsOnCancelledClass,
+  cancelCutOver,
   cutOverCancels,
   importSeatsByKey,
   type Cohort,
@@ -58,9 +58,6 @@ const slug = (s: string) =>
     .replace(/^-|-$/g, "");
 const day = (d: Date) => d.toISOString().slice(0, 10);
 const today = day(new Date());
-const CUT_OVER_REASON = "Not in the LMS at class start";
-// Shown to Ops in the cancel task's notes.
-const CUT_OVER_TASK_REASON = `${CUT_OVER_REASON}. Check the LMS for this buyer under another email before refunding.`;
 
 type Stats = Record<string, { insert: number; update: number; same: number }>;
 
@@ -419,29 +416,7 @@ async function once() {
       ).map((r) => [r.id as string, r.start as string]),
     );
     const cut = cutOverCancels(importEnrols, ownedClassIds, matched, classStarts, kl_today);
-    // Each cancelled seat gets an audit_log row (no user: the sync did it) and,
-    // like every other cancel (§11.1), an EnrolmentCancelled event in the same
-    // statement. Its handler gives Ops a task per seat: refund, or the buyer is
-    // in the LMS under another email (then a second person record holds the seat).
-    const cutDone = cut.length
-      ? await tx`
-          WITH old AS (
-            SELECT id, status FROM enrolment
-            WHERE id = ANY(${cut}) AND status = ANY(${CANCELLABLE_STATUSES}) FOR UPDATE
-          ), done AS (
-            UPDATE enrolment e SET status = 'cancelled', cancelled_reason = ${CUT_OVER_REASON}
-            FROM old WHERE e.id = old.id RETURNING e.id, old.status AS was
-          ), raised AS (
-            INSERT INTO event_outbox (type, aggregate_type, aggregate_id, payload)
-            SELECT 'EnrolmentCancelled', 'enrolment', id,
-                   jsonb_build_object('enrolmentId', id, 'reason', ${CUT_OVER_TASK_REASON}::text)
-            FROM done
-          )
-          INSERT INTO audit_log (user_id, action, entity, entity_id, before, after)
-          SELECT NULL, 'update', 'enrolment', id, jsonb_build_object('status', was),
-                 jsonb_build_object('status', 'cancelled', 'reason', ${CUT_OVER_REASON}::text, 'by', 'sync-lms')
-          FROM done RETURNING entity_id`
-      : [];
+    const cutDone = await cancelCutOver(tx, cut);
     cutDone.forEach(() => bump("enrolment: cut over", "update"));
 
     // A full class refuses the seat (no_seats): skip that row, not the whole sync.
