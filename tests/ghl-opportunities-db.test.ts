@@ -217,3 +217,18 @@ it("skips: not imported yet, unknown stage, an open CRM deal for the course; a r
   assert.equal(again["new deal"] ?? 0, 0);
   assert.equal(again["skip: already imported"], 2);
 });
+
+it("a deactivated user does not become the owner", async () => {
+  const s = await setup();
+  await db()`UPDATE app_user SET is_active = false WHERE id = ${s.owner.id}`;
+  await imported("C-off");
+  const o = opp({ contactId: "C-off", assignedTo: "U-off" });
+  await importOpportunities({
+    opportunities: [o],
+    pipelines: PIPELINES,
+    users: [{ id: "U-off", email: s.owner.email }],
+  });
+  const [d] =
+    await db()`SELECT owner_user_id FROM deal WHERE external_ref = ${`ghl-opp:${o.id}`}`;
+  assert.equal(d.owner_user_id, null);
+});

@@ -124,10 +124,9 @@ export async function importOpportunities(input: {
     ).map((r) => `${r.person_id}|${r.course_id}`),
   );
   const userByEmail = new Map(
-    (await sql`SELECT id, lower(email) AS email FROM app_user`).map((r) => [
-      r.email as string,
-      r.id as string,
-    ]),
+    (
+      await sql`SELECT id, lower(email) AS email FROM app_user WHERE is_active`
+    ).map((r) => [r.email as string, r.id as string]),
   );
   const ownerOf = new Map(
     input.users
