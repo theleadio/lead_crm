@@ -7,7 +7,8 @@ import { db } from "./sql.ts";
 // commit together.
 
 export type AuditEntry = {
-  // Null only for a failed sign-in with an email that isn't a staff account.
+  // Null only for a failed sign-in with an email that isn't a staff account,
+  // or a write by a scheduled script, which names itself in `after.by`.
   userId: string | null;
   action:
     | "create"
