@@ -58,6 +58,9 @@ const slug = (s: string) =>
     .replace(/^-|-$/g, "");
 const day = (d: Date) => d.toISOString().slice(0, 10);
 const today = day(new Date());
+const CUT_OVER_REASON = "Not in the LMS at class start";
+// Shown to Ops in the cancel task's notes.
+const CUT_OVER_TASK_REASON = `${CUT_OVER_REASON}. Check the LMS for this buyer under another email before refunding.`;
 
 type Stats = Record<string, { insert: number; update: number; same: number }>;
 
@@ -416,9 +419,30 @@ async function once() {
       ).map((r) => [r.id as string, r.start as string]),
     );
     const cut = cutOverCancels(importEnrols, ownedClassIds, matched, classStarts, kl_today);
-    if (cut.length)
-      await tx`UPDATE enrolment SET status = 'cancelled', cancelled_reason = 'Not in the LMS at class start' WHERE id = ANY(${cut}) AND status = ANY(${CANCELLABLE_STATUSES})`;
-    cut.forEach(() => bump("enrolment: cut over", "update"));
+    // Each cancelled seat gets an audit_log row (no user: the sync did it) and,
+    // like every other cancel (§11.1), an EnrolmentCancelled event in the same
+    // statement. Its handler gives Ops a task per seat: refund, or the buyer is
+    // in the LMS under another email (then a second person record holds the seat).
+    const cutDone = cut.length
+      ? await tx`
+          WITH old AS (
+            SELECT id, status FROM enrolment
+            WHERE id = ANY(${cut}) AND status = ANY(${CANCELLABLE_STATUSES}) FOR UPDATE
+          ), done AS (
+            UPDATE enrolment e SET status = 'cancelled', cancelled_reason = ${CUT_OVER_REASON}
+            FROM old WHERE e.id = old.id RETURNING e.id, old.status AS was
+          ), raised AS (
+            INSERT INTO event_outbox (type, aggregate_type, aggregate_id, payload)
+            SELECT 'EnrolmentCancelled', 'enrolment', id,
+                   jsonb_build_object('enrolmentId', id, 'reason', ${CUT_OVER_TASK_REASON}::text)
+            FROM done
+          )
+          INSERT INTO audit_log (user_id, action, entity, entity_id, before, after)
+          SELECT NULL, 'update', 'enrolment', id, jsonb_build_object('status', was),
+                 jsonb_build_object('status', 'cancelled', 'reason', ${CUT_OVER_REASON}::text, 'by', 'sync-lms')
+          FROM done RETURNING entity_id`
+      : [];
+    cutDone.forEach(() => bump("enrolment: cut over", "update"));
 
     // A full class refuses the seat (no_seats): skip that row, not the whole sync.
     const codeOf = new Map(src.cohorts.map((k) => [classOf.get(k.id), k.slug]));
