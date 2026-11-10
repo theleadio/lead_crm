@@ -24,10 +24,10 @@ import { Figures, PanelCard } from "./panel-card";
 // orders, revenue, the grant share — sit in each bar's hover text and in the
 // figures table folded underneath, so nothing is lost to the chart.
 //
-// Banded on revenue paid through SalesProcess (its checkout), net of refunds
-// and credited to each buyer's first campaign. Grant money is invoiced to
-// HRDC and never passes through it, so the grant share sits in the next
-// column: a programme can read poor here and still have been full.
+// Banded on revenue paid through SalesProcess and the CRM's own payments, net
+// of refunds and credited to each buyer's first campaign. Grant money is
+// invoiced to HRDC and never passes through either, so the grant share sits in
+// the next column: a programme can read poor here and still have been full.
 
 const BAND_LABEL: Record<RoasBand, string> = {
   good: `${ROAS_BANDS.good}× or more`,
@@ -46,7 +46,7 @@ const BAND_CELL: Record<RoasBand, { background: string; color: string }> = {
 function Legend() {
   return (
     <div className="text-ink-muted flex flex-wrap items-center gap-2 text-sm">
-      <span>ROAS = SalesProcess revenue ÷ ad spend.</span>
+      <span>ROAS = paid revenue ÷ ad spend.</span>
       {(Object.keys(BAND_LABEL) as RoasBand[]).map((band) => (
         <span
           key={band}
@@ -140,8 +140,9 @@ function Notes({
         <li>Signups could not be read, so the HRDC share column is blank.</li>
       )}
       <li>
-        HRDC seats are paid by the grant, not through SalesProcess, so that
-        money is not counted: a grant-heavy programme reads lower than it is.
+        HRDC seats are paid by the grant, not through SalesProcess or the CRM,
+        so that money is not counted: a grant-heavy programme reads lower than
+        it is.
       </li>
       <li>
         Each buyer is credited to the campaign that first found them. A short
@@ -167,10 +168,11 @@ export function RoasPanel({
       title={<>Return on ad spend</>}
       description={
         <>
-          What buyers paid through SalesProcess, net of refunds, against what
-          the campaign that first found them cost. Only campaigns with both
-          spend and revenue in range are listed. The grant share sits beside it
-          because HRDC seats are invoiced and never pass through SalesProcess.
+          What buyers paid through SalesProcess or the CRM, net of refunds,
+          against what the campaign that first found them cost. Only campaigns
+          with both spend and revenue in range are listed. The grant share sits
+          beside it because HRDC seats are invoiced and never pass through
+          either.
         </>
       }
     >
