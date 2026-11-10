@@ -72,11 +72,13 @@ export function EfficiencyMapPanel({ points }: { points: EfficiencyPoint[] }) {
     // Steep guides all leave through the top edge within a few pixels of
     // each other, so their labels are stepped down their own line, starting
     // a line below the top rule so it doesn't strike through the first. A
-    // guide that leaves through the right edge is labelled at its end.
+    // guide that leaves through the right edge is labelled at its end, with
+    // no step: those ends are already at different heights, and a stepped
+    // label low on the plot could land on the x-axis figures.
     const exitsTop = capped === maxSignups;
     const text = `RM ${rate}/signup`;
     const labelX = endX + 6;
-    const labelY = endY + (exitsTop ? 14 : 4) + i * 13;
+    const labelY = exitsTop ? endY + 14 + i * 13 : endY + 4;
     return {
       rate,
       endX,
