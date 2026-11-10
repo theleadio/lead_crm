@@ -42,8 +42,14 @@ async function newUser(role: Viewer["role"]): Promise<Viewer> {
   return { id: u.id, role };
 }
 
+// The account the report reads, so the fixture is not filtered out when
+// META_AD_ACCOUNT_ID is set (`adSpendRows` strips the act_ prefix).
+const ACCOUNT =
+  process.env.META_AD_ACCOUNT_ID?.trim().replace(/^act_/, "") || "test";
+
 // One ad-day. The campaign name is unique per test so the seeded database's
-// own rows can never be mistaken for the fixture's.
+// own rows can never be mistaken for the fixture's. Returns the campaign id,
+// which is what the report keys spend on (63d96e2); the name is display only.
 async function newInsight(fields: {
   campaign: string;
   ad: string;
@@ -51,21 +57,23 @@ async function newInsight(fields: {
   spend: string;
   clicks?: number;
   currency?: string;
-}): Promise<void> {
+}): Promise<string> {
+  const id = `${fields.campaign}-id`;
   await db()`
     INSERT INTO meta_ad_insight
       (ad_id, day, account_id, campaign_id, campaign_name, adset_id,
        adset_name, ad_name, currency, spend, impressions, clicks, leads)
-    VALUES (${`${fields.ad}-${fields.day}`}, ${fields.day}::date, 'act_test',
-            ${`${fields.campaign}-id`}, ${fields.campaign},
+    VALUES (${`${fields.ad}-${fields.day}`}, ${fields.day}::date, ${ACCOUNT},
+            ${id}, ${fields.campaign},
             ${`${fields.campaign}-adset`}, 'Test adset', ${fields.ad},
             ${fields.currency ?? "MYR"}, ${fields.spend}, 1000,
             ${fields.clicks ?? 25}, 3)`;
+  return id;
 }
 
 it("reads the rows in range and leaves the rest", async () => {
   const campaign = `spend_${crypto.randomUUID().slice(0, 8)}`;
-  await newInsight({
+  const id = await newInsight({
     campaign,
     ad: `${campaign}__carousel`,
     day: RANGE.from,
@@ -85,27 +93,25 @@ it("reads the rows in range and leaves the rest", async () => {
     spend: "999.00",
   });
 
-  // Spend is keyed on Meta's campaign id (63d96e2); the name is display only.
-  const id = `${campaign}-id`;
   const rows = (await adSpendRows(await newUser("marketing"), RANGE)).filter(
     (r) => r.campaignName === id,
   );
   assert.equal(rows.length, 2);
+  assert.ok(rows.every((r) => r.displayName === campaign));
   assert.equal(byCampaign(rows, "ad").get(id)?.spend, "150.25");
 });
 
 it("sums in whole cents, never in floating point", async () => {
   const campaign = `cents_${crypto.randomUUID().slice(0, 8)}`;
+  let id = "";
   for (const [i, spend] of ["0.10", "0.20"].entries())
-    await newInsight({
+    id = await newInsight({
       campaign,
       ad: `${campaign}__${i}`,
       day: RANGE.from,
       spend,
     });
 
-  // Spend is keyed on Meta's campaign id (63d96e2); the name is display only.
-  const id = `${campaign}-id`;
   const rows = (await adSpendRows(await newUser("marketing"), RANGE)).filter(
     (r) => r.campaignName === id,
   );
