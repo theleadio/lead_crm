@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/table";
 import { formatMoneyMyr } from "@/lib/format/money";
 import { campaignLabel } from "./campaign-label";
+import { labelSlots } from "./label-slots";
 import {
   axisCeiling,
   bubbleRadius,
@@ -110,10 +111,12 @@ export function EfficiencyMapPanel({ points }: { points: EfficiencyPoint[] }) {
                   />
                   {/* Steep guides all leave through the top edge within a
                       few pixels of each other, so the labels are stepped
-                      down their own line instead of sitting at its end. */}
+                      down their own line instead of sitting at its end,
+                      starting a line below the top rule so it doesn't
+                      strike through the first one. */}
                   <text
                     x={endX + 6}
-                    y={endY + 4 + i * 13}
+                    y={endY + 14 + i * 13}
                     fontSize="10"
                     fill="var(--ink-subtle)"
                   >
@@ -183,79 +186,77 @@ export function EfficiencyMapPanel({ points }: { points: EfficiencyPoint[] }) {
               // — labelling them turns the axis into a smear — so only the
               // two biggest spenders among them are named, which is the point
               // being made about them. Every campaign is still in the table.
-              const named = new Set(
-                [
-                  ...[...spent]
-                    .filter((p) => p.signups > 0)
-                    .sort((a, b) => b.signups - a.signups)
-                    .slice(0, LABELLED),
-                  ...[...spent]
-                    .filter((p) => p.signups === 0)
-                    .sort((a, b) => Number(b.spend) - Number(a.spend))
-                    .slice(0, 2),
-                ].map((p) => p.campaign),
+              const named = [
+                ...[...spent]
+                  .filter((p) => p.signups > 0)
+                  .sort((a, b) => b.signups - a.signups)
+                  .slice(0, LABELLED),
+                ...[...spent]
+                  .filter((p) => p.signups === 0)
+                  .sort((a, b) => Number(b.spend) - Number(a.spend))
+                  .slice(0, 2),
+              ];
+              // Placed in that order, so the campaigns that produced most
+              // keep their spot. A label moves at most two lines, never over a
+              // point or down into the x-axis figures (label-slots.ts); one
+              // with no room near its point is left off rather than read as
+              // another's.
+              const slot = labelSlots(
+                { floor: PAD.top + PLOT_H + 8, ceiling: 0 },
+                spent.map((p) => {
+                  const r = bubbleRadius(p.hrdcSignups, peakHrdc);
+                  const cx = x(Number(p.spend));
+                  const cy = y(p.signups);
+                  return {
+                    left: cx - r,
+                    right: cx + r,
+                    top: cy - r,
+                    bottom: cy + r,
+                  };
+                }),
               );
-              // Labels of points sitting on top of each other are nudged
-              // down one line at a time, so a cheap campaign with one signup
-              // does not overwrite its neighbour. Placement only: the mark
-              // itself never moves.
-              // Labels are 10px text, so about 5.2px a character: two of them
-              // clash when their boxes overlap, not when their anchors are
-              // close. Measuring the box is what stops a long name sitting on
-              // top of its neighbour.
-              const placed: { from: number; to: number; y: number }[] = [];
-              const labelOffset = (cx: number, cy: number, text: string) => {
-                const from = cx;
-                const to = cx + text.length * 5.2;
-                let dy = 0;
-                while (
-                  placed.some(
-                    (q) =>
-                      Math.abs(q.y - (cy + dy)) < 11 &&
-                      from < q.to &&
-                      q.from < to,
-                  )
-                ) {
-                  dy += 11;
-                }
-                placed.push({ from, to, y: cy + dy });
-                return dy;
-              };
+              const labelDy = new Map<string, number | null>();
+              for (const p of named) {
+                const r = bubbleRadius(p.hrdcSignups, peakHrdc);
+                const lx = x(Number(p.spend)) + r + 4;
+                const text = campaignLabel(p.displayName ?? p.campaign);
+                labelDy.set(
+                  p.campaign,
+                  slot(lx, y(p.signups) + 4, text.length),
+                );
+              }
 
               return spent.map((p) => {
                 const cx = x(Number(p.spend));
                 const cy = y(p.signups);
                 const r = bubbleRadius(p.hrdcSignups, peakHrdc);
+                const label = campaignLabel(p.displayName ?? p.campaign);
+                const dy = labelDy.get(p.campaign);
                 return (
                   <g key={p.campaign}>
                     <title>
                       {`${p.displayName ?? p.campaign}: ${formatMoneyMyr(p.spend)}, ${p.signups} signups (${p.hrdcSignups} HRDC)${p.costPerSignup ? `, ${formatMoneyMyr(p.costPerSignup)} per signup` : ""}`}
                     </title>
+                    {/* See-through and unringed: campaigns with nearly the
+                        same spend and signups overlap, and the overlap then
+                        shows brighter instead of one dot cutting a crescent
+                        out of the other. 0.55 keeps a lone dot at 3.5:1
+                        against the dark card. */}
                     <circle
                       cx={cx}
                       cy={cy}
                       r={r}
                       fill="var(--lead-blue)"
-                      fillOpacity="0.75"
-                      stroke="var(--surface-raised)"
-                      strokeWidth="2"
+                      fillOpacity="0.55"
                     />
-                    {named.has(p.campaign) && (
+                    {dy != null && (
                       <text
                         x={cx + r + 4}
-                        y={
-                          cy +
-                          4 +
-                          labelOffset(
-                            cx,
-                            cy,
-                            campaignLabel(p.displayName ?? p.campaign),
-                          )
-                        }
+                        y={cy + 4 + dy}
                         fontSize="10"
                         fill="var(--ink-muted)"
                       >
-                        {campaignLabel(p.displayName ?? p.campaign)}
+                        {label}
                       </text>
                     )}
                   </g>

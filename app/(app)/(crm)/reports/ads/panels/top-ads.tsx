@@ -70,7 +70,7 @@ export function TopAdsPanel({
             </TableHeader>
             <TableBody>
               {rows.map((row) => (
-                <TableRow key={`${row.campaign}-${row.ad}`}>
+                <TableRow key={`${row.campaignId ?? row.campaign}-${row.ad}`}>
                   <TableCell>{row.ad}</TableCell>
                   <TableCell title={row.campaign}>
                     {campaignLabel(row.campaign)}
