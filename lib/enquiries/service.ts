@@ -116,10 +116,10 @@ export async function setEnquiryCategory(
   }));
 }
 
-// The one writer of the outcome note. It goes to `summary` (proposal open
-// question 3) until #53's `resolution` column lands. The audit row records the
-// close (status, handled_by, closed_at), never the note's text. Closing is
-// final: no reopen (§9.13 names none).
+// The one writer of the outcome note. It goes to `resolution` (migration 018),
+// so the enquiry keeps its own `summary`. The audit row records the close
+// (status, handled_by, closed_at), never the note's text. Closing is final:
+// no reopen (§9.13 names none).
 export async function closeEnquiry(
   id: string,
   close: { status: "human_resolved" | "closed"; note: string },
@@ -130,7 +130,7 @@ export async function closeEnquiry(
     if (before.status !== "open")
       return { kind: "not_open", status: before.status as EnquiryStatus };
     return {
-      set: { status: close.status, summary: close.note, handled_by: "user" },
+      set: { status: close.status, resolution: close.note, handled_by: "user" },
       closing: true,
     };
   });

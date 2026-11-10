@@ -281,6 +281,7 @@ it("closing stores the note, stamps the time, and a second close is 422", async 
   const support = await newUser("support");
   const name = tag();
   const id = await newEnquiry(await newPerson(name));
+  await db()`UPDATE enquiry SET summary = 'Asked about HRDC' WHERE id = ${id}`;
   const first = await closeEnquiry(
     id,
     { status: "human_resolved", note: "Sent the HRDC form" },
@@ -289,9 +290,12 @@ it("closing stores the note, stamps the time, and a second close is 422", async 
   );
   assert.equal(first.kind, "ok");
   const [closed] = await db()`
-    SELECT status, summary, closed_at, handled_by FROM enquiry WHERE id = ${id}`;
+    SELECT status, summary, resolution, closed_at, handled_by
+    FROM enquiry WHERE id = ${id}`;
   assert.equal(closed.status, "human_resolved");
-  assert.equal(closed.summary, "Sent the HRDC form");
+  // The note has its own column; the enquiry's summary is kept (#53).
+  assert.equal(closed.resolution, "Sent the HRDC form");
+  assert.equal(closed.summary, "Asked about HRDC");
   assert.equal(closed.handled_by, "user");
   assert.ok(closed.closed_at);
   // It leaves the default view.
@@ -305,9 +309,9 @@ it("closing stores the note, stamps the time, and a second close is 422", async 
   );
   assert.equal(second.kind, "not_open");
   const [after] = await db()`
-    SELECT status, summary, closed_at FROM enquiry WHERE id = ${id}`;
+    SELECT status, resolution, closed_at FROM enquiry WHERE id = ${id}`;
   assert.equal(after.status, "human_resolved");
-  assert.equal(after.summary, "Sent the HRDC form");
+  assert.equal(after.resolution, "Sent the HRDC form");
   assert.equal(
     new Date(after.closed_at).getTime(),
     new Date(closed.closed_at).getTime(),
@@ -316,7 +320,11 @@ it("closing stores the note, stamps the time, and a second close is 422", async 
   // must not reach the append-only audit_log).
   const audits = await auditRows(id);
   assert.equal(audits.length, 1);
-  assert.deepEqual(Object.keys(audits[0].after).sort(), ["closed_at", "handled_by", "status"]);
+  assert.deepEqual(Object.keys(audits[0].after).sort(), [
+    "closed_at",
+    "handled_by",
+    "status",
+  ]);
   assert.equal(audits[0].after.status, "human_resolved");
   assert.equal(audits[0].after.handled_by, "user");
   assert.ok(audits[0].after.closed_at);
