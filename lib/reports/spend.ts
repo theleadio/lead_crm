@@ -319,6 +319,9 @@ export function roasRows(
 export type AdRankRow = {
   ad: string;
   campaign: string;
+  // Meta's id, kept when `campaign` is swapped for a display name: two
+  // campaigns can share a name.
+  campaignId?: string;
   count: number;
   costPer: string | null;
   ctr: number | null;
@@ -372,6 +375,9 @@ export function rankAds(
 
 export type ObjectiveSplit = {
   campaign: string;
+  // Meta's id, kept when `campaign` is swapped for a display name: two
+  // campaigns can share a name.
+  campaignId?: string;
   total: string;
   byObjective: Record<AdObjective, string>;
 };

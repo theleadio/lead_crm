@@ -73,7 +73,7 @@ function Facet({
             const amount = row.byObjective[objective];
             return (
               <div
-                key={`${objective}-${row.campaign}`}
+                key={`${objective}-${row.campaignId ?? row.campaign}`}
                 className="flex items-center gap-3 text-sm"
               >
                 <span
@@ -166,7 +166,7 @@ export function SpendSplitPanel({ rows }: { rows: ObjectiveSplit[] }) {
                 </TableHeader>
                 <TableBody>
                   {rows.map((row) => (
-                    <TableRow key={`t-${row.campaign}`}>
+                    <TableRow key={`t-${row.campaignId ?? row.campaign}`}>
                       <TableCell>{row.campaign}</TableCell>
                       {AD_OBJECTIVES.map((objective) => (
                         <TableCell key={objective}>

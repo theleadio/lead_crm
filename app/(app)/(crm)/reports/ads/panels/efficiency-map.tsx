@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/table";
 import { formatMoneyMyr } from "@/lib/format/money";
 import { campaignLabel } from "./campaign-label";
+import { LABEL_CHAR, labelSlots, textBox, type Slot } from "./label-slots";
 import {
   axisCeiling,
   bubbleRadius,
@@ -62,6 +63,47 @@ export function EfficiencyMapPanel({ points }: { points: EfficiencyPoint[] }) {
   const x = (spend: number) => PAD.left + (spend / maxSpend) * PLOT_W;
   const y = (signups: number) => PAD.top + (1 - signups / maxSignups) * PLOT_H;
 
+  // Worked out once and used both to draw and to place labels, so the two
+  // can't drift apart.
+  const guides = COST_PER_SIGNUP_GUIDES.map((rate, i) => {
+    const capped = Math.min(maxSpend / rate, maxSignups);
+    const endX = x(capped * rate);
+    const endY = y(capped);
+    // Steep guides all leave through the top edge within a few pixels of
+    // each other, so their labels are stepped down their own line, starting
+    // a line below the top rule so it doesn't strike through the first. A
+    // guide that leaves through the right edge is labelled at its end, with
+    // no step: those ends are already at different heights, and a stepped
+    // label low on the plot could land on the x-axis figures.
+    const exitsTop = capped === maxSignups;
+    const text = `RM ${rate}/signup`;
+    const labelX = endX + 6;
+    const labelY = exitsTop ? endY + 14 + i * 13 : endY + 4;
+    return {
+      rate,
+      endX,
+      endY,
+      text,
+      labelX,
+      labelY,
+      box: textBox(labelX, labelX + text.length * LABEL_CHAR, labelY),
+    };
+  });
+  const dots = spent.map((p) => {
+    const r = bubbleRadius(p.hrdcSignups, peakHrdc);
+    const cx = x(Number(p.spend));
+    const cy = y(p.signups);
+    return {
+      p,
+      r,
+      cx,
+      cy,
+      label: campaignLabel(p.displayName ?? p.campaign),
+      // Where a label's text starts on the right, or ends on the left.
+      labelAt: { right: cx + r + 4, left: cx - r - 4 },
+    };
+  });
+
   return (
     <PanelCard
       eyebrow="MUST SEE"
@@ -93,35 +135,26 @@ export function EfficiencyMapPanel({ points }: { points: EfficiencyPoint[] }) {
           >
             {/* Cost-per-signup guides. Solid hairlines, labelled at the end,
                 so the diagonal is read as a rate and not as data. */}
-            {COST_PER_SIGNUP_GUIDES.map((rate, i) => {
-              const atCeiling = maxSpend / rate;
-              const capped = Math.min(atCeiling, maxSignups);
-              const endX = x(capped * rate);
-              const endY = y(capped);
-              return (
-                <g key={rate}>
-                  <line
-                    x1={x(0)}
-                    y1={y(0)}
-                    x2={endX}
-                    y2={endY}
-                    stroke="var(--line-strong)"
-                    strokeWidth="1"
-                  />
-                  {/* Steep guides all leave through the top edge within a
-                      few pixels of each other, so the labels are stepped
-                      down their own line instead of sitting at its end. */}
-                  <text
-                    x={endX + 6}
-                    y={endY + 4 + i * 13}
-                    fontSize="10"
-                    fill="var(--ink-subtle)"
-                  >
-                    RM {rate}/signup
-                  </text>
-                </g>
-              );
-            })}
+            {guides.map((g) => (
+              <g key={g.rate}>
+                <line
+                  x1={x(0)}
+                  y1={y(0)}
+                  x2={g.endX}
+                  y2={g.endY}
+                  stroke="var(--line-strong)"
+                  strokeWidth="1"
+                />
+                <text
+                  x={g.labelX}
+                  y={g.labelY}
+                  fontSize="10"
+                  fill="var(--ink-subtle)"
+                >
+                  {g.text}
+                </text>
+              </g>
+            ))}
 
             {/* Axes: one horizontal rule per quarter, no dashes. */}
             {signupTicks(maxSignups).map((seats) => (
@@ -183,79 +216,74 @@ export function EfficiencyMapPanel({ points }: { points: EfficiencyPoint[] }) {
               // — labelling them turns the axis into a smear — so only the
               // two biggest spenders among them are named, which is the point
               // being made about them. Every campaign is still in the table.
-              const named = new Set(
+              const named = [
+                ...dots
+                  .filter((d) => d.p.signups > 0)
+                  .sort((a, b) => b.p.signups - a.p.signups)
+                  .slice(0, LABELLED),
+                ...dots
+                  .filter((d) => d.p.signups === 0)
+                  .sort((a, b) => Number(b.p.spend) - Number(a.p.spend))
+                  .slice(0, 2),
+              ];
+              // Placed in that order, so the campaigns that produced most
+              // keep their spot. A label moves at most two lines and stays
+              // off every point, the guide labels, the x-axis figures, the
+              // y-axis and the right edge (label-slots.ts); one with no room
+              // near its point is left off. The ceiling sits just above the
+              // top rule, so a point on it can still carry its label.
+              const slot = labelSlots(
+                {
+                  floor: PAD.top + PLOT_H + 8,
+                  ceiling: PAD.top - 6,
+                  left: PAD.left,
+                  right: WIDTH,
+                },
                 [
-                  ...[...spent]
-                    .filter((p) => p.signups > 0)
-                    .sort((a, b) => b.signups - a.signups)
-                    .slice(0, LABELLED),
-                  ...[...spent]
-                    .filter((p) => p.signups === 0)
-                    .sort((a, b) => Number(b.spend) - Number(a.spend))
-                    .slice(0, 2),
-                ].map((p) => p.campaign),
+                  ...dots.map((d) => ({
+                    left: d.cx - d.r,
+                    right: d.cx + d.r,
+                    top: d.cy - d.r,
+                    bottom: d.cy + d.r,
+                  })),
+                  ...guides.map((g) => g.box),
+                ],
               );
-              // Labels of points sitting on top of each other are nudged
-              // down one line at a time, so a cheap campaign with one signup
-              // does not overwrite its neighbour. Placement only: the mark
-              // itself never moves.
-              // Labels are 10px text, so about 5.2px a character: two of them
-              // clash when their boxes overlap, not when their anchors are
-              // close. Measuring the box is what stops a long name sitting on
-              // top of its neighbour.
-              const placed: { from: number; to: number; y: number }[] = [];
-              const labelOffset = (cx: number, cy: number, text: string) => {
-                const from = cx;
-                const to = cx + text.length * 5.2;
-                let dy = 0;
-                while (
-                  placed.some(
-                    (q) =>
-                      Math.abs(q.y - (cy + dy)) < 11 &&
-                      from < q.to &&
-                      q.from < to,
-                  )
-                ) {
-                  dy += 11;
-                }
-                placed.push({ from, to, y: cy + dy });
-                return dy;
-              };
+              const slots = new Map<string, Slot | null>();
+              for (const d of named)
+                slots.set(
+                  d.p.campaign,
+                  slot(d.labelAt, d.cy + 4, d.label.length),
+                );
 
-              return spent.map((p) => {
-                const cx = x(Number(p.spend));
-                const cy = y(p.signups);
-                const r = bubbleRadius(p.hrdcSignups, peakHrdc);
+              return dots.map(({ p, r, cx, cy, label, labelAt }) => {
+                const s = slots.get(p.campaign);
                 return (
                   <g key={p.campaign}>
                     <title>
                       {`${p.displayName ?? p.campaign}: ${formatMoneyMyr(p.spend)}, ${p.signups} signups (${p.hrdcSignups} HRDC)${p.costPerSignup ? `, ${formatMoneyMyr(p.costPerSignup)} per signup` : ""}`}
                     </title>
+                    {/* See-through and unringed: campaigns with nearly the
+                        same spend and signups overlap, and the overlap then
+                        shows brighter instead of one dot cutting a crescent
+                        out of the other. 0.55 keeps a lone dot at 3.5:1
+                        against the dark card. */}
                     <circle
                       cx={cx}
                       cy={cy}
                       r={r}
                       fill="var(--lead-blue)"
-                      fillOpacity="0.75"
-                      stroke="var(--surface-raised)"
-                      strokeWidth="2"
+                      fillOpacity="0.55"
                     />
-                    {named.has(p.campaign) && (
+                    {s && (
                       <text
-                        x={cx + r + 4}
-                        y={
-                          cy +
-                          4 +
-                          labelOffset(
-                            cx,
-                            cy,
-                            campaignLabel(p.displayName ?? p.campaign),
-                          )
-                        }
+                        x={s.side === "right" ? labelAt.right : labelAt.left}
+                        y={cy + 4 + s.dy}
+                        textAnchor={s.side === "right" ? "start" : "end"}
                         fontSize="10"
                         fill="var(--ink-muted)"
                       >
-                        {campaignLabel(p.displayName ?? p.campaign)}
+                        {label}
                       </text>
                     )}
                   </g>

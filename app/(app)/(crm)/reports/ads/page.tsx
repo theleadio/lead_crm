@@ -184,16 +184,21 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
           campaign: named(r.campaign),
         })),
         allSpend: sumMyr([...campaignSpend.values()].map((s) => s.spend)),
+        // The id stays beside the display name: rows are keyed on it, since
+        // two campaigns can share a name.
         whatsappAds: rankAds(adSpend, "messages").map((r) => ({
           ...r,
+          campaignId: r.campaign,
           campaign: named(r.campaign),
         })),
         conversionAds: rankAds(adSpend, "checkouts").map((r) => ({
           ...r,
+          campaignId: r.campaign,
           campaign: named(r.campaign),
         })),
         spendSplit: spendByObjective(adSpend, "ad").map((r) => ({
           ...r,
+          campaignId: r.campaign,
           campaign: named(r.campaign),
         })) as ObjectiveSplit[],
       };
