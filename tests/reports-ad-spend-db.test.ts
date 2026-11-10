@@ -85,11 +85,13 @@ it("reads the rows in range and leaves the rest", async () => {
     spend: "999.00",
   });
 
+  // Spend is keyed on Meta's campaign id (63d96e2); the name is display only.
+  const id = `${campaign}-id`;
   const rows = (await adSpendRows(await newUser("marketing"), RANGE)).filter(
-    (r) => r.campaignName === campaign,
+    (r) => r.campaignName === id,
   );
   assert.equal(rows.length, 2);
-  assert.equal(byCampaign(rows, "ad").get(campaign)?.spend, "150.25");
+  assert.equal(byCampaign(rows, "ad").get(id)?.spend, "150.25");
 });
 
 it("sums in whole cents, never in floating point", async () => {
@@ -102,10 +104,12 @@ it("sums in whole cents, never in floating point", async () => {
       spend,
     });
 
+  // Spend is keyed on Meta's campaign id (63d96e2); the name is display only.
+  const id = `${campaign}-id`;
   const rows = (await adSpendRows(await newUser("marketing"), RANGE)).filter(
-    (r) => r.campaignName === campaign,
+    (r) => r.campaignName === id,
   );
-  assert.equal(byCampaign(rows, "ad").get(campaign)?.spend, "0.30");
+  assert.equal(byCampaign(rows, "ad").get(id)?.spend, "0.30");
 });
 
 it("refuses a part_time reader, who only sees their own people", async () => {

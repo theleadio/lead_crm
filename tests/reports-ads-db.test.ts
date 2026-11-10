@@ -58,13 +58,18 @@ type TouchFields = {
   at?: string;
 };
 
+// The report groups on Meta's campaign id (63d96e2), so a fixture campaign
+// carries an id as real attributed leads do; the name is what a test reads.
+const campaignId = (name: string) => `id_${name}`;
+
 async function newTouchpoint(f: TouchFields): Promise<void> {
   await db()`
     INSERT INTO touchpoint (person_id, channel, occurred_at, utm_campaign,
-                            utm_source, fbclid, ctwa_clid, gclid,
-                            is_first_touch)
+                            utm_campaign_id, utm_source, fbclid, ctwa_clid,
+                            gclid, is_first_touch)
     VALUES (${f.person}, ${f.channel ?? "web_form"},
             ${f.at ?? "2031-03-10T04:00:00Z"}, ${f.campaign ?? null},
+            ${f.campaign ? campaignId(f.campaign) : null},
             ${f.source ?? null}, ${f.fbclid ?? null}, ${f.ctwaClid ?? null},
             ${f.gclid ?? null}, ${f.firstTouch ?? false})`;
 }
@@ -202,8 +207,9 @@ it("the source table splits a source by channel", async () => {
     await newTouchpoint({ person, channel, source: "facebook" });
   }
 
+  // Sources fold into their Meta platform (b439564): "facebook" reads "Facebook".
   const row = (await sourceRows(viewer, RANGE)).rows.find(
-    (r) => r.source === "facebook",
+    (r) => r.source === "Facebook",
   );
   assert.equal(row?.leads, 3);
   assert.deepEqual(
@@ -377,6 +383,7 @@ it("over a hundred campaigns: 100 rows, the rest counted as dropped", async () =
     // The 101st campaign gets two touchpoints, so it is the largest and must
     // survive the cap while a one-lead campaign is dropped.
     utm_campaign: `cap_${String(i).padStart(3, "0")}`,
+    utm_campaign_id: campaignId(`cap_${String(i).padStart(3, "0")}`),
   }));
   await db()`INSERT INTO touchpoint ${db()(rows)}`;
   await newTouchpoint({
