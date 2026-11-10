@@ -25,7 +25,7 @@ import { agingTone, daysInStage, suggestDealValue } from "@/lib/deals/format";
 import {
   FUNDING_TYPES,
   STAGES,
-  STAGE_LABELS,
+  stageLabel,
   type DealDetail,
   type FundingType,
   type Ref,
@@ -183,7 +183,7 @@ export function DealDetailView({
                     : "secondary"
               }
             >
-              {STAGE_LABELS[d.stage]}
+              {stageLabel(d.pipeline, d.stage)}
             </Badge>
             <span>
               {d.amountMyr ? formatMoneyMyr(d.amountMyr) : "No value"}
@@ -257,8 +257,10 @@ export function DealDetailView({
             {d.stageHistory.map((h) => (
               <Row key={h.id}>
                 <span className="capitalize">
-                  {h.fromStage ? label(h.fromStage) : "Created"} →{" "}
-                  {label(h.toStage)}
+                  {h.fromStage
+                    ? stageLabel(d.pipeline, h.fromStage)
+                    : "Created"}{" "}
+                  → {stageLabel(d.pipeline, h.toStage)}
                 </span>
                 <span>{formatDate(h.changedAt)}</span>
                 <span>{h.changedBy ?? "—"}</span>
@@ -407,7 +409,7 @@ function StageControl({
         });
         return;
       }
-      onNotice(`Moved to ${STAGE_LABELS[toStage]}.`);
+      onNotice(`Moved to ${stageLabel(deal.pipeline, toStage)}.`);
       onMoved();
     } catch {
       setError({
@@ -439,7 +441,7 @@ function StageControl({
         >
           {STAGES[deal.pipeline].map((s) => (
             <option key={s} value={s}>
-              {STAGE_LABELS[s]}
+              {stageLabel(deal.pipeline, s)}
             </option>
           ))}
         </select>
@@ -788,7 +790,8 @@ function EditForm({
       {isHrdc && (
         <fieldset className="border-line space-y-3 rounded-md border p-3">
           <legend className="text-ink-muted px-1 text-xs">
-            HRDC — needed before this deal can be Won
+            HRDC — needed before this deal can be{" "}
+            {stageLabel(deal.pipeline, "won")}
           </legend>
           <Field
             id="hrdcGrantRef"

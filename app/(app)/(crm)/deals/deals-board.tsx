@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { boardParams, PER_COLUMN, type BoardFilters } from "@/lib/deals/board";
 import { addMyr } from "@/lib/deals/format";
 import {
-  STAGE_LABELS,
+  stageLabel,
   STAGES,
   type DealCard as Deal,
   type DealListResponse,
@@ -245,7 +245,7 @@ export function DealsBoard({
 
   async function move(card: Deal, toStage: Stage, lostReasonId?: string) {
     if (toStage === card.stage || busyRef.current.has(card.id)) return;
-    const label = STAGE_LABELS[toStage];
+    const label = stageLabel(card.pipeline, toStage);
     setBusy((s) => new Set(s).add(card.id));
     setBoard((b) =>
       placeCard(b, {
@@ -469,7 +469,7 @@ export function DealsBoard({
               return (
                 <section
                   key={stage}
-                  aria-label={STAGE_LABELS[stage]}
+                  aria-label={stageLabel(filters.pipeline, stage)}
                   onDragOver={(e) => {
                     if (!canDrop) return;
                     e.preventDefault();
@@ -490,7 +490,7 @@ export function DealsBoard({
                 >
                   <header className="px-1">
                     <h2 className="text-ink text-sm font-semibold text-balance">
-                      {STAGE_LABELS[stage]}{" "}
+                      {stageLabel(filters.pipeline, stage)}{" "}
                       <span className="text-ink-muted font-normal">
                         {total?.count ?? "–"}
                       </span>

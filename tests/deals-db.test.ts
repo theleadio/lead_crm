@@ -346,7 +346,12 @@ it("move: every 422 leaves the deal, history and outbox unchanged", async () => 
   for (const [id, toStage, lostReasonId, code, missing] of cases) {
     const before = { deal: await dealRow(id), counts: await counts(id) };
     const r = await moveDealStage(id, { toStage, lostReasonId }, admin);
-    assert.deepEqual(r, { kind: "rule", code, missing }, `${toStage} ${code}`);
+    const pipeline = id === individual ? "individual" : "corporate";
+    assert.deepEqual(
+      r,
+      { kind: "rule", code, missing, pipeline },
+      `${toStage} ${code}`,
+    );
     assert.deepEqual(
       { deal: await dealRow(id), counts: await counts(id) },
       before,
@@ -529,6 +534,7 @@ it("move: invalid_stage still wins over deal_has_payment", async () => {
     kind: "rule",
     code: "invalid_stage",
     missing: undefined,
+    pipeline: "individual",
   });
 });
 

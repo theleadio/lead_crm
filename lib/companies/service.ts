@@ -147,7 +147,7 @@ export async function getCompanyDetail(
 
   const deals = can("deal")
     ? await sql`
-        SELECT d.id, d.stage, d.amount_myr, co.name_en AS course_name, u.full_name AS owner_name
+        SELECT d.id, d.pipeline, d.stage, d.amount_myr, co.name_en AS course_name, u.full_name AS owner_name
         FROM deal d
         LEFT JOIN course co ON co.id = d.course_id
         LEFT JOIN app_user u ON u.id = d.owner_user_id
@@ -215,6 +215,7 @@ export async function getCompanyDetail(
       deals:
         deals?.map((d) => ({
           id: d.id,
+          pipeline: d.pipeline,
           stage: d.stage,
           courseName: d.course_name,
           amountMyr: d.amount_myr,

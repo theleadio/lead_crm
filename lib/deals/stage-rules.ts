@@ -1,4 +1,4 @@
-import { STAGES, STAGE_LABELS, type Pipeline, type Stage } from "./types.ts";
+import { STAGES, stageLabel, type Pipeline, type Stage } from "./types.ts";
 
 // Spec §12.5 deal stages and the §12.6 won guard, as a pure function so the
 // rules are testable without a database. The deal CHECK constraints in
@@ -101,18 +101,19 @@ export function keepCorporateFieldsMessage(
   stage: string,
   missing: string[],
 ): string {
-  const at = STAGE_LABELS[stage as Stage] ?? stage;
+  const at = stageLabel("corporate", stage);
   const fields = missing.map((f) => FIELD_LABELS[f] ?? f).join(", ");
-  return `A corporate deal in ${at} needs ${fields}. Move it back to Discovery first if you need to clear that.`;
+  return `A corporate deal in ${at} needs ${fields}. Move it back to ${stageLabel("corporate", "discovery")} first if you need to clear that.`;
 }
 
 // Spec §13: say what happened and what to do.
 export function moveErrorMessage(
   code: MoveCode,
+  pipeline: Pipeline,
   toStage: string,
   missing: string[] = [],
 ): string {
-  const to = STAGE_LABELS[toStage as Stage] ?? toStage;
+  const to = stageLabel(pipeline, toStage);
   switch (code) {
     case "invalid_stage":
       return `${to} isn't a stage in this deal's pipeline.`;
