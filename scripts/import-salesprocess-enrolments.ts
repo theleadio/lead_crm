@@ -9,6 +9,7 @@
 // product names and class codes only, never a buyer or an order id.
 import postgres from "postgres";
 import { fetchOrder } from "../lib/import/salesprocess-api.ts";
+import { ROOM_SEATS } from "../lib/classes/types.ts";
 import { parseClassSlot, type ClassSlot } from "../lib/import/class-slot.ts";
 import {
   IMPORT_CLASS_NOTE,
@@ -258,7 +259,7 @@ try {
             venue_address: online ? null : "TBC",
             city: online ? null : (slot.city ?? "TBC"),
             online_url: online ? "https://thelead.io" : null,
-            capacity: 30, // max 30 seats per class, decided 4 Nov
+            capacity: ROOM_SEATS,
             status: "open",
             notes: online
               ? IMPORT_CLASS_NOTE

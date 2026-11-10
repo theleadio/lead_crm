@@ -17,6 +17,7 @@
 // Switch to a Supabase Realtime / LISTEN trigger on the LMS if it grows.
 import postgres from "postgres";
 import { normalizePhoneE164 } from "../lib/format/phone.ts";
+import { ROOM_SEATS } from "../lib/classes/types.ts";
 import {
   adoptEnrolment,
   classIdForCohort,
@@ -271,7 +272,7 @@ async function once() {
         venue_address: online ? null : "TBC",
         city: online ? null : "TBC",
         online_url: online ? (k.board_url ?? "https://thelead.io") : null,
-        capacity: Math.max(seats.get(k.id) ?? 1, completed ? 1 : 40),
+        capacity: Math.max(seats.get(k.id) ?? 1, completed ? 1 : ROOM_SEATS),
         price_myr: k.price_cents != null ? k.price_cents / 100 : null,
         status,
         notes: online
