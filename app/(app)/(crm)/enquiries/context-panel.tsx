@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { DetailError, Panel, Row } from "@/components/detail-kit";
 import { Button } from "@/components/ui/button";
 import { enumLabel } from "@/lib/classes/types";
+import { stageLabel } from "@/lib/deals/types";
 import type { EnquiryRow } from "@/lib/enquiries/types";
 import type { PersonDetail } from "@/lib/people/types";
 import { DASH, QUEUE_COLUMNS, openDeals, queueCells } from "./queue-view";
@@ -169,7 +170,7 @@ export function ContextPanel({
               >
                 {d.courseName}
               </Link>
-              <span>{enumLabel(d.stage)}</span>
+              <span>{stageLabel(d.pipeline, d.stage)}</span>
             </Row>
           ))}
         </Panel>
