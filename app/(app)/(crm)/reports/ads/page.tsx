@@ -225,13 +225,18 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
           ? { rows: funding.data, source: "deal" as const }
           : null;
 
-  // The scatter follows the same source as the rings and bars, or the screen
-  // would show deal seats beside LMS seats and no label saying so. The LMS
-  // rows carry the CRM price already, so this needs no second query.
+  // The scatter follows the same decision as the rings and bars, or the
+  // screen would show deal seats beside LMS seats and no label saying so.
+  // When that decision is no source at all (the LMS read failed and no deal
+  // records funding), the scatter shows its error too: falling back to the
+  // deals would print 0% HRDC for every programme, a figure nobody measured.
+  // The LMS rows carry the CRM price already, so this needs no second query.
   const priceScatter =
-    whoPays?.source === "lms"
-      ? { ok: true as const, data: priceShareFromFunding(whoPays.rows) }
-      : priceShare;
+    whoPays === null
+      ? { ok: false as const }
+      : whoPays.source === "lms"
+        ? { ok: true as const, data: priceShareFromFunding(whoPays.rows) }
+        : priceShare;
 
   // The panels in the order the agreed dashboard sets them, so this screen and
   // that page can be read side by side.
