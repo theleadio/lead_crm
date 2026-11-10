@@ -244,6 +244,7 @@ test("the stub is gone and no screen state offers an Add enquiry control", () =>
 test("open deals leave out won and lost", () => {
   const deal = (stage: string) => ({
     id: stage,
+    pipeline: "individual" as const,
     stage,
     courseName: "AIM",
     amountMyr: "0",
