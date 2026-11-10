@@ -1,5 +1,7 @@
 // API shapes for spec §9.4 Companies (GET /api/companies, GET /api/companies/:id).
 
+import type { Pipeline } from "../deals/types.ts";
+
 export type CompanyListItem = {
   id: string;
   legalName: string;
@@ -58,6 +60,7 @@ export type CompanyDetail = {
   deals:
     | {
         id: string;
+        pipeline: Pipeline;
         stage: string;
         courseName: string | null;
         amountMyr: string;

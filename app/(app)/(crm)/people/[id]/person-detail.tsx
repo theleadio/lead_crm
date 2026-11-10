@@ -22,6 +22,7 @@ import { formatDate, formatLastActivity, formatTime } from "@/lib/format/date";
 import { formatMoneyMyr } from "@/lib/format/money";
 import { displayName } from "@/lib/people/types";
 import { NewDeal } from "../../deals/new-deal";
+import { stageLabel } from "@/lib/deals/types";
 import type {
   ConsentState,
   ListResponse,
@@ -292,7 +293,9 @@ export function PersonDetailView({
               {detail.deals.map((d) => (
                 <Row key={d.id}>
                   <span>{d.courseName}</span>
-                  <span className="capitalize">{label(d.stage)}</span>
+                  <span className="capitalize">
+                    {stageLabel(d.pipeline, d.stage)}
+                  </span>
                   <span>{formatMoneyMyr(d.amountMyr)}</span>
                   <span>{d.owner ?? "Unassigned"}</span>
                 </Row>

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
-import { STAGE_LABELS, type Pipeline } from "@/lib/deals/types";
+import { stageLabel, type Pipeline } from "@/lib/deals/types";
 import { formatMoneyMyr } from "@/lib/format/money";
 import type { HomePipelineTotals } from "@/lib/home/types";
 
@@ -90,7 +90,7 @@ export function DealsPanel({ totals }: { totals: HomePipelineTotals[] }) {
                   className={`size-2 rounded-full ${DOTS[i % DOTS.length]}`}
                 />
                 <span className="text-ink-muted text-[13px]">
-                  {STAGE_LABELS[stage.stage]}
+                  {stageLabel(shown.pipeline, stage.stage)}
                 </span>
               </span>
               <span className="flex items-end gap-1.5">

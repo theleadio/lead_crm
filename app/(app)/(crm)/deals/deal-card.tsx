@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { agingTone, daysInStage, initials } from "@/lib/deals/format";
-import { STAGE_LABELS, STAGES, type DealCard as Deal } from "@/lib/deals/types";
+import { stageLabel, STAGES, type DealCard as Deal } from "@/lib/deals/types";
 import { formatMoneyMyr } from "@/lib/format/money";
 
 // design.pen DealCard: the days-in-stage pill, tinted by aging tone.
@@ -128,7 +128,7 @@ export function DealCard({
             .filter((s) => s !== deal.stage)
             .map((s) => (
               <option key={s} value={s}>
-                {STAGE_LABELS[s]}
+                {stageLabel(deal.pipeline, s)}
               </option>
             ))}
         </select>

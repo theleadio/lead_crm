@@ -49,6 +49,7 @@ export async function POST(
             code: result.code,
             message: moveErrorMessage(
               result.code,
+              result.pipeline,
               parsed.data.toStage,
               result.missing,
             ),
