@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { LostReasonDialog } from "../lost-reason-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CompanySelect } from "./company-select";
+import { AddTask } from "../../tasks/task-dialog";
 import { CreateEnrolment } from "./create-enrolment";
 import {
   BackLink,
@@ -81,9 +82,12 @@ type LoadState =
 export function DealDetailView({
   id,
   canWrite,
+  taskAccess,
 }: {
   id: string;
   canWrite: boolean;
+  // §9.14: who may add a task here, or null for no Add task (§6 task row).
+  taskAccess: { viewerId: string; assignedOnly: boolean } | null;
 }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
@@ -215,6 +219,19 @@ export function DealDetailView({
               onNotice={setToast}
               onReload={reload}
             />
+            {/* Task write, not deal write: marketing reads deals and may
+                still add a task about one (§6). */}
+            {taskAccess && (
+              <AddTask
+                link={{ dealId: d.id }}
+                viewerId={taskAccess.viewerId}
+                assignedOnly={taskAccess.assignedOnly}
+                onAdded={(message) => {
+                  setToast(message);
+                  reload();
+                }}
+              />
+            )}
           </>
         }
       />
@@ -324,10 +341,11 @@ export function DealDetailView({
   );
 }
 
-// Send checkout link and Add task still wait on routes that aren't built
-// (Shawn's checkout, 9.14). Disabled and labelled, so the screen says
-// "coming" rather than "not in the product". Create enrolment is live: §9.11
-// landed, and this is the only screen that knows the deal (§9.6).
+// Send checkout link still waits on Shawn's checkout route. Disabled and
+// labelled, so the screen says "coming" rather than "not in the product".
+// Create enrolment is live: §9.11 landed, and this is the only screen that
+// knows the deal (§9.6). Add task (§9.14) sits beside these, gated on task
+// write rather than deal write.
 function DealActions({
   deal,
   canWrite,
@@ -352,9 +370,6 @@ function DealActions({
         courseId={deal.course?.id ?? null}
         onCreated={onReload}
       />
-      <Button variant="outline" disabled title="Not available yet">
-        Add task
-      </Button>
       {deal.checkoutUrl && (
         <Button
           variant="outline"

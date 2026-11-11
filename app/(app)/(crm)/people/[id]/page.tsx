@@ -15,6 +15,8 @@ export default async function PersonPage(props: PageProps<"/people/[id]">) {
     ? permissionFor(user, "person", "write").allowed
     : false;
 
+  const taskWrite = user ? permissionFor(user, "task", "write") : null;
+
   const canExportData = user?.role === "super_admin";
 
   return (
@@ -26,6 +28,11 @@ export default async function PersonPage(props: PageProps<"/people/[id]">) {
       canMerge={user?.role === "super_admin"}
       canReview={user ? canReviewFlagged(user) : false}
       canCreateDeal={user ? canWriteDeal(user) : false}
+      taskAccess={
+        user && taskWrite?.allowed
+          ? { viewerId: user.id, assignedOnly: taskWrite.assignedOnly }
+          : null
+      }
     />
   );
 }

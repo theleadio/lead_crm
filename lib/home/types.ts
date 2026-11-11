@@ -3,16 +3,6 @@ import type { Pipeline, Stage } from "../deals/types.ts";
 // Shapes for the §9.0 Home panels. Read-only: nothing on Home writes, so
 // there is no `version` on any of these (§7 concurrency).
 
-export const TASK_TYPE_LABELS: Record<string, string> = {
-  call: "Call",
-  follow_up: "Follow up",
-  review_duplicate: "Review duplicate",
-  match_payment: "Match payment",
-  hrdc_deadline: "HRDC deadline",
-  export_request: "Export request",
-  other: "Task",
-};
-
 export type HomeTask = {
   id: string;
   type: string;
