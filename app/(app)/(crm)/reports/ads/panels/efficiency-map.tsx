@@ -112,8 +112,8 @@ export function EfficiencyMapPanel({ points }: { points: EfficiencyPoint[] }) {
         <>
           One point per campaign: what it cost, and the seats it produced.
           Bubble size is the grant-funded share. Signups are credited to the
-          campaign of the buyer&apos;s first touch, per person — a buyer with
-          two purchases credits that campaign twice (O30).
+          campaign that first brought the buyer in — a buyer with two purchases
+          counts twice for that campaign.
         </>
       }
     >

@@ -56,7 +56,7 @@ import { WhoPaysPanel } from "./panels/who-pays";
 // wait for, because §5 defers the ad tables and O30 blocks any return-on-spend
 // figure. Read-only: nothing here writes.
 const META_DEFINITION =
-  "A Meta lead is a touchpoint from Lead Ads or click-to-WhatsApp, or one carrying an fbclid or ctwa_clid, or one tagged facebook, instagram, fb, ig, meta or fb_ad.";
+  "A Meta lead is anyone who came from a Facebook or Instagram ad: a Lead Ads form, a click-to-WhatsApp chat, or a link from an ad.";
 
 // Each read loads on its own: one failing query leaves the rest of the report
 // usable (§13), and the reason is logged rather than swallowed. The §9.0 Home

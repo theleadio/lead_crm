@@ -62,12 +62,11 @@ export function CampaignTable({
       }
       description={
         <>
-          Every Meta touchpoint in range, grouped on the campaign id the lead
-          carries. First touch is the lead&apos;s first contact with us; a later
-          touch is the same person arriving again. Cost per person divides that
-          campaign&apos;s spend by the people it reached, not by leads: the
-          attribution import can give one person two touchpoints on the same
-          day.
+          Every Meta lead in range, by the campaign it came from. First touch is
+          the person&apos;s first contact with us; a later touch is the same
+          person coming back. Cost per person divides the campaign&apos;s spend
+          by the people it reached, not by leads, because one person can be
+          recorded twice on the same day.
         </>
       }
     >

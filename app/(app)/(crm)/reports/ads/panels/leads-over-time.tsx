@@ -134,8 +134,8 @@ export function LeadsOverTimePanel({ data }: { data: AdsWeeks }) {
       }
       description={
         <>
-          Kuala Lumpur weeks, starting Monday (§4). One chart per Meta platform,
-          all on the same scale, so a tall column means the same number in each.
+          Weeks start on Monday, Malaysia time. One chart per Meta platform, all
+          on the same scale, so a tall column means the same number in each.
         </>
       }
     >
