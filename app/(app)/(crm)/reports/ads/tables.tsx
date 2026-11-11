@@ -108,7 +108,7 @@ export function CampaignTable({
                   <TableRow key={row.campaignId ?? "__none__"}>
                     <TableCell title={row.campaign ?? undefined}>
                       {row.campaign ? (
-                        campaignLabel(row.campaign)
+                        (row.label ?? campaignLabel(row.campaign))
                       ) : (
                         <Missing what="campaign" />
                       )}

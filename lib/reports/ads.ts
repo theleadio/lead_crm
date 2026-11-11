@@ -473,27 +473,12 @@ function firstCampaignSql(sql: postgres.Sql) {
     )`;
 }
 
-// §9.18 ROAS revenue: SalesProcess payments (migration 016, Shawn's PR #34)
-// plus CRM `payment` rows, credited to the buyer's first campaign, the same
-// model as signups.
-//
-// Revenue is `amount_myr - refunded_myr` on live, succeeded or partially
-// refunded payments, ranged on `paid_at` in Kuala Lumpur days. A payment
-// reaches its buyer through the bare import touchpoint
-// (`external_ref = 'ghl:' || ghl_contact_id`), which follows merges.
-//
-// Not split by class size: a payment names a SalesProcess product, not a CRM
-// course, so there is no price band to filter on.
-export async function revenuePerCampaign(
-  viewer: Viewer,
-  q: AdsReportQuery,
-): Promise<CampaignPaid[]> {
-  requireReportReader(viewer);
-  const sql = db();
-
-  const rows = await sql`
-    WITH ${campaignMapSql(sql)},
-    ${firstCampaignSql(sql)},
+// The payments ROAS counts, one row per payment with its buyer: SalesProcess
+// payments plus CRM `payment` rows, net of refunds, paid in the range. Shared
+// by `revenuePerCampaign` and `paidInRange`, so the panel's "of RM Y paid"
+// is the same money its bars are cut from.
+function paidSql(sql: postgres.Sql, q: AdsReportQuery) {
+  return sql`
     paid AS (
       SELECT DISTINCT b.person_id, sp.id, coalesce(sp.order_id, sp.id) AS order_key,
              sp.paid_at, sp.amount_myr - sp.refunded_myr AS net
@@ -524,7 +509,31 @@ export async function revenuePerCampaign(
       WHERE pn.status IN ('succeeded', 'partially_refunded')
         AND pn.paid_at >= (${q.from}::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
         AND pn.paid_at < ((${q.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
-    )
+    )`;
+}
+
+// §9.18 ROAS revenue: SalesProcess payments (migration 016, Shawn's PR #34)
+// plus CRM `payment` rows, credited to the buyer's first campaign, the same
+// model as signups.
+//
+// Revenue is `amount_myr - refunded_myr` on live, succeeded or partially
+// refunded payments, ranged on `paid_at` in Kuala Lumpur days. A payment
+// reaches its buyer through the bare import touchpoint
+// (`external_ref = 'ghl:' || ghl_contact_id`), which follows merges.
+//
+// Not split by class size: a payment names a SalesProcess product, not a CRM
+// course, so there is no price band to filter on.
+export async function revenuePerCampaign(
+  viewer: Viewer,
+  q: AdsReportQuery,
+): Promise<CampaignPaid[]> {
+  requireReportReader(viewer);
+  const sql = db();
+
+  const rows = await sql`
+    WITH ${campaignMapSql(sql)},
+    ${firstCampaignSql(sql)},
+    ${paidSql(sql, q)}
     -- An ad cannot have sold what was paid before it was seen. An order
     -- paid in instalments counts once.
     SELECT f.campaign_id, sum(p.net)::text AS revenue,
@@ -539,6 +548,22 @@ export async function revenuePerCampaign(
     revenue: r.revenue,
     orders: r.orders,
   }));
+}
+
+// Everything paid in the range, attributed or not, for the ROAS panel's note:
+// the bars only cover buyers a Meta campaign first found, and only campaigns
+// that also spent in the range, so their ratio alone undercounts what was
+// paid (browser check, 11 Nov: RM12.7k of RM109.5k).
+export async function paidInRange(
+  viewer: Viewer,
+  q: AdsReportQuery,
+): Promise<string> {
+  requireReportReader(viewer);
+  const sql = db();
+  const [row] = await sql`
+    WITH ${paidSql(sql, q)}
+    SELECT coalesce(sum(net), 0)::numeric(14, 2)::text AS total FROM paid`;
+  return row.total;
 }
 
 export async function signupsPerCampaign(

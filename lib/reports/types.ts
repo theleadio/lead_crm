@@ -30,6 +30,9 @@ export type AdsCampaignRow = AdsSpend & {
   // beside that campaign's spend. Null for leads that carry no campaign.
   campaignId: string | null;
   campaign: string | null;
+  // The screen's label for it, told apart from any other campaign's
+  // (`campaignLabels`). Absent, a panel cuts its own from the name.
+  label?: string;
   leads: number;
   firstTouch: number;
   laterTouch: number;

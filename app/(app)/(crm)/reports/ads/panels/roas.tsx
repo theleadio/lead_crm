@@ -79,7 +79,7 @@ function RoasBars({ rows }: { rows: RoasRow[] }) {
           title={`${row.campaign}\n${row.stripeRoas!.toFixed(1)}× · ${formatMoneyMyr(row.stripeRevenue)} revenue on ${formatMoneyMyr(row.spend)} spend${row.stripeOrders === null ? "" : ` · ${row.stripeOrders} orders`}`}
         >
           <span className="text-ink truncate text-right text-sm">
-            {campaignLabel(row.campaign)}
+            {row.label ?? campaignLabel(row.campaign)}
           </span>
           <span className="flex min-w-0 items-center gap-2">
             <span
@@ -101,6 +101,16 @@ function RoasBars({ rows }: { rows: RoasRow[] }) {
   );
 }
 
+// numeric(12,2) strings, in whole cents like every other sum here.
+function minus(a: string, b: string): string {
+  return sumMyr([a, b.startsWith("-") ? b.slice(1) : `-${b}`]);
+}
+
+// Everything paid in the range, and the part of it credited to any Meta
+// campaign: the bars hold less than either, and a reader of "0.3×" has to see
+// how much less.
+export type PaidCoverage = { total: string; credited: string };
+
 function share(part: number, whole: number): string {
   return whole > 0 ? `${Math.round((part / whole) * 100)}%` : "—";
 }
@@ -110,10 +120,12 @@ function share(part: number, whole: number): string {
 function Notes({
   rows,
   allSpend,
+  paid,
   hrdcUnread,
 }: {
   rows: RoasRow[];
   allSpend: string;
+  paid: PaidCoverage | null;
   hrdcUnread: boolean;
 }) {
   const revenue = sumMyr(rows.map((r) => r.stripeRevenue));
@@ -136,6 +148,22 @@ function Notes({
           revenue is {overAll.toFixed(1)}×.
         </li>
       )}
+      {paid && Number(paid.total) > Number(revenue) && (
+        <li>
+          These bars hold {formatMoneyMyr(revenue)} of the{" "}
+          {formatMoneyMyr(paid.total)} paid in range.{" "}
+          {formatMoneyMyr(minus(paid.total, paid.credited))} came from buyers no
+          Meta campaign found first
+          {Number(paid.credited) > Number(revenue) && (
+            <>
+              , and {formatMoneyMyr(minus(paid.credited, revenue))} is credited
+              to campaigns with no spend in range
+            </>
+          )}
+          . Neither can have a ratio, so the ones above are not the return on
+          everything paid.
+        </li>
+      )}
       {hrdcUnread && (
         <li>Signups could not be read, so the HRDC share column is blank.</li>
       )}
@@ -156,10 +184,13 @@ function Notes({
 export function RoasPanel({
   rows,
   allSpend,
+  paid,
   hrdcUnread,
 }: {
   rows: RoasRow[];
   allSpend: string;
+  // Null when the total could not be read: the note is left out, not guessed.
+  paid: PaidCoverage | null;
   hrdcUnread: boolean;
 }) {
   return (
@@ -189,7 +220,12 @@ export function RoasPanel({
 
           <RoasBars rows={rows} />
 
-          <Notes rows={rows} allSpend={allSpend} hrdcUnread={hrdcUnread} />
+          <Notes
+            rows={rows}
+            allSpend={allSpend}
+            paid={paid}
+            hrdcUnread={hrdcUnread}
+          />
 
           <Figures>
             <TableCard>
@@ -209,7 +245,7 @@ export function RoasPanel({
                   {rows.map((row) => (
                     <TableRow key={row.campaignId ?? row.campaign}>
                       <TableCell title={row.campaign}>
-                        {campaignLabel(row.campaign)}
+                        {row.label ?? campaignLabel(row.campaign)}
                       </TableCell>
                       <TableCell>{formatMoneyMyr(row.spend)}</TableCell>
                       <TableCell>

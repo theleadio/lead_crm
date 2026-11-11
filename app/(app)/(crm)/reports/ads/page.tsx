@@ -8,6 +8,7 @@ import {
   campaignRows,
   earliestMetaTouchpoint,
   leadsPerWeek,
+  paidInRange,
   revenuePerCampaign,
   signupsPerCampaign,
   sourceRows,
@@ -40,6 +41,7 @@ import {
 import { PanelError } from "../../dashboard/panel-kit";
 import { LeadsOverTimePanel } from "./panels/leads-over-time";
 import { CampaignTable, SourceTable } from "./tables";
+import { campaignLabels } from "./panels/campaign-label";
 import { EfficiencyMapPanel } from "./panels/efficiency-map";
 import { FundingDonutsPanel } from "./panels/funding-donuts";
 import { PriceHrdcPanel } from "./panels/price-hrdc";
@@ -114,6 +116,7 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
     sources,
     weekly,
     paid,
+    paidTotal,
   ] = await Promise.all([
     panel("earliest touchpoint", () => earliestMetaTouchpoint(user)),
     panel("who pays", () => fundingSplit(user, query)),
@@ -130,6 +133,7 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
     panel("leads by source", () => sourceRows(user, query)),
     panel("leads per week", () => leadsPerWeek(user, query)),
     panel("revenue per campaign", () => revenuePerCampaign(user, query)),
+    panel("paid in range", () => paidInRange(user, query)),
   ]);
 
   // The cost side of the report, from `meta_ad_insight` (migration 014). The
@@ -141,18 +145,28 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
   // otherwise take down every panel on the screen, including the ones that
   // never touch spend. There is no error.tsx under (crm) to catch it.
   const adSpend: AdSpendRow[] = spend.ok ? spend.data : [];
+
+  // One name per campaign id for every panel and the table: what Meta calls
+  // it now, else the name a lead carried. The table used to show the lead's
+  // copy while the charts showed Meta's, so one campaign read as two
+  // (browser check, 11 Nov). Labels are made once over all of them, so a
+  // label two campaigns would share is told apart the same way everywhere.
+  const displayFor = new Map<string, string>();
+  for (const row of adSpend)
+    displayFor.set(row.campaignName, row.displayName ?? row.campaignName);
+  for (const s of signups.ok ? signups.data : [])
+    if (!displayFor.has(s.campaignId))
+      displayFor.set(s.campaignId, s.campaign ?? s.campaignId);
+  for (const r of campaigns.ok ? campaigns.data.rows : [])
+    if (r.campaignId && !displayFor.has(r.campaignId))
+      displayFor.set(r.campaignId, r.campaign ?? r.campaignId);
+  const named = (key: string) => displayFor.get(key) ?? key;
+  const labelFor = campaignLabels(displayFor);
+  const labelled = (key: string) => labelFor.get(key);
+
   const cost = (() => {
     try {
       const campaignSpend = byCampaign(adSpend, "ad");
-
-      const displayFor = new Map<string, string>();
-      for (const row of adSpend)
-        displayFor.set(row.campaignName, row.displayName ?? row.campaignName);
-      if (signups.ok)
-        for (const s of signups.data)
-          if (!displayFor.has(s.campaignId))
-            displayFor.set(s.campaignId, s.campaign ?? s.campaignId);
-      const named = (key: string) => displayFor.get(key) ?? key;
 
       // Revenue is SalesProcess and CRM payments credited to each buyer's
       // first campaign. Grant money is in neither, so `hrdc` is unknown
@@ -177,11 +191,11 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
 
       return {
         campaignSpend,
-        named,
         returns: roasRows(campaignSpend, campaignRevenue).map((r) => ({
           ...r,
           campaignId: r.campaign,
           campaign: named(r.campaign),
+          label: labelled(r.campaign),
         })),
         allSpend: sumMyr([...campaignSpend.values()].map((s) => s.spend)),
         // The id stays beside the display name: rows are keyed on it, since
@@ -190,16 +204,19 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
           ...r,
           campaignId: r.campaign,
           campaign: named(r.campaign),
+          label: labelled(r.campaign),
         })),
         conversionAds: rankAds(adSpend, "checkouts").map((r) => ({
           ...r,
           campaignId: r.campaign,
           campaign: named(r.campaign),
+          label: labelled(r.campaign),
         })),
         spendSplit: spendByObjective(adSpend, "ad").map((r) => ({
           ...r,
           campaignId: r.campaign,
           campaign: named(r.campaign),
+          label: labelled(r.campaign),
         })) as ObjectiveSplit[],
       };
     } catch (err) {
@@ -272,7 +289,11 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
                 { signups: s.signups, hrdcSignups: s.hrdcSignups },
               ]),
             ),
-          ).map((p) => ({ ...p, displayName: cost.named(p.campaign) }))}
+          ).map((p) => ({
+            ...p,
+            displayName: named(p.campaign),
+            label: labelled(p.campaign),
+          }))}
         />
       ) : (
         <PanelError what="spend against signups" />
@@ -288,6 +309,14 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
         <RoasPanel
           rows={cost.returns}
           allSpend={cost.allSpend}
+          paid={
+            paidTotal.ok
+              ? {
+                  total: paidTotal.data,
+                  credited: sumMyr(paid.data.map((p) => p.revenue)),
+                }
+              : null
+          }
           hrdcUnread={!signups.ok}
         />
       ) : (
@@ -357,7 +386,18 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
 
       {campaigns.ok ? (
         <CampaignTable
-          table={campaigns.data}
+          table={{
+            ...campaigns.data,
+            rows: campaigns.data.rows.map((r) =>
+              r.campaignId
+                ? {
+                    ...r,
+                    campaign: named(r.campaignId),
+                    label: labelled(r.campaignId),
+                  }
+                : r,
+            ),
+          }}
           spend={spend.ok && cost ? cost.campaignSpend : null}
         />
       ) : (

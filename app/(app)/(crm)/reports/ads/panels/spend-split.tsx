@@ -80,7 +80,7 @@ function Facet({
                   className="text-ink-muted w-52 shrink-0 truncate"
                   title={row.campaign}
                 >
-                  {campaignLabel(row.campaign)}
+                  {row.label ?? campaignLabel(row.campaign)}
                 </span>
                 <span className="flex min-w-0 flex-1 items-center gap-2">
                   <span

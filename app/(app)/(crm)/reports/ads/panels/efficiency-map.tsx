@@ -98,7 +98,7 @@ export function EfficiencyMapPanel({ points }: { points: EfficiencyPoint[] }) {
       r,
       cx,
       cy,
-      label: campaignLabel(p.displayName ?? p.campaign),
+      label: p.label ?? campaignLabel(p.displayName ?? p.campaign),
       // Where a label's text starts on the right, or ends on the left.
       labelAt: { right: cx + r + 4, left: cx - r - 4 },
     };
