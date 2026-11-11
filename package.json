@@ -21,6 +21,7 @@
     "events:drain": "node --env-file-if-exists=.env.local scripts/drain-outbox.ts",
     "ads:sync": "node --env-file-if-exists=.env.local scripts/sync-meta-ads.ts",
     "wati:ctwa": "node --env-file-if-exists=.env.local scripts/sync-wati-ctwa.ts",
+    "meta:capi": "node --env-file-if-exists=.env.local scripts/send-meta-capi.ts",
     "reservations:expire": "node --env-file-if-exists=.env.local scripts/expire-reservations.ts"
   },
   "dependencies": {
