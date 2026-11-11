@@ -7,6 +7,7 @@ import { after } from "node:test";
 import assert from "node:assert/strict";
 import { forbidden } from "../lib/api/errors.ts";
 import { permissionFor, type Viewer } from "../lib/auth/permissions.ts";
+import { mayUseEnquiries } from "../lib/enquiries/access.ts";
 import { listEnquiries } from "../lib/enquiries/list.ts";
 import {
   assignEnquiry,
@@ -189,7 +190,10 @@ it("past-SLA rows follow the setting, the wait and the reply", async () => {
 it("marketing is refused the queue with one audited denial", async () => {
   const marketing = await newUser("marketing");
   assert.equal(permissionFor(marketing, "enquiry", "read").allowed, false);
-  await assert.rejects(list(marketing, {}));
+  // Not in a team either (migration 019), so the route refuses them, and the
+  // list itself would show them nothing.
+  assert.equal(await mayUseEnquiries(marketing, "read"), false);
+  assert.equal((await list(marketing, {})).page.total, 0);
   const res = await forbidden(
     marketing,
     new Request("http://localhost/api/enquiries"),
@@ -271,10 +275,24 @@ it("setting a category is recorded with before and after", async () => {
   );
   assert.equal(result.kind, "ok");
   if (result.kind === "ok") assert.equal(result.enquiry.category, "hrdc");
+  // Since migration 019 the category also moves the enquiry to its team
+  // (HRDC is Sales'); the assignee stays, as the Sales team has no members
+  // here.
+  const [{ support: supportTeam, sales: salesTeam }] = await db()`
+    SELECT (SELECT id FROM team WHERE code = 'support') AS support,
+           (SELECT id FROM team WHERE code = 'sales') AS sales`;
   const audits = await auditRows(id);
   assert.equal(audits.length, 1);
-  assert.deepEqual(audits[0].before, { category: null });
-  assert.deepEqual(audits[0].after, { category: "hrdc" });
+  assert.deepEqual(audits[0].before, {
+    category: null,
+    team_id: supportTeam,
+    assigned_user_id: null,
+  });
+  assert.deepEqual(audits[0].after, {
+    category: "hrdc",
+    team_id: salesTeam,
+    assigned_user_id: null,
+  });
 });
 
 it("closing stores the note, stamps the time, and a second close is 422", async () => {
