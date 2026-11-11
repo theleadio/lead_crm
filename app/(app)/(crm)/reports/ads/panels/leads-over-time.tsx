@@ -29,8 +29,7 @@ export const CHANNEL_LABEL: Record<string, string> = {
   walk_in: "Walk-in",
   referral: "Referral",
   payment_link: "Payment link",
-  // The SalesProcess attribution import: where every Meta lead comes from
-  // until WhatsApp chats and Lead Ads forms reach the CRM directly.
+  // The SalesProcess attribution import.
   import: "SalesProcess",
 };
 
@@ -148,17 +147,11 @@ export function LeadsOverTimePanel({
   data,
   from,
   to,
-  chats,
 }: {
   data: AdsWeeks;
   // The report's range, so a week it cuts short is marked as one.
   from: string;
   to: string;
-  // Set when no lead in range came from a WhatsApp chat: the chats Meta
-  // counted are not in the CRM yet (they arrive with the WATI inbound), so
-  // the panel says how many are missing rather than let the totals be read
-  // against Meta's.
-  chats: { messages: number; onlyImported: boolean } | null;
 }) {
   const { channels, weeks, peak } = data;
   const daysOf = (weekStart: string) => daysInRange(weekStart, from, to);
@@ -180,16 +173,6 @@ export function LeadsOverTimePanel({
           on the same scale, so a tall column means the same number in each.
           {partWeeks &&
             " A paler column is a part week: the date range covers only the days written under it."}
-          {chats && (
-            <>
-              {" "}
-              WhatsApp chats started from ads are not recorded in the CRM yet,
-              so none are in these leads; Meta counted{" "}
-              {chats.messages.toLocaleString("en-MY")} in this range.
-              {chats.onlyImported &&
-                " Every lead here came through SalesProcess."}
-            </>
-          )}
         </>
       }
     >

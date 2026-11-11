@@ -115,6 +115,40 @@ function share(part: number, whole: number): string {
   return whole > 0 ? `${Math.round((part / whole) * 100)}%` : "—";
 }
 
+// How much of what was paid in range the bars hold, and why the rest has no
+// ratio. Shown with the bars, and on its own when there are none: an empty
+// panel with money paid is the case it explains best.
+function PaidNote({ revenue, paid }: { revenue: string; paid: PaidCoverage }) {
+  const uncredited = minus(paid.total, paid.credited);
+  const noSpend = Number(paid.credited) > Number(revenue);
+  return (
+    <>
+      {Number(revenue) > 0 ? (
+        <>
+          These bars hold {formatMoneyMyr(revenue)} of the{" "}
+          {formatMoneyMyr(paid.total)} paid in range.
+        </>
+      ) : (
+        <>{formatMoneyMyr(paid.total)} was paid in range.</>
+      )}{" "}
+      {Number(uncredited) > 0 && (
+        <>
+          {formatMoneyMyr(uncredited)} isn&apos;t credited to any Meta campaign
+          {noSpend ? ", and " : ". "}
+        </>
+      )}
+      {noSpend && (
+        <>
+          {formatMoneyMyr(minus(paid.credited, revenue))} is credited to
+          campaigns with no spend in range.{" "}
+        </>
+      )}
+      {Number(uncredited) > 0 && noSpend ? "Neither" : "That money"} can&apos;t
+      have a ratio, so a ratio here is not the return on everything paid.
+    </>
+  );
+}
+
 // What the bars cannot say: the total across them, and what the ratio leaves
 // out. Plain text, so it carries no colour of its own.
 function Notes({
@@ -150,18 +184,7 @@ function Notes({
       )}
       {paid && Number(paid.total) > Number(revenue) && (
         <li>
-          These bars hold {formatMoneyMyr(revenue)} of the{" "}
-          {formatMoneyMyr(paid.total)} paid in range.{" "}
-          {formatMoneyMyr(minus(paid.total, paid.credited))} came from buyers no
-          Meta campaign found first
-          {Number(paid.credited) > Number(revenue) && (
-            <>
-              , and {formatMoneyMyr(minus(paid.credited, revenue))} is credited
-              to campaigns with no spend in range
-            </>
-          )}
-          . Neither can have a ratio, so the ones above are not the return on
-          everything paid.
+          <PaidNote revenue={revenue} paid={paid} />
         </li>
       )}
       {hrdcUnread && (
@@ -213,6 +236,11 @@ export function RoasPanel({
             No campaign in this date range has both recorded spend and recorded
             revenue.
           </p>
+          {paid && Number(paid.total) > 0 && (
+            <p className="text-ink-muted mt-2 text-sm">
+              <PaidNote revenue="0" paid={paid} />
+            </p>
+          )}
         </div>
       ) : (
         <>

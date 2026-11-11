@@ -167,7 +167,14 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
     if (r.campaignId && !displayFor.has(r.campaignId))
       displayFor.set(r.campaignId, r.campaign ?? r.campaignId);
   const named = (key: string) => displayFor.get(key) ?? key;
-  const labelFor = campaignLabels(displayFor);
+  // Labels are cosmetic. There is no error.tsx under (crm), so a bad name
+  // here must not take the whole report down; each panel then cuts its own.
+  let labelFor = new Map<string, string>();
+  try {
+    labelFor = campaignLabels(displayFor);
+  } catch (err) {
+    console.error("[ads report] campaign labels failed", err);
+  }
   const labelled = (key: string) => labelFor.get(key);
 
   const cost = (() => {
@@ -247,28 +254,6 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
         : lmsFunding.ok && funding.ok
           ? { rows: funding.data, source: "deal" as const }
           : null;
-
-  // WhatsApp chats reach the CRM only once the WATI inbound lands. Until a
-  // lead in range has come from one, the leads panel says how many chats
-  // Meta counted, so its total is not read against Meta's as lost leads.
-  const leadChannels = sources.ok
-    ? sources.data.rows.flatMap((r) => r.byChannel.map((c) => c.channel))
-    : [];
-  const messages = adSpend
-    .filter((r) => r.adName !== null)
-    .reduce((n, r) => n + r.messages, 0);
-  const chatsNotRecorded =
-    sources.ok &&
-    spend.ok &&
-    messages > 0 &&
-    !leadChannels.some((c) => c === "ctwa" || c === "whatsapp")
-      ? {
-          messages,
-          onlyImported:
-            leadChannels.length > 0 &&
-            leadChannels.every((c) => c === "import"),
-        }
-      : null;
 
   // The scatter follows the same decision as the rings and bars, or the
   // screen would show deal seats beside LMS seats and no label saying so.
@@ -430,7 +415,6 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
           data={weekly.data}
           from={query.from}
           to={query.to}
-          chats={chatsNotRecorded}
         />
       ) : (
         <PanelError what="leads per week" />
