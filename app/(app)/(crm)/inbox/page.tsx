@@ -20,7 +20,9 @@ import {
   type InboxFilter,
   type InboxItem,
 } from "@/lib/inbox/service";
+import { watiFromEnv } from "@/lib/wati/send";
 import { enquiryLabel } from "../enquiries/queue-view";
+import { ReplyBox } from "./reply-box";
 import { ThreadActions } from "./thread-actions";
 
 // The inbox (migration 019, moved from lead_sales): conversations on the left,
@@ -313,12 +315,18 @@ async function Thread({ c }: { c: ConversationDetail }) {
           defaultSubject={firstLine}
         />
 
+        {c.channel === "whatsapp" &&
+          c.replyWindow === "open" &&
+          watiFromEnv() && <ReplyBox conversationId={c.id} />}
+
         <p className="text-ink-muted text-xs">
           {c.channel === "web_form"
             ? "Help-form messages can't be answered here yet: reply by email or phone until email replies are connected."
             : c.replyWindow === "closed"
               ? "The free-reply window has closed: WhatsApp needs an approved template to reply."
-              : "Replies are sent from here once this channel is connected."}
+              : c.channel === "whatsapp" && watiFromEnv()
+                ? "Replies go out on WhatsApp from here."
+                : "Replies are sent from here once this channel is connected."}
         </p>
       </div>
     </div>

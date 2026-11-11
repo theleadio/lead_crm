@@ -25,6 +25,7 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/016_salesprocess_payment.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/018_enquiry_resolution.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/019_enquiry_tickets.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/020_message_imported.sql
     psql -d <db> -f lib/db/tests/schema_constraints.sql
     psql -d <db> -f lib/db/tests/002_merge_erase_tests.sql
     psql -d <db> -f lib/db/tests/003_company_from_form_tests.sql
@@ -217,6 +218,10 @@ One support queue. The lead_sales ticket design (its `docs/specs/2026-11-04-inbo
 | `merge_person()`, `erase_person()`     | Re-created from 002's and 018's bodies with the lines marked `-- 019` added; privileges re-applied.                                                                                                                                                                                                                                                                               |
 
 Tested on PostgreSQL 16 after 001–016, 018 and 019, applied twice: `019_enquiry_tickets_tests.sql` 25 of 25; `schema_constraints.sql` 38, 002 42, 003 26, 005 9 and 018 9 still pass. `009_pre_freeze_tests.sql` still reports its one known failure, "24 tables".
+
+## Migration 020 — imported WhatsApp history (11 Nov)
+
+`conversation_message.imported`, boolean, default false: set by the WhatsApp history import (`npm run wati:history`, `lib/wati/history.ts`), which also stamps `created_at` with the message's own time. lead_sales' automations trigger "customer message received" skips imported rows, so copying old chats in never starts a flow. Moved from lead_sales (its PR #20) with the inbox.
 
 ## Where this is stricter or more specific than the spec
 
