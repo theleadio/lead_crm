@@ -3,6 +3,8 @@ import { writeAudit } from "../audit.ts";
 import { findDuplicate } from "../people/dedupe.ts";
 import { normalizePhoneE164 } from "../format/phone.ts";
 import { createEnquiry, followUpEnquiry } from "../enquiries/create.ts";
+import { afterHoursReply } from "./auto-reply.ts";
+import { watiFromEnv, type WatiOpts } from "./client.ts";
 import { suggestCategory } from "../enquiries/routing.ts";
 import { markFirstResponse } from "../enquiries/service.ts";
 import { raiseDuplicateTask } from "../people/duplicate-review.ts";
@@ -20,7 +22,9 @@ import { db, withTransaction } from "../sql.ts";
 //   sentMessageREAD(_v2),
 //   sessionMessageFailed,
 //   templateMessageFailed       moves our message's status on, never back
-// Everything else is recorded and ignored. Sending is lib/wati/send.ts.
+// Everything else is recorded and ignored. Sending is lib/wati/send.ts; a
+// customer message after hours gets one auto-reply per evening
+// (lib/wati/auto-reply.ts), sent once the event is saved.
 //
 // A free-text reply staff send from the WATI app (sessionMessageSent) counts
 // as the first response on the conversation's open enquiries, so their reply
@@ -223,7 +227,7 @@ function bodyOf(e: WatiEvent): string {
 async function saveMessage(
   e: WatiEvent,
   direction: "in" | "out",
-): Promise<string> {
+): Promise<{ conversationId: string; added: boolean }> {
   const sql = db();
   const e164 = e164Of(e);
   // Messages a second apart from a new number run in two transactions: the
@@ -263,7 +267,7 @@ async function saveMessage(
       openEnquiryIfNone(conv.id, personId, at, ad !== null, bodyOf(e)),
     );
   }
-  return conv.id as string;
+  return { conversationId: conv.id as string, added: Boolean(added) };
 }
 
 // Each in its own savepoint: saving the customer's message never depends on
@@ -473,19 +477,38 @@ async function adoptOurReply(e: WatiEvent): Promise<boolean> {
   return Boolean(row);
 }
 
-type Done = { kind: "saved" } | { kind: "ignored"; reason: string };
+type Done =
+  // `inbound`: a new customer message, for the after-hours reply.
+  | { kind: "saved"; inbound?: { conversationId: string; at: Date } }
+  | { kind: "ignored"; reason: string };
+
+// Whether the message an echo matched is one the system sent (the
+// after-hours reply): its echo is not staff answering.
+async function isAutomated(ids: string[]): Promise<boolean> {
+  const [m] = await db()`
+    SELECT 1 FROM conversation_message
+    WHERE channel = 'whatsapp' AND external_message_id = ANY(${ids})
+      AND automated
+    LIMIT 1`;
+  return Boolean(m);
+}
 
 async function dispatch(e: WatiEvent): Promise<Done> {
   const type = str(e.eventType) ?? "";
   if (INBOUND.has(type)) {
-    await saveMessage(e, "in");
-    return { kind: "saved" };
+    const m = await saveMessage(e, "in");
+    return {
+      kind: "saved",
+      inbound: m.added
+        ? { conversationId: m.conversationId, at: whenOf(e) }
+        : undefined,
+    };
   }
   if (ECHO.has(type)) {
     if (!(await moveStatus(idsOf(e), "sent")) && !(await adoptOurReply(e))) {
-      const conv = await saveMessage(e, "out");
-      if (isSession(type)) await markReplied(conv);
-    } else if (isSession(type)) {
+      const m = await saveMessage(e, "out");
+      if (isSession(type)) await markReplied(m.conversationId);
+    } else if (isSession(type) && !(await isAutomated(idsOf(e)))) {
       const conv = await threadOf(e);
       if (conv) await markReplied(conv);
     }
@@ -524,7 +547,12 @@ async function lease(key: string) {
     { id: string; attempts: number; payload: WatiEvent } | undefined;
 }
 
-export async function processWatiEvent(key: string): Promise<ProcessResult> {
+// `wati`: how to send the after-hours reply; from env by default, none
+// when WATI_API_HOST / WATI_API_TOKEN are not set.
+export async function processWatiEvent(
+  key: string,
+  opts: { wati?: WatiOpts; now?: Date } = {},
+): Promise<ProcessResult> {
   const row = await lease(key);
   if (!row) {
     const [e] = await db()`
@@ -544,6 +572,14 @@ export async function processWatiEvent(key: string): Promise<ProcessResult> {
           attempts = attempts + 1, payload = ${sql.json(kept(row.payload) as never)},
           updated_at = now()
       WHERE id = ${row.id}`;
+    // After the event is saved, outside its transaction (auto-reply.ts).
+    if (done.kind === "saved" && done.inbound)
+      await afterHoursReply(
+        "wati" in opts ? opts.wati : watiFromEnv(),
+        done.inbound.conversationId,
+        done.inbound.at,
+        opts.now,
+      );
     return done;
   } catch (err) {
     const attempts = row.attempts + 1;

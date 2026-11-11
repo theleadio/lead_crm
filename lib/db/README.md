@@ -26,6 +26,7 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/018_enquiry_resolution.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/019_enquiry_tickets.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/020_message_imported.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/021_after_hours_reply.sql
     psql -d <db> -f lib/db/tests/schema_constraints.sql
     psql -d <db> -f lib/db/tests/002_merge_erase_tests.sql
     psql -d <db> -f lib/db/tests/003_company_from_form_tests.sql
@@ -222,6 +223,10 @@ Tested on PostgreSQL 16 after 001–016, 018 and 019, applied twice: `019_enquir
 ## Migration 020 — imported WhatsApp history (11 Nov)
 
 `conversation_message.imported`, boolean, default false: set by the WhatsApp history import (`npm run wati:history`, `lib/wati/history.ts`), which also stamps `created_at` with the message's own time. lead_sales' automations trigger "customer message received" skips imported rows, so copying old chats in never starts a flow. Moved from lead_sales (its PR #20) with the inbox.
+
+## Migration 021 — WhatsApp after-hours reply (11 Nov)
+
+`conversation.after_hours_reply_until` (timestamptz): the opening time of the after-hours stretch a thread was last auto-answered in, so one stretch (closing to the next 08:30 working-day opening) gets one reply. `conversation_message.automated` (boolean, default false): sent by the system; WATI's echo of it is not counted as staff's first response. Used by `lib/wati/auto-reply.ts`. No backfill.
 
 ## Where this is stricter or more specific than the spec
 
