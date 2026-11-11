@@ -17,7 +17,7 @@ import { enrol, it, newClass, newCourse, pay } from "./seed.ts";
 after(closeDb);
 
 const CFG: CapiConfig = {
-  datasetId: "613351752149959",
+  datasetId: "dataset-test-1",
   token: "test-token",
   wabaId: "waba-1",
   testEventCode: "TEST123",
@@ -82,7 +82,7 @@ it("an opt-in is due once; after a send it is not due again", async () => {
 
   const { f, calls } = stub();
   assert.deepEqual(await sendConversions(due, CFG, f), { sent: 1, failed: 0 });
-  assert.equal(calls[0].url, "https://graph.facebook.com/v21.0/613351752149959/events");
+  assert.equal(calls[0].url, "https://graph.facebook.com/v21.0/dataset-test-1/events");
   assert.equal(calls[0].body.test_event_code, "TEST123");
   // No phone number anywhere in what Meta receives.
   assert.equal(JSON.stringify(calls[0].body).includes(n), false);
