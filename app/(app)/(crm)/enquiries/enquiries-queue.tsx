@@ -695,6 +695,7 @@ export function EnquiriesQueue({
               key={selectedRow.id}
               enquiry={selectedRow}
               closeHref={closeHref}
+              canConvert={rowActions(selectedRow, access).convert}
             />
           </div>
         )}

@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { writeAudit } from "../audit.ts";
 import { findDuplicate } from "../people/dedupe.ts";
 import { normalizePhoneE164 } from "../format/phone.ts";
+import { followUpEnquiry } from "../enquiries/create.ts";
 import { markFirstResponse } from "../enquiries/service.ts";
 import { raiseDuplicateTask } from "../people/duplicate-review.ts";
 import { dedupeCandidates } from "../people/service.ts";
@@ -24,6 +25,11 @@ import { db, withTransaction } from "../sql.ts";
 // as the first response on the conversation's open enquiries, so their reply
 // deadline stops (lib/enquiries/service.ts markFirstResponse). A template
 // does not: automations send those.
+//
+// A customer writing again on a thread whose latest enquiry is resolved or
+// closed, with none still open, gets a new enquiry linked to that one
+// (decided 4 Nov: the old one stays closed). A converted one is left alone:
+// that customer's next step is their deal.
 //
 // WATI documents no signature, so the URL carries a long random secret
 // (WATI_WEBHOOK_SECRET, ?token=…). The webhook records each event in
@@ -227,14 +233,33 @@ async function saveMessage(
       SET last_message_at = greatest(conversation.last_message_at, ${at}),
           last_inbound_at = greatest(conversation.last_inbound_at, ${inboundAt})
     RETURNING id`;
-  await sql`
+  const [added] = await sql`
     INSERT INTO conversation_message (conversation_id, person_id, channel, direction,
                                external_message_id, body, sent_at, status)
     VALUES (${conv.id}, ${personId}, 'whatsapp', ${direction},
             ${str(e.whatsappMessageId) ?? str(e.id)}, ${bodyOf(e)}, ${at},
             ${direction === "in" ? "received" : "sent"})
-    ON CONFLICT (channel, external_message_id) DO NOTHING`;
+    ON CONFLICT (channel, external_message_id) DO NOTHING
+    RETURNING id`;
+  if (added && direction === "in") await followUpIfClosed(conv.id, at);
   return conv.id as string;
+}
+
+async function followUpIfClosed(conversationId: string, at: Date) {
+  const [latest] = await db()`
+    SELECT id, status FROM enquiry
+    WHERE conversation_id = ${conversationId}
+    ORDER BY created_at DESC, id DESC
+    LIMIT 1`;
+  if (
+    latest &&
+    ["human_resolved", "ai_resolved", "closed"].includes(latest.status)
+  ) {
+    const r = await followUpEnquiry(latest.id as string, at);
+    // Only an unknown category can refuse it (switched off in Settings
+    // since); the message is saved either way and shows in the inbox.
+    if (r.kind !== "ok") console.error(`wati: follow-up not made: ${r.kind}`);
+  }
 }
 
 // Staff answered on this thread: the first reply on each open enquiry of

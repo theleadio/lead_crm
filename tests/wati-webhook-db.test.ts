@@ -477,3 +477,59 @@ it("a reply typed in the WATI app stops the reply deadline of the thread's open 
   });
   assert.ok(await firstResponse(), "a typed reply is");
 });
+
+it("a customer writing again after their enquiry was closed gets a linked follow-up; an open one gets none", async () => {
+  const wa = phone();
+  await handle(inbound(wa));
+  const [c] = await db()`
+    SELECT id, person_id FROM conversation
+    WHERE channel = 'whatsapp' AND external_thread_id = ${wa}`;
+  const made = await createEnquiry(
+    {
+      personId: c.person_id,
+      conversationId: c.id,
+      channel: "whatsapp",
+      category: "receipt",
+      subject: "Receipt please",
+    },
+    null,
+    new Set(),
+  );
+  assert.equal(made.kind, "ok");
+  if (made.kind !== "ok") return;
+  const count = async () =>
+    (
+      await db()`SELECT count(*)::int AS n FROM enquiry WHERE conversation_id = ${c.id}`
+    )[0].n;
+
+  // Still open: another message adds no enquiry.
+  await handle(inbound(wa, { whatsappMessageId: `wamid.${rnd()}`, text: "?" }));
+  assert.equal(await count(), 1);
+
+  await db()`
+    UPDATE enquiry SET status = 'human_resolved', closed_at = now(),
+                       resolution = 'Sent'
+    WHERE id = ${made.enquiry.id}`;
+  await handle(
+    inbound(wa, {
+      whatsappMessageId: `wamid.${rnd()}`,
+      text: "One more thing",
+    }),
+  );
+  assert.equal(await count(), 2);
+  const [next] = await db()`
+    SELECT previous_enquiry_id, category, subject, status FROM enquiry
+    WHERE conversation_id = ${c.id} AND id <> ${made.enquiry.id}`;
+  assert.deepEqual(
+    [next.previous_enquiry_id, next.category, next.subject, next.status],
+    [made.enquiry.id, "receipt", "Re: Receipt please", "open"],
+  );
+
+  // A redelivered event is not a new message: no third enquiry.
+  const last = inbound(wa, { whatsappMessageId: `wamid.${rnd()}` });
+  await db()`UPDATE enquiry SET status = 'closed', closed_at = now(), resolution = 'x'
+             WHERE conversation_id = ${c.id} AND status = 'open'`;
+  await handle(last);
+  await handle(last);
+  assert.equal(await count(), 3);
+});

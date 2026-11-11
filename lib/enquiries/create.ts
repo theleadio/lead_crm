@@ -177,12 +177,17 @@ export async function followUpEnquiry(
       field: "previousId",
       message: "That enquiry is still open",
     };
+  // A category switched off since falls back to `other`, which stays on.
+  const [active] = prev.category
+    ? await db()`
+        SELECT 1 FROM enquiry_category WHERE code = ${prev.category} AND active`
+    : [];
   return createEnquiry(
     {
       personId: prev.person_id,
       conversationId: prev.conversation_id,
       channel: prev.channel,
-      category: prev.category ?? "other",
+      category: active ? prev.category : "other",
       subject: prev.subject
         ? `Re: ${prev.subject}`.slice(0, 200)
         : `Follows ${prev.number}`,
