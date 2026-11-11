@@ -1,31 +1,9 @@
 import Link from "next/link";
-import {
-  CalendarClock,
-  ChevronRight,
-  CreditCard,
-  FileDown,
-  ListTodo,
-  Phone,
-  Send,
-  Users,
-  type LucideIcon,
-} from "lucide-react";
+import { ChevronRight, ListTodo } from "lucide-react";
 import { formatOverdue, formatTime } from "@/lib/format/date";
-import {
-  TASK_TYPE_LABELS,
-  type HomeTask,
-  type HomeTasks,
-} from "@/lib/home/types";
-
-const TASK_ICONS: Record<string, LucideIcon> = {
-  call: Phone,
-  follow_up: Send,
-  review_duplicate: Users,
-  match_payment: CreditCard,
-  hrdc_deadline: CalendarClock,
-  export_request: FileDown,
-  other: ListTodo,
-};
+import type { HomeTask, HomeTasks } from "@/lib/home/types";
+import { TASK_TYPE_LABELS } from "@/lib/tasks/labels";
+import { TASK_ICONS } from "../tasks/task-icons";
 
 // Spec §9.0: read-only. The ring is a status marker, not a checkbox —
 // completing a task is 9.14's job, and a dead control that looks live is

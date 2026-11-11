@@ -22,6 +22,7 @@ import { formatDate, formatLastActivity, formatTime } from "@/lib/format/date";
 import { formatMoneyMyr } from "@/lib/format/money";
 import { displayName } from "@/lib/people/types";
 import { NewDeal } from "../../deals/new-deal";
+import { AddTask } from "../../tasks/task-dialog";
 import { stageLabel } from "@/lib/deals/types";
 import type {
   ConsentState,
@@ -74,6 +75,7 @@ export function PersonDetailView({
   canMerge,
   canReview,
   canCreateDeal,
+  taskAccess,
 }: {
   id: string;
   canWrite: boolean;
@@ -85,6 +87,8 @@ export function PersonDetailView({
   canReview: boolean;
   // §9.2 quick action: the §6 deal row, not the person row.
   canCreateDeal: boolean;
+  // §9.14: who may add a task here, or null for no Add task (§6 task row).
+  taskAccess: { viewerId: string; assignedOnly: boolean } | null;
 }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
@@ -209,6 +213,13 @@ export function PersonDetailView({
               <NewDeal
                 pipeline="individual"
                 person={{ id: p.id, fullName: name }}
+              />
+            )}
+            {taskAccess && (
+              <AddTask
+                link={{ personId: p.id }}
+                viewerId={taskAccess.viewerId}
+                assignedOnly={taskAccess.assignedOnly}
               />
             )}
             {p.email && !p.email.includes("•") && (

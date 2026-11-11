@@ -15,6 +15,7 @@ import {
 import { statusMoves } from "@/lib/enrolments/status-rules";
 import { formatDate, formatDateRange, formatDateTime } from "@/lib/format/date";
 import { canRecordPayment } from "@/lib/payments/service";
+import { AddTask } from "../../tasks/task-dialog";
 import { CancelEnrolment } from "./cancel-enrolment";
 import { RecordPayment } from "./record-payment";
 import { StatusControl } from "./status-control";
@@ -67,7 +68,12 @@ export default async function EnrolmentDetailPage(
           button, which knows the real history; the class is one click away
           below, by its code. */}
       <BackLink href="/enrolments" label="Enrolments" />
-      <EnrolmentHeader enrolment={enrolment} canWrite={canWrite} />
+      <EnrolmentHeader
+        enrolment={enrolment}
+        canWrite={canWrite}
+        taskWrite={permissionFor(user, "task", "write")}
+        viewerId={user.id}
+      />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Panel title="Person and class">
@@ -305,9 +311,14 @@ export default async function EnrolmentDetailPage(
 function EnrolmentHeader({
   enrolment,
   canWrite,
+  taskWrite,
+  viewerId,
 }: {
   enrolment: EnrolmentDetail;
   canWrite: boolean;
+  // §9.14 Add task: the §6 task row, not the enrolment row.
+  taskWrite: { allowed: boolean; assignedOnly: boolean };
+  viewerId: string;
 }) {
   return (
     <DetailHeader
@@ -330,6 +341,15 @@ function EnrolmentHeader({
           </span>
           {!canWrite && <span>Read-only</span>}
         </>
+      }
+      actions={
+        taskWrite.allowed ? (
+          <AddTask
+            link={{ enrolmentId: enrolment.id }}
+            viewerId={viewerId}
+            assignedOnly={taskWrite.assignedOnly}
+          />
+        ) : undefined
       }
     />
   );
