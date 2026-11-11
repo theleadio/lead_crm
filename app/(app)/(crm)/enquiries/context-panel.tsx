@@ -248,16 +248,20 @@ export function ConvertControl({
           },
           body: JSON.stringify({ pipeline }),
         }).catch(() => null);
-        setBusy(false);
         const data = res ? await res.json().catch(() => null) : null;
         if (!res || !res.ok) {
+          setBusy(false);
           setMessage(
             data?.error?.message ??
               "Couldn't convert — check your connection and try again.",
           );
           return;
         }
-        router.push(`/deals/${data.dealId}`);
+        // Converted: stay busy while the deal page loads, so a second click
+        // can't send the old If-Match and report a conflict.
+        if (typeof data?.dealId === "string")
+          router.push(`/deals/${data.dealId}`);
+        else router.refresh();
       }}
     >
       {message && (

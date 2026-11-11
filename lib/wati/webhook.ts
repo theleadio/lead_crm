@@ -245,20 +245,38 @@ async function saveMessage(
   return conv.id as string;
 }
 
+// A follow-up only when the thread has no enquiry still being worked (an
+// older open one counts too), and only for a message sent after the latest
+// one was closed: a retried or late event from before the close is not the
+// customer writing again.
 async function followUpIfClosed(conversationId: string, at: Date) {
   const [latest] = await db()`
-    SELECT id, status FROM enquiry
-    WHERE conversation_id = ${conversationId}
-    ORDER BY created_at DESC, id DESC
+    SELECT e.id FROM enquiry e
+    WHERE e.conversation_id = ${conversationId}
+      AND e.status IN ('human_resolved', 'ai_resolved', 'closed')
+      AND e.closed_at < ${at}
+      AND NOT EXISTS (
+        SELECT 1 FROM enquiry o
+        WHERE o.conversation_id = ${conversationId}
+          AND o.status IN ('open', 'waiting_customer'))
+      AND e.created_at = (
+        SELECT max(created_at) FROM enquiry WHERE conversation_id = ${conversationId})
+    ORDER BY e.id DESC
     LIMIT 1`;
-  if (
-    latest &&
-    ["human_resolved", "ai_resolved", "closed"].includes(latest.status)
-  ) {
-    const r = await followUpEnquiry(latest.id as string, at);
-    // Only an unknown category can refuse it (switched off in Settings
-    // since); the message is saved either way and shows in the inbox.
+  if (!latest) return;
+  // In its own savepoint: saving the customer's message never depends on
+  // enquiry routing. A failure here is logged (no message text, no number)
+  // and the message still reaches the inbox, where staff can make the
+  // enquiry by hand.
+  try {
+    const r = await withTransaction(() =>
+      followUpEnquiry(latest.id as string, at, undefined, "whatsapp"),
+    );
     if (r.kind !== "ok") console.error(`wati: follow-up not made: ${r.kind}`);
+  } catch (e) {
+    console.error(
+      `wati: follow-up failed: ${e instanceof Error ? e.message : String(e)}`,
+    );
   }
 }
 

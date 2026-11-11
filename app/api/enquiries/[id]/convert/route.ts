@@ -61,9 +61,20 @@ export async function POST(
         "not_open",
         "This enquiry is already closed, so it can't become a deal. If the customer has written again, start a new enquiry.",
       );
-    case "invalid":
+    case "deal_refused":
       return apiError(422, "invalid", "Check the highlighted fields.", {
         fields: r.fields,
       });
+    case "person_gone":
+      return apiError(
+        422,
+        "person_gone",
+        "This enquiry's person was deleted or merged into another record, so no deal can be opened for them. Open the kept record and add the deal there.",
+      );
+    // Assign and category refusals: not reachable from a convert.
+    case "inactive_user":
+    case "not_in_team":
+    case "unknown_category":
+      return apiError(422, "invalid", "This enquiry can't be converted.");
   }
 }

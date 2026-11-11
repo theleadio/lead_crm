@@ -1,13 +1,9 @@
-import { writeAudit } from "../audit.ts";
 import { canWriteDeal, type Viewer } from "../auth/permissions.ts";
 import { createDeal } from "../deals/detail-service.ts";
 import type { Pipeline } from "../deals/types.ts";
 import { raiseEvent } from "../events/raise.ts";
-import { isUuid } from "../people/service.ts";
-import { db, withTransaction } from "../sql.ts";
-import { enquiryAccessSql, mayUseEnquiries } from "./access.ts";
-import { enquiryRow } from "./list.ts";
-import { enquiryEvent } from "./routing.ts";
+import { withTransaction } from "../sql.ts";
+import { writeEnquiry, type EnquiryWriteResult } from "./service.ts";
 import {
   isActiveStatus,
   type EnquiryRow,
@@ -16,10 +12,12 @@ import {
 
 // POST /api/enquiries/:id/convert — §9.13 "convert to deal": a deal for the
 // enquiry's person, opened in `new` through the same createDeal() as the New
-// deal control (owner: the person converting), the enquiry closed as
-// `converted` and linked to it (§5 CHECK), its history and audit rows, and
-// EnquiryConverted (§11.1), all in one transaction. Closing is final, as for
-// any close.
+// deal control (owner: the person converting), and the enquiry closed as
+// `converted` and linked to it (§5 CHECK) through the same writeEnquiry() as
+// every other close: lock, If-Match, history and audit rows. EnquiryConverted
+// (§11.1) is raised in the same transaction. Closing is final, as for any
+// close. createDeal() refuses before it writes anything, so a refusal leaves
+// nothing behind.
 
 export type ConvertInput = {
   pipeline: Pipeline;
@@ -28,20 +26,7 @@ export type ConvertInput = {
 
 export type ConvertResult =
   | { kind: "ok"; enquiry: EnquiryRow; dealId: string }
-  | { kind: "forbidden" }
-  | { kind: "not_found" }
-  | { kind: "stale" }
-  | { kind: "not_open"; status: EnquiryStatus }
-  | { kind: "invalid"; fields: Record<string, string> };
-
-// Thrown inside the transaction so a refused deal rolls everything back.
-class Refused extends Error {
-  readonly result: ConvertResult;
-  constructor(result: ConvertResult) {
-    super(result.kind);
-    this.result = result;
-  }
-}
+  | Exclude<EnquiryWriteResult, { kind: "ok" }>;
 
 export async function convertEnquiry(
   id: string,
@@ -49,23 +34,15 @@ export async function convertEnquiry(
   ifMatch: number,
   viewer: Viewer,
 ): Promise<ConvertResult> {
-  // Both: working the enquiry, and opening a deal (§6 deal write).
-  if (!canWriteDeal(viewer) || !(await mayUseEnquiries(viewer, "write")))
-    return { kind: "forbidden" };
-  if (!isUuid(id)) return { kind: "not_found" };
+  // Converting opens a deal: §6 deal write, as well as working the enquiry
+  // (which writeEnquiry checks).
+  if (!canWriteDeal(viewer)) return { kind: "forbidden" };
 
-  try {
-    return await withTransaction(async (): Promise<ConvertResult> => {
-      const sql = db();
-      const [before] = await sql`
-        SELECT e.* FROM enquiry e
-        WHERE e.id = ${id} AND ${enquiryAccessSql(sql, viewer, "write")}
-        FOR UPDATE`;
-      if (!before) return { kind: "not_found" };
-      if (Number(before.version) !== ifMatch) return { kind: "stale" };
-      if (!isActiveStatus(before.status as EnquiryStatus))
-        return { kind: "not_open", status: before.status as EnquiryStatus };
-
+  return withTransaction(async (): Promise<ConvertResult> => {
+    let dealId: string | null = null;
+    const r = await writeEnquiry(id, ifMatch, viewer, async (before) => {
+      const status = before.status as EnquiryStatus;
+      if (!isActiveStatus(status)) return { kind: "not_open", status };
       const made = await createDeal(
         {
           pipeline: input.pipeline,
@@ -75,40 +52,33 @@ export async function convertEnquiry(
         viewer,
       );
       if (made.kind === "invalid")
-        throw new Refused({ kind: "invalid", fields: made.fields });
-      if (made.kind !== "created") throw new Refused({ kind: made.kind });
-      const dealId = made.deal.id;
-
-      await sql`
-        UPDATE enquiry
-        SET status = 'converted', deal_id = ${dealId}, handled_by = 'user',
-            closed_at = now()
-        WHERE id = ${id} AND version = ${ifMatch}`;
-      await enquiryEvent(
-        id,
-        viewer.id,
-        "status",
-        { status: before.status },
-        { status: "converted", dealId },
-      );
-      await writeAudit({
-        userId: viewer.id,
-        action: "update",
-        entity: "enquiry",
-        entityId: id,
-        before: { status: before.status, deal_id: null },
-        after: { status: "converted", deal_id: dealId },
-      });
-      await raiseEvent(
-        "EnquiryConverted",
-        id,
-        { enquiryId: id, dealId },
-        viewer.id,
-      );
-      return { kind: "ok", enquiry: (await enquiryRow(id))!, dealId };
+        return { kind: "deal_refused", fields: made.fields };
+      if (made.kind === "not_found") return { kind: "person_gone" };
+      if (made.kind === "forbidden") return { kind: "forbidden" };
+      dealId = made.deal.id;
+      return {
+        set: { status: "converted", deal_id: dealId, handled_by: "user" },
+        closing: true,
+        event: {
+          kind: "status",
+          before: { status },
+          after: { status: "converted", dealId },
+        },
+      };
     });
-  } catch (e) {
-    if (e instanceof Refused) return e.result;
-    throw e;
-  }
+    if (r.kind !== "ok") {
+      // A deal opened but the enquiry not closed would be an orphan: undo
+      // both. writeEnquiry cannot get here today (the row is locked at the
+      // version checked); this keeps a future change from leaving one.
+      if (dealId) throw new Error("convert: enquiry not updated after deal");
+      return r;
+    }
+    await raiseEvent(
+      "EnquiryConverted",
+      id,
+      { enquiryId: id, dealId: dealId! },
+      viewer.id,
+    );
+    return { kind: "ok", enquiry: r.enquiry, dealId: dealId! };
+  });
 }

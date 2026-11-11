@@ -61,6 +61,15 @@ it("converting opens a deal for the person and closes the enquiry as converted",
     WHERE type = 'EnquiryConverted' AND aggregate_id = ${id}`;
   assert.deepEqual(ev.payload, { enquiryId: id, dealId: r.dealId });
   assert.equal(ev.aggregate_type, "enquiry");
+  // The same audit row as every other close (writeEnquiry).
+  const [audit] = await db()`
+    SELECT before, after FROM audit_log
+    WHERE entity = 'enquiry' AND entity_id = ${id} AND action = 'update'`;
+  assert.equal(audit.before.deal_id, null);
+  assert.equal(audit.after.deal_id, r.dealId);
+  assert.equal(audit.after.status, "converted");
+  assert.equal(audit.after.handled_by, "user");
+  assert.ok(audit.after.closed_at);
   const [hist] = await db()`
     SELECT after FROM enquiry_event WHERE enquiry_id = ${id} AND kind = 'status'`;
   assert.equal(hist.after.status, "converted");
@@ -122,8 +131,22 @@ it("a deal the deal rules refuse rolls the whole convert back", async () => {
     v,
     support,
   );
-  assert.equal(r.kind, "invalid");
+  assert.equal(r.kind, "deal_refused");
   const [e] =
     await db()`SELECT status, deal_id, version FROM enquiry WHERE id = ${id}`;
   assert.deepEqual([e.status, e.deal_id, Number(e.version)], ["open", null, v]);
+});
+
+it("a person deleted or merged away since is reported as such, and nothing changes", async () => {
+  const support = await newUser("support");
+  const id = await enquiry("other");
+  const kept = await newPerson("Kept record");
+  await db()`
+    UPDATE person SET merged_into_id = ${kept}
+    WHERE id = (SELECT person_id FROM enquiry WHERE id = ${id})`;
+  const v = await versionOf(id);
+  const r = await convertEnquiry(id, { pipeline: "individual" }, v, support);
+  assert.equal(r.kind, "person_gone");
+  const [e] = await db()`SELECT status, version FROM enquiry WHERE id = ${id}`;
+  assert.deepEqual([e.status, Number(e.version)], ["open", v]);
 });
