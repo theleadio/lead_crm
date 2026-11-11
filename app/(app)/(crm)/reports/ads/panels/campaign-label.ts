@@ -46,9 +46,9 @@ export function campaignLabel(name: string): string {
     : base;
 }
 
-// The month segment Meta names carry ("Oct2026"): what usually tells a rerun
+// The month segment Meta names carry ("Oct2026", "July2026"): what usually tells a rerun
 // from the original when both end on the same class.
-const MONTH = /^([a-z]{3})(\d{4})$/i;
+const MONTH = /^([a-z]{3,9})(\d{4})$/i;
 
 // One label per campaign id across the whole screen, so a campaign reads the
 // same in every panel and two campaigns never read as one (browser check,

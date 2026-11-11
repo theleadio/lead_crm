@@ -70,3 +70,20 @@ test("campaignLabels: names that differ only in case still clash", () => {
     "AI Engineering 17 18 Oct · Sales · …5678",
   );
 });
+
+test("campaignLabels: a month spelled out longer still counts (July2026)", () => {
+  const labels = campaignLabels(
+    new Map([
+      ["6983452496397", "LEAD | July2026 | Leads | AI Engineering Webinar"],
+      ["6944330008397", "Lead | June2026 | Leads | Ai Engineering Webinar"],
+    ]),
+  );
+  assert.equal(
+    labels.get("6983452496397"),
+    "AI Engineering Webinar · Leads · July 2026",
+  );
+  assert.equal(
+    labels.get("6944330008397"),
+    "Ai Engineering Webinar · Leads · June 2026",
+  );
+});
