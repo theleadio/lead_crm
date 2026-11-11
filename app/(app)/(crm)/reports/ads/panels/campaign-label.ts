@@ -48,38 +48,50 @@ export function campaignLabel(name: string): string {
 
 // The month segment Meta names carry ("Oct2026"): what usually tells a rerun
 // from the original when both end on the same class.
-const MONTH = /^[a-z]{3}\d{4}$/i;
+const MONTH = /^([a-z]{3})(\d{4})$/i;
 
 // One label per campaign id across the whole screen, so a campaign reads the
 // same in every panel and two campaigns never read as one (browser check,
-// 11 Nov: two "Claude ..." bars at 6.9× and 0.6×). A label two ids share gets
-// the campaign's month; one still shared after that (same month, or no month
-// in the name) gets the id's last four digits, the only part left that
-// differs.
+// 11 Nov: two "Claude ..." bars at 6.9× and 0.6×). Labels clash ignoring
+// case, since Meta names are retyped ("Ai" against "AI"). In a clash, a
+// campaign whose month no other in the clash shares gets the month; the rest
+// get the id's last four digits, the only part left that differs. A month
+// every one of them shares would only make the label longer.
 export function campaignLabels(
   nameById: Map<string, string>,
 ): Map<string, string> {
   const plain = new Map(
     [...nameById].map(([id, name]) => [id, campaignLabel(name)]),
   );
-  const clash = (labels: Map<string, string>, id: string) =>
-    [...labels].some(([other, l]) => other !== id && l === labels.get(id));
+  const groups = new Map<string, string[]>();
+  for (const [id, label] of plain) {
+    const key = label.toLowerCase();
+    groups.set(key, [...(groups.get(key) ?? []), id]);
+  }
+  const monthOf = (id: string) =>
+    nameById
+      .get(id)!
+      .split(SEPARATOR)
+      .map((p) => p.trim().match(MONTH))
+      .find(Boolean);
 
-  const dated = new Map(
-    [...plain].map(([id, label]) => {
-      if (!clash(plain, id)) return [id, label];
-      const month = nameById
-        .get(id)!
-        .split(SEPARATOR)
-        .map((p) => p.trim())
-        .find((p) => MONTH.test(p));
-      return [id, month ? `${label} · ${month}` : label];
-    }),
-  );
-  return new Map(
-    [...dated].map(([id, label]) => [
-      id,
-      clash(dated, id) ? `${label} · …${id.slice(-4)}` : label,
-    ]),
-  );
+  const out = new Map<string, string>();
+  for (const ids of groups.values()) {
+    if (ids.length === 1) {
+      out.set(ids[0], plain.get(ids[0])!);
+      continue;
+    }
+    const months = ids.map((id) => monthOf(id)?.[0].toLowerCase());
+    ids.forEach((id, i) => {
+      const m = monthOf(id);
+      const unique = m && months.filter((x) => x === months[i]).length === 1;
+      out.set(
+        id,
+        unique
+          ? `${plain.get(id)} · ${m[1]} ${m[2]}`
+          : `${plain.get(id)} · …${id.slice(-4)}`,
+      );
+    });
+  }
+  return out;
 }

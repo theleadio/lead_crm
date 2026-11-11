@@ -22,11 +22,11 @@ test("campaignLabels: a shared label gets each campaign's month", () => {
       ["222", "LEAD | Nov2026 | Sales | Claude Code KL"],
     ]),
   );
-  assert.equal(labels.get("111"), "Claude Code KL · Sales · Oct2026");
-  assert.equal(labels.get("222"), "Claude Code KL · Sales · Nov2026");
+  assert.equal(labels.get("111"), "Claude Code KL · Sales · Oct 2026");
+  assert.equal(labels.get("222"), "Claude Code KL · Sales · Nov 2026");
 });
 
-test("campaignLabels: same month, or no month, falls back to the id's last four", () => {
+test("campaignLabels: a month they share is left out; the id's last four tell them apart", () => {
   const labels = campaignLabels(
     new Map([
       ["120001111", "LEAD | Oct2026 | Sales | Claude Code KL"],
@@ -35,14 +35,8 @@ test("campaignLabels: same month, or no month, falls back to the id's last four"
       ["120004444", "Plain name"],
     ]),
   );
-  assert.equal(
-    labels.get("120001111"),
-    "Claude Code KL · Sales · Oct2026 · …1111",
-  );
-  assert.equal(
-    labels.get("120002222"),
-    "Claude Code KL · Sales · Oct2026 · …2222",
-  );
+  assert.equal(labels.get("120001111"), "Claude Code KL · Sales · …1111");
+  assert.equal(labels.get("120002222"), "Claude Code KL · Sales · …2222");
   assert.equal(labels.get("120003333"), "Plain name · …3333");
   assert.equal(labels.get("120004444"), "Plain name · …4444");
 });
@@ -55,5 +49,24 @@ test("campaignLabels: every label on the screen is distinct", () => {
       ["1003", "LEAD | Nov2026 | Sales | X"],
     ]),
   );
-  assert.equal(new Set(labels.values()).size, 3);
+  assert.equal(labels.get("1001"), "X · Sales · …1001");
+  assert.equal(labels.get("1002"), "X · Sales · …1002");
+  assert.equal(labels.get("1003"), "X · Sales · Nov 2026");
+});
+
+test("campaignLabels: names that differ only in case still clash", () => {
+  const labels = campaignLabels(
+    new Map([
+      ["90001234", "LEAD | Oct2026 | Sales | Ai Engineering 17 18 Oct"],
+      ["90005678", "LEAD | Oct2026 | Sales | AI Engineering 17 18 Oct"],
+    ]),
+  );
+  assert.equal(
+    labels.get("90001234"),
+    "Ai Engineering 17 18 Oct · Sales · …1234",
+  );
+  assert.equal(
+    labels.get("90005678"),
+    "AI Engineering 17 18 Oct · Sales · …5678",
+  );
 });
