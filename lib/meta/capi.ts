@@ -17,8 +17,13 @@ import { db } from "../sql.ts";
 // is sent, keyed `lead:<touchpoint id>` or `purchase:<order key>`: a re-run
 // sends nothing twice, and a failure is retried with the usual backoff. The
 // event_id is the same key, so Meta also drops a repeat on its side.
+// Test sends keep their own ledger (`meta_capi_test`), so a test run never
+// marks a conversion as sent for the live run that follows.
 
 export const SOURCE = "meta_capi";
+export const TEST_SOURCE = "meta_capi_test";
+export const ledgerOf = (cfg: Pick<CapiConfig, "testEventCode">) =>
+  cfg.testEventCode ? TEST_SOURCE : SOURCE;
 export const WINDOW_DAYS = 7;
 export const MAX_ATTEMPTS = 5;
 const BACKOFF_SECONDS = [300, 1800, 7200, 21600];
@@ -72,7 +77,10 @@ export function configFromEnv(
 }
 
 // Conversions in the window not yet sent (or due a retry).
-export async function dueConversions(now = new Date()): Promise<Conversion[]> {
+export async function dueConversions(
+  now = new Date(),
+  source: string = SOURCE,
+): Promise<Conversion[]> {
   const sql = db();
   const since = new Date(now.getTime() - WINDOW_DAYS * 86_400_000);
   const rows = await sql`
@@ -125,7 +133,7 @@ export async function dueConversions(now = new Date()): Promise<Conversion[]> {
     todo AS (SELECT * FROM leads UNION ALL SELECT * FROM purchases)
     SELECT t.* FROM todo t
     LEFT JOIN integration_event ie
-      ON ie.source = ${SOURCE} AND ie.external_event_id = t.key
+      ON ie.source = ${source} AND ie.external_event_id = t.key
     WHERE ie.id IS NULL
        OR (ie.status = 'failed' AND ie.attempts < ${MAX_ATTEMPTS}
            AND ie.next_attempt_at <= now())
@@ -152,11 +160,12 @@ export async function sendConversions(
 ): Promise<SendResult> {
   if (!list.length) return { sent: 0, failed: 0 };
   const sql = db();
+  const source = ledgerOf(cfg);
   const keys = list.map((c) => c.key);
   for (const c of list)
     await sql`
       INSERT INTO integration_event (source, external_event_id, payload)
-      VALUES (${SOURCE}, ${c.key},
+      VALUES (${source}, ${c.key},
               ${sql.json({ eventName: c.eventName, at: c.at.toISOString(), test: cfg.testEventCode !== null } as never)})
       ON CONFLICT (source, external_event_id) DO NOTHING`;
 
@@ -186,7 +195,7 @@ export async function sendConversions(
       UPDATE integration_event
       SET status = 'processed', processed_at = now(), error = NULL,
           attempts = attempts + 1, updated_at = now()
-      WHERE source = ${SOURCE} AND external_event_id = ANY(${keys})`;
+      WHERE source = ${source} AND external_event_id = ANY(${keys})`;
     return { sent: list.length, failed: 0 };
   }
   await sql`
@@ -196,6 +205,6 @@ export async function sendConversions(
         next_attempt_at = now() + make_interval(secs =>
           (${BACKOFF_SECONDS}::int[])[least(attempts + 1, ${BACKOFF_SECONDS.length})]),
         updated_at = now()
-    WHERE source = ${SOURCE} AND external_event_id = ANY(${keys})`;
+    WHERE source = ${source} AND external_event_id = ANY(${keys})`;
   return { sent: 0, failed: list.length, error };
 }

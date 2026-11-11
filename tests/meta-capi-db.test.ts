@@ -8,6 +8,7 @@ import {
   configFromEnv,
   dueConversions,
   sendConversions,
+  TEST_SOURCE,
   toMetaEvent,
   type CapiConfig,
 } from "../lib/meta/capi.ts";
@@ -86,7 +87,7 @@ it("an opt-in is due once; after a send it is not due again", async () => {
   assert.equal(calls[0].body.test_event_code, "TEST123");
   // No phone number anywhere in what Meta receives.
   assert.equal(JSON.stringify(calls[0].body).includes(n), false);
-  assert.equal((await mine("lead:")).some((c) => c.key === key), false);
+  assert.equal((await dueConversions(new Date(), TEST_SOURCE)).some((c) => c.key === key), false);
 });
 
 it("a later ad click by the same person is not a second opt-in", async () => {
@@ -133,7 +134,18 @@ it("a refused send is marked failed and waits before it is due again", async () 
   assert.match(r.error ?? "", /HTTP 400: Invalid parameter/);
   const [row] = await db()`
     SELECT status, attempts, next_attempt_at > now() AS waiting
-    FROM integration_event WHERE source = 'meta_capi' AND external_event_id = ${due[0].key}`;
+    FROM integration_event WHERE source = 'meta_capi_test' AND external_event_id = ${due[0].key}`;
   assert.deepEqual({ ...row }, { status: "failed", attempts: 1, waiting: true });
-  assert.equal((await mine("lead:")).some((c) => c.ctwaClid === `f-${n}`), false);
+  assert.equal((await dueConversions(new Date(), TEST_SOURCE)).some((c) => c.ctwaClid === `f-${n}`), false);
+});
+
+it("a test send does not count as sent for the live run", async () => {
+  const n = wa();
+  const clid = `t-${crypto.randomUUID()}`;
+  await saveCtwaTouch(n, "Ada", click(clid), hoursAgo(1));
+  const due = (await dueConversions(new Date(), TEST_SOURCE)).filter((c) => c.ctwaClid === clid);
+  const { f } = stub();
+  await sendConversions(due, CFG, f); // CFG carries a test code
+  assert.equal((await dueConversions(new Date(), TEST_SOURCE)).some((c) => c.ctwaClid === clid), false);
+  assert.equal((await mine("lead:")).some((c) => c.ctwaClid === clid), true);
 });
