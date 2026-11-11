@@ -2,11 +2,16 @@
 // lead_sales' PR #21). WATI is a fake fetch that records what it was asked;
 // each DB test is rolled back. The automation template sender stays in
 // lead_sales with its tests.
-import { after } from "node:test";
+import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { closeDb, db } from "../lib/sql.ts";
 import { createEnquiry } from "../lib/enquiries/create.ts";
-import { sendInboxReply } from "../lib/wati/send.ts";
+import {
+  recentTemplateNames,
+  sendInboxReply,
+  sendInboxTemplate,
+} from "../lib/wati/send.ts";
+import { parseParams } from "../app/(app)/(crm)/inbox/template-params.ts";
 import { it, newPerson, newUser } from "./seed.ts";
 
 after(closeDb);
@@ -158,4 +163,101 @@ it("someone who may not see the conversation gets not_found, and WATI is not cal
     "not_found",
   );
   assert.equal(calls.length, 0);
+});
+
+// ---- Templates from the inbox ------------------------------------------------
+
+it("a template goes out with our id as local_message_id, is saved as ours, and stops the deadline", async () => {
+  const u = await newUser("management");
+  const { conv, number, p } = await chat("30 hours");
+  const made = await createEnquiry(
+    {
+      personId: p,
+      conversationId: conv,
+      channel: "whatsapp",
+      category: "other",
+      subject: "Seats?",
+    },
+    u,
+    new Set(),
+  );
+  assert.equal(made.kind, "ok");
+  const { calls, o } = fake();
+  const r = await sendInboxTemplate(o, u, conv, " follow_up_en ", [
+    { name: "name", value: "Mei Ling" },
+  ]);
+  assert.deepEqual(r, { kind: "sent" });
+  assert.equal(
+    calls[0].url,
+    "https://live-mt-server.wati.io/api/ext/v3/messageTemplates/send",
+  );
+  const body = calls[0].body as {
+    template_name: string;
+    recipients: {
+      target: string;
+      local_message_id: string;
+      custom_params: unknown;
+    }[];
+  };
+  assert.equal(body.template_name, "follow_up_en");
+  assert.equal(body.recipients[0].target, number);
+  assert.deepEqual(body.recipients[0].custom_params, [
+    { name: "name", value: "Mei Ling" },
+  ]);
+  const [m] = await db()`
+    SELECT body, status, sent_by_user_id, external_message_id FROM conversation_message
+    WHERE conversation_id = ${conv}`;
+  assert.deepEqual(
+    [m.body, m.status, m.sent_by_user_id, m.external_message_id],
+    [
+      "[template follow_up_en]",
+      "sent",
+      u.id,
+      body.recipients[0].local_message_id,
+    ],
+  );
+  if (made.kind === "ok") {
+    const [e] = await db()`
+      SELECT first_response_at FROM enquiry WHERE id = ${made.enquiry.id}`;
+    assert.ok(e.first_response_at, "a template from staff is a reply");
+  }
+  assert.deepEqual(await recentTemplateNames(), [
+    "follow_up_en",
+    ...(await recentTemplateNames()).filter((n) => n !== "follow_up_en"),
+  ]);
+});
+
+it("a refused template is failed; no clear answer leaves it queued and says so; a bad name sends nothing", async () => {
+  const u = await newUser("management");
+  const { conv } = await chat(null);
+  assert.equal(
+    (await sendInboxTemplate(fake(400).o, u, conv, "nope", [])).kind,
+    "send_failed",
+  );
+  assert.equal(
+    (await sendInboxTemplate(fake(503).o, u, conv, "maybe", [])).kind,
+    "unknown",
+  );
+  const rows = await db()`
+    SELECT body, status FROM conversation_message
+    WHERE conversation_id = ${conv} ORDER BY created_at`;
+  assert.deepEqual(
+    rows.map((r) => [r.body, r.status]),
+    [
+      ["[template nope]", "failed"],
+      ["[template maybe]", "queued"],
+    ],
+  );
+  const f = fake();
+  const bad = await sendInboxTemplate(f.o, u, conv, "Not A Name!", []);
+  assert.equal(bad.kind, "invalid");
+  assert.equal(f.calls.length, 0);
+});
+
+test("template parameters: one name=value per line", () => {
+  assert.deepEqual(parseParams("name=Mei Ling\n\n course = AIM \nflag"), [
+    { name: "name", value: "Mei Ling" },
+    { name: "course", value: "AIM" },
+    { name: "flag", value: "" },
+  ]);
 });

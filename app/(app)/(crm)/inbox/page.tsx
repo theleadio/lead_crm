@@ -20,9 +20,10 @@ import {
   type InboxFilter,
   type InboxItem,
 } from "@/lib/inbox/service";
-import { watiFromEnv } from "@/lib/wati/send";
+import { recentTemplateNames, watiFromEnv } from "@/lib/wati/send";
 import { enquiryLabel } from "../enquiries/queue-view";
 import { ReplyBox } from "./reply-box";
+import { TemplateBox } from "./template-box";
 import { ThreadActions } from "./thread-actions";
 
 // The inbox (migration 019, moved from lead_sales): conversations on the left,
@@ -226,9 +227,11 @@ function ConversationList({
 }
 
 async function Thread({ c }: { c: ConversationDetail }) {
-  const [categories, agents] = await Promise.all([
+  const wati = c.channel === "whatsapp" && Boolean(watiFromEnv());
+  const [categories, agents, templates] = await Promise.all([
     listCategories(),
     inboxAgents(),
+    wati ? recentTemplateNames() : [],
   ]);
   const lastIn = [...c.messages].reverse().find((m) => m.direction === "in");
   const firstLine = (lastIn?.body ?? "").split(/\r?\n/)[0].trim().slice(0, 200);
@@ -315,15 +318,27 @@ async function Thread({ c }: { c: ConversationDetail }) {
           defaultSubject={firstLine}
         />
 
-        {c.channel === "whatsapp" &&
-          c.replyWindow === "open" &&
-          watiFromEnv() && <ReplyBox conversationId={c.id} />}
+        {wati && c.replyWindow === "open" && <ReplyBox conversationId={c.id} />}
+        {/* Any time on WhatsApp; the way to reply once the window has
+            closed. A name that is only the number greets as "there". */}
+        {wati && (
+          <TemplateBox
+            conversationId={c.id}
+            suggestions={templates}
+            greetingName={
+              /\p{L}/u.test(c.person.fullName) ? c.person.fullName : "there"
+            }
+            windowOpen={c.replyWindow === "open"}
+          />
+        )}
 
         <p className="text-ink-muted text-xs">
           {c.channel === "web_form"
             ? "Help-form messages can't be answered here yet: reply by email or phone until email replies are connected."
             : c.replyWindow === "closed"
-              ? "The free-reply window has closed: WhatsApp needs an approved template to reply."
+              ? wati
+                ? "The free-reply window has closed: reply with an approved WATI template."
+                : "The free-reply window has closed: WhatsApp needs an approved template to reply."
               : c.channel === "whatsapp" && watiFromEnv()
                 ? "Replies go out on WhatsApp from here."
                 : "Replies are sent from here once this channel is connected."}
