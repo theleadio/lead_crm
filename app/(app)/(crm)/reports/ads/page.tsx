@@ -11,6 +11,7 @@ import {
   revenuePerCampaign,
   signupsPerCampaign,
   sourceRows,
+  whatsappOptinRows,
 } from "@/lib/reports/ads";
 import {
   fundingBreakdowns,
@@ -39,7 +40,7 @@ import {
 // place. Imported where it lives rather than moved, so Home stays untouched.
 import { PanelError } from "../../dashboard/panel-kit";
 import { LeadsOverTimePanel } from "./panels/leads-over-time";
-import { CampaignTable, SourceTable } from "./tables";
+import { CampaignTable, SourceTable, WhatsappOptinTable } from "./tables";
 import { EfficiencyMapPanel } from "./panels/efficiency-map";
 import { FundingDonutsPanel } from "./panels/funding-donuts";
 import { PriceHrdcPanel } from "./panels/price-hrdc";
@@ -114,6 +115,7 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
     sources,
     weekly,
     paid,
+    optins,
   ] = await Promise.all([
     panel("earliest touchpoint", () => earliestMetaTouchpoint(user)),
     panel("who pays", () => fundingSplit(user, query)),
@@ -130,6 +132,7 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
     panel("leads by source", () => sourceRows(user, query)),
     panel("leads per week", () => leadsPerWeek(user, query)),
     panel("revenue per campaign", () => revenuePerCampaign(user, query)),
+    panel("whatsapp opt-ins", () => whatsappOptinRows(user, query)),
   ]);
 
   // The cost side of the report, from `meta_ad_insight` (migration 014). The
@@ -308,6 +311,12 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
           title="Top click-to-WhatsApp ads"
           waitingFor="a click-to-WhatsApp ad that started a conversation in this date range"
         />
+      )}
+
+      {optins.ok ? (
+        <WhatsappOptinTable table={optins.data} />
+      ) : (
+        <PanelError what="WhatsApp opt-ins" />
       )}
 
       {cost && cost.conversionAds.length > 0 ? (

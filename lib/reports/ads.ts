@@ -18,6 +18,7 @@ import {
   type AdsWeeks,
   type CampaignPaid,
   type CampaignSignups,
+  type WhatsappOptinRow,
 } from "./types.ts";
 
 // Service layer for the §9.18 ads report. Independent reads over
@@ -626,4 +627,88 @@ export async function signupsPerCampaign(
     signups: r.signups,
     hrdcSignups: r.hrdc_signups,
   }));
+}
+
+// WhatsApp opt-ins per click-to-WhatsApp ad, from the `ctwa` touchpoints
+// scripts/sync-wati-ctwa.ts writes. One opt-in per person: their first CTWA
+// touchpoint ever, counted when it falls in range and credited to that ad.
+// Ads that spent in range on conversations but won no opt-in are listed too,
+// with zero, because an ad that costs and brings nobody is the finding.
+export async function whatsappOptinRows(
+  viewer: Viewer,
+  q: AdsReportQuery,
+): Promise<AdsTable<WhatsappOptinRow>> {
+  requireReportReader(viewer);
+  const sql = db();
+  const from = sql`(${q.from}::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')`;
+  const to = sql`((${q.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')`;
+
+  const rows = await sql`
+    WITH ${campaignMapSql(sql)},
+    ctwa AS (
+      SELECT t.id, t.person_id, t.occurred_at, t.utm_ad_id AS ad_id,
+             ${campaignIdSql(sql)} AS campaign_id,
+             row_number() OVER (PARTITION BY t.person_id
+                                ORDER BY t.occurred_at, t.id) AS nth
+      FROM touchpoint t
+      JOIN person p ON p.id = t.person_id
+      ${campaignJoinSql(sql)}
+      WHERE t.channel = 'ctwa' AND ${livePersonSql(sql)}
+    ),
+    in_range AS (
+      SELECT c.*,
+             NOT EXISTS (SELECT 1 FROM touchpoint e
+                         WHERE e.person_id = c.person_id
+                           AND e.channel <> 'import'
+                           AND e.occurred_at < c.occurred_at) AS fresh
+      FROM ctwa c
+      WHERE c.occurred_at >= ${from} AND c.occurred_at < ${to}
+    ),
+    optins AS (
+      SELECT campaign_id, ad_id,
+             count(*) FILTER (WHERE nth = 1)::int AS optins,
+             count(*) FILTER (WHERE nth = 1 AND fresh)::int AS fresh,
+             count(DISTINCT person_id) FILTER (WHERE nth > 1)::int AS again
+      FROM in_range
+      GROUP BY campaign_id, ad_id
+    ),
+    spend AS (
+      SELECT ad_id, min(campaign_id) AS campaign_id, max(ad_name) AS ad_name,
+             sum(spend) AS spend, sum(messages)::int AS messages
+      FROM meta_ad_insight
+      WHERE day >= ${q.from}::date AND day <= ${q.to}::date AND currency = 'MYR'
+      GROUP BY ad_id
+    ),
+    joined AS (
+      SELECT coalesce(o.campaign_id, s.campaign_id) AS campaign_id,
+             coalesce(o.ad_id, s.ad_id) AS ad_id, s.ad_name,
+             coalesce(o.optins, 0) AS optins, coalesce(o.fresh, 0) AS fresh,
+             coalesce(o.again, 0) AS again, s.spend, s.messages
+      FROM optins o
+      FULL JOIN spend s ON s.ad_id = o.ad_id
+      WHERE o.ad_id IS NOT NULL OR o.optins IS NOT NULL OR s.messages > 0
+    )
+    SELECT j.*, cn.campaign_name AS campaign, j.spend::text AS spend_myr,
+           (count(*) OVER ())::int AS group_count,
+           (sum(j.optins) OVER ())::int AS total_optins
+    FROM joined j
+    LEFT JOIN campaign_name cn ON cn.campaign_id = j.campaign_id
+    ORDER BY j.optins DESC, j.spend DESC NULLS LAST, j.ad_id
+    LIMIT ${ROWS_SHOWN}`;
+
+  return {
+    rows: rows.map((r) => ({
+      campaignId: r.campaign_id,
+      campaign: r.campaign,
+      adId: r.ad_id,
+      adName: r.ad_name,
+      optins: r.optins,
+      fresh: r.fresh,
+      again: r.again,
+      spendMyr: r.spend_myr,
+      metaMessages: r.messages,
+    })),
+    total: rows[0]?.total_optins ?? 0,
+    dropped: Math.max(0, (rows[0]?.group_count ?? 0) - rows.length),
+  };
 }
