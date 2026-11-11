@@ -1,0 +1,54 @@
+# Retries WATI webhook events the webhook couldn't finish (database down, a
+# status that arrived before its message, …), after their wait:
+# scripts/wati-run.ts. Moved from lead_sales' schedule.yml (its PR #19) with
+# the inbox, migration 019.
+#
+# Every 5 minutes, GitHub's shortest schedule. GitHub may start a scheduled
+# run late or skip one when busy; nothing is lost, because each run picks up
+# everything still due. Started by hand: Actions > wati > Run workflow.
+#
+# Secrets (Settings > Secrets and variables > Actions): DATABASE_URL and
+# WATI_WEBHOOK_SECRET. Until both are set the job is skipped, not failed.
+#
+# Logs are public: the script prints counts only, and scripts/ci-errors.mjs
+# keeps an uncaught error to its message.
+name: wati
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run at a time: a slow run is never overlapped by the next.
+concurrency:
+  group: wati
+  cancel-in-progress: false
+
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      WATI_WEBHOOK_SECRET: ${{ secrets.WATI_WEBHOOK_SECRET }}
+    steps:
+      - name: Skip until configured
+        id: ready
+        run: |
+          if [ -n "$DATABASE_URL" ] && [ -n "$WATI_WEBHOOK_SECRET" ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "WATI secrets not set: skipped."
+          fi
+      - if: steps.ready.outputs.go == 'true'
+        uses: actions/checkout@v4
+      - if: steps.ready.outputs.go == 'true'
+        uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - if: steps.ready.outputs.go == 'true'
+        run: npm ci --ignore-scripts
+      - if: steps.ready.outputs.go == 'true'
+        run: node --import=./scripts/ci-errors.mjs scripts/wati-run.ts

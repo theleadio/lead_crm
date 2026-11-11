@@ -96,3 +96,23 @@ export type CampaignSignups = {
   signups: number;
   hrdcSignups: number;
 };
+
+// WhatsApp opt-ins per click-to-WhatsApp ad (scripts/sync-wati-ctwa.ts). An
+// opt-in is a person's first CTWA touchpoint, credited to that ad; `fresh`
+// are the opt-ins from people with no earlier contact (the SalesProcess
+// import rows don't count as contact). `again` is a person who opted in
+// before clicking another ad. Spend and Meta's own message count are the
+// ad's, in range, MYR only.
+export type WhatsappOptinRow = {
+  campaignId: string | null;
+  campaign: string | null;
+  adId: string | null;
+  adName: string | null;
+  // The screen's label for the campaign, as on AdsCampaignRow.
+  label?: string;
+  optins: number;
+  fresh: number;
+  again: number;
+  spendMyr: string | null;
+  metaMessages: number | null;
+};

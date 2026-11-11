@@ -309,7 +309,8 @@ test("nav: sidebar shows only areas the role can read (§9 Shell)", () => {
     assert.ok(!partTime.includes(hidden), hidden);
   // §9.7: every role reads courses, so the link is never hidden.
   for (const role of ROLES) assert.ok(nav(role).includes("Courses"), role);
-  assert.equal(nav("super_admin").length, 11);
+  // Inbox joined with migration 019.
+  assert.equal(nav("super_admin").length, 12);
   assert.ok(!nav("management").includes("Settings"));
 });
 

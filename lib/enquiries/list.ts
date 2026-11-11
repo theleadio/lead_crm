@@ -1,11 +1,17 @@
 import type postgres from "postgres";
-import { requirePermission, type Viewer } from "../auth/permissions.ts";
+import type { Viewer } from "../auth/permissions.ts";
 import { likeEscape, parsePersonQuery } from "../people/search.ts";
 import { displayName, type ListResponse } from "../people/types.ts";
 import { db } from "../sql.ts";
 import type { EnquiryListQuery } from "../validation/enquiry-query.ts";
+import { enquiryAccessSql } from "./access.ts";
 import { isPastSla, slaMinutes } from "./sla.ts";
-import type { EnquiryCategory, EnquiryRow, EnquiryStatus } from "./types.ts";
+import type {
+  EnquiryCategory,
+  EnquiryPriority,
+  EnquiryRow,
+  EnquiryStatus,
+} from "./types.ts";
 
 // GET /api/enquiries — the §9.13 queue. One waiting time, from the first
 // message or, without one, from when the enquiry was created, shared by the
@@ -34,21 +40,28 @@ export function orderSql(sql: postgres.Sql, sort: EnquiryListQuery["sort"]) {
   }
 }
 
-// Expects enquiry as `e` and person as `p`. The part_time narrowing is here,
-// in the WHERE clause, so it bounds the rows and the total alike and no
-// `filter[assignee]` can widen it (§6 "A").
+// Expects enquiry as `e` and person as `p`. Who may see what (the part_time
+// narrowing, the restricted Finance team, team membership; access.ts) is
+// here, in the WHERE clause, so it bounds the rows and the total alike and no
+// filter can widen it (§6 "A").
 export function whereSql(
   sql: postgres.Sql,
   q: EnquiryListQuery,
   viewer: Viewer,
-  assignedOnly: boolean,
 ) {
   const parts: Fragment[] = [
     sql`p.deleted_at IS NULL AND p.merged_into_id IS NULL`,
+    enquiryAccessSql(sql, viewer, "read"),
   ];
-  if (assignedOnly) parts.push(sql`e.assigned_user_id = ${viewer.id}`);
-  if (q.status !== "all") parts.push(sql`e.status = ${q.status}`);
+  if (q.status === "active")
+    parts.push(sql`e.status IN ('open', 'waiting_customer')`);
+  else if (q.status !== "all") parts.push(sql`e.status = ${q.status}`);
   if (q.category) parts.push(sql`e.category = ${q.category}`);
+  if (q.team) parts.push(sql`e.team_id = ${q.team}`);
+  if (q.myTeams)
+    parts.push(
+      sql`e.team_id IN (SELECT team_id FROM team_member WHERE user_id = ${viewer.id})`,
+    );
   if (q.channel) parts.push(sql`e.channel = ${q.channel}`);
   if (q.assignee === "unassigned") parts.push(sql`e.assigned_user_id IS NULL`);
   else if (q.assignee) parts.push(sql`e.assigned_user_id = ${q.assignee}`);
@@ -80,9 +93,13 @@ async function selectRows(
 ): Promise<EnquiryRow[]> {
   const [limit, rows] = await Promise.all([
     slaMinutes(sql),
-    sql`SELECT e.id, e.version, e.person_id, e.channel, e.category, e.status,
+    sql`SELECT e.id, e.version, e.number, e.subject, e.person_id, e.channel,
+               e.category, c.label_en AS category_label, e.team_id,
+               t.name AS team_name, e.priority, e.status,
                e.assigned_user_id, e.first_message_at, e.first_response_at,
-               e.deal_id,
+               e.deal_id, e.sla_due_at,
+               extract(epoch FROM coalesce(e.first_response_at, now()) - e.sla_due_at)
+                 AS over_due_seconds,
                -- The phone stands in for a missing name (§11.2) and is not
                -- returned on its own: displayName() decides what leaves.
                p.full_name, p.phone,
@@ -93,6 +110,8 @@ async function selectRows(
                  AS response_minutes
         FROM enquiry e
         JOIN person p ON p.id = e.person_id
+        JOIN team t ON t.id = e.team_id
+        LEFT JOIN enquiry_category c ON c.code = e.category
         LEFT JOIN app_user u ON u.id = e.assigned_user_id
         WHERE ${where}
         ${tail}`,
@@ -110,13 +129,21 @@ export function toEnquiryRow(
   const waited = Number(r.waited_minutes);
   const response =
     r.response_minutes == null ? null : Number(r.response_minutes);
+  const overDue =
+    r.over_due_seconds == null ? null : Number(r.over_due_seconds);
   return {
     id: r.id as string,
+    number: r.number as string,
+    subject: (r.subject as string | null) ?? null,
     version: Number(r.version),
     personId: r.person_id as string,
     personName: displayName(r.full_name as string, r.phone as string | null),
     channel: r.channel as string,
     category: (r.category as EnquiryCategory | null) ?? null,
+    categoryLabel: (r.category_label as string | null) ?? null,
+    teamId: r.team_id as string,
+    teamName: r.team_name as string,
+    priority: r.priority as EnquiryPriority,
     status,
     assignedUserId: (r.assigned_user_id as string | null) ?? null,
     assigneeName: (r.assignee_name as string | null) ?? null,
@@ -127,23 +154,31 @@ export function toEnquiryRow(
       ? new Date(r.first_response_at as string).toISOString()
       : null,
     waitedMinutes: Math.max(0, Math.floor(waited)),
+    slaDueAt: r.sla_due_at
+      ? new Date(r.sla_due_at as string).toISOString()
+      : null,
     pastSla: isPastSla(
-      { status, waitedMinutes: waited, responseMinutes: response },
+      {
+        status,
+        waitedMinutes: waited,
+        responseMinutes: response,
+        overDueSeconds: overDue,
+      },
       limit,
     ),
     dealId: (r.deal_id as string | null) ?? null,
   };
 }
 
-// §6 enquiry row: F R - R E R A. Marketing has none; part_time reads only
-// what is assigned to them.
+// §6 enquiry row: F R - R E R A, widened by team membership and narrowed by
+// restricted teams (access.ts). The route has checked mayUseEnquiries; a
+// viewer with neither a role nor a team simply sees no rows.
 export async function listEnquiries(
   q: EnquiryListQuery,
   viewer: Viewer,
 ): Promise<ListResponse<EnquiryRow>> {
-  const { assignedOnly } = requirePermission(viewer, "enquiry", "read");
   const sql = db();
-  const where = whereSql(sql, q, viewer, assignedOnly);
+  const where = whereSql(sql, q, viewer);
   const [[{ total }], data] = await Promise.all([
     sql`SELECT count(*)::int AS total
         FROM enquiry e JOIN person p ON p.id = e.person_id

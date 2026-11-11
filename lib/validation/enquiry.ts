@@ -1,10 +1,12 @@
 import { z } from "zod";
 import {
-  ENQUIRY_CATEGORIES,
+  ACTIVE_STATUSES,
+  CATEGORY_CODE,
   ENQUIRY_CLOSE_STATUSES,
+  ENQUIRY_PRIORITIES,
 } from "../enquiries/types.ts";
 
-// Body of PATCH /api/enquiries/:id (§7, §9.13). One route, three actions, each
+// Body of PATCH /api/enquiries/:id (§7, §9.13). One route, five actions, each
 // validated on its own (design: one PATCH with a discriminated body). Convert
 // is not here: it creates a deal and is its own route.
 
@@ -23,7 +25,18 @@ export const enquiryUpdateSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     action: z.literal("category"),
-    category: z.enum(ENQUIRY_CATEGORIES, "Pick a category from the list"),
+    // A code from enquiry_category; the service checks it is active.
+    category: z.string().regex(CATEGORY_CODE, "Pick a category from the list"),
+  }),
+  // Between the two working states only: closing has its own action, and
+  // closing is final.
+  z.object({
+    action: z.literal("status"),
+    status: z.enum(ACTIVE_STATUSES, "Pick open or waiting on the customer"),
+  }),
+  z.object({
+    action: z.literal("priority"),
+    priority: z.enum(ENQUIRY_PRIORITIES, "Pick low, normal or high"),
   }),
   // `ai_resolved` and `converted` are refused here outright: the first is
   // Shawn's side's to write, the second needs a deal (§5).
@@ -38,3 +51,34 @@ export const enquiryUpdateSchema = z.discriminatedUnion("action", [
   }),
 ]);
 export type EnquiryUpdate = z.output<typeof enquiryUpdateSchema>;
+
+// POST /api/enquiries/:id/notes. Internal: never sent to the customer.
+export const enquiryNoteSchema = z.object({
+  note: z
+    .string()
+    .trim()
+    .min(1, "Write the note first")
+    .max(5000, "Keep the note under 5,000 characters"),
+});
+
+// POST /api/enquiries: one made by hand (a call, a walk-in) for someone
+// already in the CRM.
+export const enquiryCreateSchema = z.object({
+  personId: uuid,
+  category: z.string().regex(CATEGORY_CODE, "Pick a category from the list"),
+  subject: z
+    .string()
+    .trim()
+    .min(1, "Add a subject")
+    .max(200, "Keep the subject under 200 characters"),
+  channel: z
+    .enum(["phone", "walk_in", "email", "whatsapp", "messenger", "instagram"])
+    .default("phone"),
+  priority: z.enum(ENQUIRY_PRIORITIES).default("normal"),
+  note: z
+    .string()
+    .trim()
+    .max(5000, "Keep the note under 5,000 characters")
+    .optional(),
+});
+export type EnquiryCreate = z.output<typeof enquiryCreateSchema>;

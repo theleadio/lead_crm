@@ -13,6 +13,7 @@ import type {
   AdsCampaignRow,
   AdsSourceRow,
   AdsTable,
+  WhatsappOptinRow,
 } from "@/lib/reports/types";
 import { campaignLabel } from "./panels/campaign-label";
 import { CHANNEL_LABEL } from "./panels/leads-over-time";
@@ -203,6 +204,97 @@ export function SourceTable({ table }: { table: AdsTable<AdsSourceRow> }) {
                   </TableCell>
                 </TableRow>
               ))
+            )}
+          </TableBody>
+        </Table>
+      </TableCard>
+      <Dropped table={table} />
+    </PanelCard>
+  );
+}
+
+const OPTIN_COLUMNS = 7;
+
+const dash = <span className="text-ink-muted">—</span>;
+
+// WhatsApp opt-ins per click-to-WhatsApp ad, from WATI (sync-wati-ctwa). An
+// opt-in is a person's first message from an ad; Meta's own message count
+// sits beside it so the two can be compared.
+export function WhatsappOptinTable({
+  table,
+}: {
+  table: AdsTable<WhatsappOptinRow>;
+}) {
+  return (
+    <PanelCard
+      eyebrow="WHATSAPP"
+      title={
+        <>
+          WhatsApp opt-ins by ad{" "}
+          <span className="text-ink-muted font-normal">
+            ({table.total} {table.total === 1 ? "opt-in" : "opt-ins"})
+          </span>
+        </>
+      }
+      description={
+        <>
+          From WATI: one opt-in per person, their first WhatsApp message that
+          came from a Meta ad, credited to that ad. New are people we had no
+          earlier contact with. Again is someone who opted in before and came
+          back through this ad. Meta messages is Meta&apos;s own count of
+          conversations the ad started. Ads that spent on conversations and won
+          no opt-in are listed at zero.
+        </>
+      }
+    >
+      <TableCard>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Ad</TableHead>
+              <TableHead>Opt-ins</TableHead>
+              <TableHead>New</TableHead>
+              <TableHead>Again</TableHead>
+              <TableHead>Meta messages</TableHead>
+              <TableHead>Spend</TableHead>
+              <TableHead>Cost per opt-in</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {table.rows.length === 0 ? (
+              <EmptyRow columns={OPTIN_COLUMNS}>
+                No WhatsApp opt-ins from ads were recorded in this date range.
+              </EmptyRow>
+            ) : (
+              table.rows.map((row) => {
+                const per = row.spendMyr
+                  ? costPer(row.spendMyr, row.optins)
+                  : null;
+                return (
+                  <TableRow
+                    key={`${row.campaignId ?? ""}:${row.adId ?? "__none__"}`}
+                  >
+                    <TableCell title={row.campaign ?? undefined}>
+                      <div>
+                        {row.adName ?? row.adId ?? <Missing what="ad" />}
+                      </div>
+                      <div className="text-ink-muted text-xs">
+                        {row.campaign
+                          ? (row.label ?? campaignLabel(row.campaign))
+                          : "No campaign"}
+                      </div>
+                    </TableCell>
+                    <TableCell>{row.optins}</TableCell>
+                    <TableCell>{row.fresh}</TableCell>
+                    <TableCell>{row.again}</TableCell>
+                    <TableCell>{row.metaMessages ?? dash}</TableCell>
+                    <TableCell>
+                      {row.spendMyr ? formatMoneyMyr(row.spendMyr) : dash}
+                    </TableCell>
+                    <TableCell>{per ? formatMoneyMyr(per) : dash}</TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>
