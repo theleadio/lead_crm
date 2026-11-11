@@ -134,8 +134,8 @@ export function FundingDonutsPanel({
           {source === "lms"
             ? " Funding is read from the LMS, the only place that records it today."
             : " Funding is what the deal records."}{" "}
-          Programme length stands in for the price tier, because no price is
-          recorded against a course.
+          The tiers group programmes by length; each programme&apos;s list price
+          is under Figures in the next panel.
         </>
       }
     >
