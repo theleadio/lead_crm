@@ -1,6 +1,6 @@
 import { z } from "zod";
 import {
-  ENQUIRY_CATEGORIES,
+  CATEGORY_CODE,
   ENQUIRY_CHANNELS,
   ENQUIRY_STATUSES,
 } from "../enquiries/types.ts";
@@ -27,9 +27,16 @@ export const ENQUIRY_SORTS = [
 
 export const enquiryListQuerySchema = z.object({
   q: z.string().trim().max(200).optional(),
-  // No status means `open` (§9.13 default); `all` lifts that.
-  status: z.enum([...ENQUIRY_STATUSES, "all"]).default("open"),
-  category: z.enum(ENQUIRY_CATEGORIES).optional(),
+  // No status means `active`: open or waiting on the customer, the §9.13
+  // default once `waiting_customer` exists (019). `all` lifts it.
+  status: z.enum([...ENQUIRY_STATUSES, "active", "all"]).default("active"),
+  category: z.string().regex(CATEGORY_CODE).optional(),
+  team: uuid.optional(),
+  // Only the teams the viewer is in.
+  myTeams: z
+    .enum(["true", "false"])
+    .transform((v) => v === "true")
+    .optional(),
   channel: z.enum(ENQUIRY_CHANNELS).optional(),
   assignee: z.union([uuid, z.literal("unassigned")]).optional(),
   mine: z
@@ -49,6 +56,8 @@ export function readEnquiryParams(sp: URLSearchParams) {
     q: sp.get("q") ?? undefined,
     status: sp.get("filter[status]") ?? undefined,
     category: sp.get("filter[category]") ?? undefined,
+    team: sp.get("filter[team]") ?? undefined,
+    myTeams: sp.get("filter[myTeams]") ?? undefined,
     channel: sp.get("filter[channel]") ?? undefined,
     assignee: sp.get("filter[assignee]") ?? undefined,
     mine: sp.get("filter[mine]") ?? undefined,

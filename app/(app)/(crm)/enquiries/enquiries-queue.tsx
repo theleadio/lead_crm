@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
@@ -25,8 +26,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import type { CategoryOption } from "@/lib/enquiries/routing";
 import {
-  ENQUIRY_CATEGORIES,
   ENQUIRY_CHANNELS,
   ENQUIRY_STATUSES,
   ENQUIRY_STATUS_BADGE,
@@ -36,7 +37,7 @@ import { formatDateTime } from "@/lib/format/date";
 import type { ListResponse, OwnerOption } from "@/lib/people/types";
 
 // FilterSelect's look, for the selects it cannot be: the status filter (no
-// value means open, not all) and the row actions.
+// value means open or waiting, not all) and the row actions.
 const SELECT_CLASS =
   "border-line-strong bg-surface-sunken text-ink focus-visible:outline-focus-ring h-8 max-w-60 truncate rounded-sm border px-2.5 text-[13px] focus-visible:outline-2 focus-visible:outline-offset-2";
 import { ContextPanel } from "./context-panel";
@@ -44,6 +45,7 @@ import {
   PAST_SLA_MARKER,
   enquiryLabel,
   isFiltered,
+  mayWriteAny,
   queueCells,
   queueParams,
   rowActions,
@@ -63,13 +65,19 @@ type Body =
   | { action: "category"; category: string }
   | { action: "close"; status: string; note: string };
 
-// Spec §9.13 Enquiries queue: open, oldest first; filters, sort and paging in
-// the URL; three actions per row; the person beside the selected row.
+// Spec §9.13 Enquiries queue: open or waiting, oldest first; filters, sort
+// and paging in the URL; three actions per row; the person beside the
+// selected row. Since migration 019 it is also the ticket queue: teams,
+// categories from Settings, a next-working-day deadline.
 export function EnquiriesQueue({
   initial,
   initialView,
   access,
   users,
+  categories,
+  teams,
+  canCreate,
+  canEditSettings,
 }: {
   initial: ListResponse<EnquiryRow>;
   initialView: QueueView;
@@ -77,6 +85,10 @@ export function EnquiriesQueue({
   // Active users, for the assignee filter and the assign picker. Empty for a
   // part-timer, whose queue is only ever their own.
   users: OwnerOption[];
+  categories: CategoryOption[];
+  teams: { id: string; name: string }[];
+  canCreate: boolean;
+  canEditSettings: boolean;
 }) {
   const [view, setView] = useState(initialView);
   const [search, setSearch] = useState(initialView.q);
@@ -170,7 +182,8 @@ export function EnquiriesQueue({
   const rows = state.status === "ready" ? state.result.data : [];
   const result = state.status === "ready" ? state.result : null;
   const selectedRow = rows.find((r) => r.id === selected) ?? null;
-  const showActions = access.canWrite;
+  const showActions = mayWriteAny(access);
+  const activeCategories = categories.filter((c) => c.active);
 
   // Under 1536px the panel sits below the table, out of sight: bring it in.
   const panelRef = useRef<HTMLDivElement>(null);
@@ -181,7 +194,7 @@ export function EnquiriesQueue({
   // Filtered to one status, every badge would say the same word the filter
   // already says.
   const showStatus = view.status === "all";
-  const columns = 7 + (showStatus ? 1 : 0) + (showActions ? 1 : 0);
+  const columns = 8 + (showStatus ? 1 : 0) + (showActions ? 1 : 0);
 
   async function save(
     row: EnquiryRow,
@@ -269,7 +282,18 @@ export function EnquiriesQueue({
 
   return (
     <div className="space-y-4">
-      <ListHeader title="Enquiries" />
+      <ListHeader title="Enquiries">
+        {canEditSettings && (
+          <Button asChild variant="outline">
+            <Link href="/settings/enquiries">Teams and categories</Link>
+          </Button>
+        )}
+        {canCreate && (
+          <Button asChild>
+            <Link href="/enquiries/new">New enquiry</Link>
+          </Button>
+        )}
+      </ListHeader>
 
       <FilterRow>
         <Input
@@ -279,13 +303,15 @@ export function EnquiriesQueue({
           onChange={(e) => setSearch(e.target.value)}
           className="h-9 w-56"
         />
-        {/* Not a FilterSelect: no status means open here, not all. */}
+        {/* Not a FilterSelect: no status means open or waiting here, not
+            all. */}
         <select
           aria-label="Status"
           value={view.status}
           onChange={(e) => update({ status: e.target.value })}
           className={SELECT_CLASS}
         >
+          <option value="active">Status: {enquiryLabel("active")}</option>
           {ENQUIRY_STATUSES.map((s) => (
             <option key={s} value={s}>
               Status: {enquiryLabel(s)}
@@ -297,7 +323,13 @@ export function EnquiriesQueue({
           label="Category"
           value={view.category}
           onChange={(category) => update({ category })}
-          options={ENQUIRY_CATEGORIES.map((c) => [c, enquiryLabel(c)])}
+          options={categories.map((c) => [c.code, c.label])}
+        />
+        <FilterSelect
+          label="Team"
+          value={view.team}
+          onChange={(team) => update({ team })}
+          options={teams.map((t) => [t.id, t.name])}
         />
         <FilterSelect
           label="Channel"
@@ -324,6 +356,15 @@ export function EnquiriesQueue({
             onClick={() => update({ mine: !view.mine })}
           >
             Only mine
+          </Button>
+        )}
+        {access.teamIds.length > 0 && (
+          <Button
+            variant={view.myTeams ? "default" : "outline"}
+            aria-pressed={view.myTeams}
+            onClick={() => update({ myTeams: !view.myTeams })}
+          >
+            My teams
           </Button>
         )}
       </FilterRow>
@@ -353,6 +394,7 @@ export function EnquiriesQueue({
                   <TableHead>Person</TableHead>
                   <TableHead>Channel</TableHead>
                   <TableHead>Category</TableHead>
+                  <TableHead>Team</TableHead>
                   {showStatus && sortHead("Status", "status")}
                   <TableHead>Assigned</TableHead>
                   {sortHead("First message", "firstMessage")}
@@ -376,8 +418,10 @@ export function EnquiriesQueue({
                           setSearch("");
                           update({
                             q: "",
-                            status: "open",
+                            status: "active",
                             category: "",
+                            team: "",
+                            myTeams: false,
                             channel: "",
                             assignee: "",
                             mine: false,
@@ -389,9 +433,10 @@ export function EnquiriesQueue({
                     </EmptyRow>
                   ) : (
                     <EmptyRow columns={columns}>
-                      This is the support queue: every WhatsApp enquiry waiting
-                      for a reply, oldest first. Enquiries arrive here from the
-                      WhatsApp intake — there are none open right now.
+                      This is the support queue: every enquiry waiting for a
+                      reply, oldest first. They arrive from the help form, from
+                      the inbox, or are added by hand — there are none open
+                      right now.
                     </EmptyRow>
                   ))}
                 {rows.map((row) => {
@@ -442,6 +487,17 @@ export function EnquiriesQueue({
                         >
                           {cells[0]}
                         </a>
+                        {/* The reference and subject, under the name: one
+                            line each, so the row stays scannable. */}
+                        <div className="text-ink-muted max-w-56 truncate text-xs font-normal">
+                          <Link
+                            href={`/enquiries/${row.id}`}
+                            className="hover:text-blue-ink focus-visible:outline-focus-ring rounded-sm focus-visible:outline-2"
+                          >
+                            {row.number}
+                          </Link>
+                          {row.subject ? ` · ${row.subject}` : ""}
+                        </div>
                       </TableCell>
                       <TableCell className="text-ink-muted">
                         {cells[1]}
@@ -468,7 +524,7 @@ export function EnquiriesQueue({
                                   category: e.target.value,
                                 },
                                 (u) =>
-                                  `Category set to ${enquiryLabel(u.category ?? "")}.`,
+                                  `Category set to ${u.categoryLabel ?? enquiryLabel(u.category ?? "")}, team ${u.teamName}.`,
                               )
                             }
                             className={`${SELECT_CLASS} w-32`}
@@ -476,9 +532,17 @@ export function EnquiriesQueue({
                             <option value="" disabled>
                               Set category
                             </option>
-                            {ENQUIRY_CATEGORIES.map((c) => (
-                              <option key={c} value={c}>
-                                {enquiryLabel(c)}
+                            {/* A switched-off category still on this row has
+                                to show as chosen. */}
+                            {row.category &&
+                              !activeCategories.some(
+                                (c) => c.code === row.category,
+                              ) && (
+                                <option value={row.category}>{cells[2]}</option>
+                              )}
+                            {activeCategories.map((c) => (
+                              <option key={c.code} value={c.code}>
+                                {c.label}
                               </option>
                             ))}
                           </select>
@@ -486,10 +550,13 @@ export function EnquiriesQueue({
                           cells[2]
                         )}
                       </TableCell>
+                      <TableCell className="text-ink-muted">
+                        {cells[3]}
+                      </TableCell>
                       {showStatus && (
                         <TableCell>
                           <Badge variant={ENQUIRY_STATUS_BADGE[row.status]}>
-                            {cells[3]}
+                            {cells[4]}
                           </Badge>
                         </TableCell>
                       )}
@@ -529,11 +596,11 @@ export function EnquiriesQueue({
                             ))}
                           </select>
                         ) : (
-                          cells[4]
+                          cells[5]
                         )}
                       </TableCell>
                       <TableCell className="text-ink-muted whitespace-nowrap">
-                        {cells[5]}
+                        {cells[6]}
                       </TableCell>
                       <TableCell
                         className="text-ink-muted whitespace-nowrap"
@@ -543,14 +610,14 @@ export function EnquiriesQueue({
                             : undefined
                         }
                       >
-                        {cells[6]}
+                        {cells[7]}
                       </TableCell>
                       <TableCell
                         className={`whitespace-nowrap ${
                           row.pastSla ? "text-destructive font-semibold" : ""
                         }`}
                       >
-                        {cells[7]}
+                        {cells[8]}
                         {/* Under the age, not beside it: on one line the
                             row is wider than the 1280px table (§14). */}
                         {row.pastSla && (
@@ -640,7 +707,8 @@ export function EnquiriesQueue({
         body={
           <p>
             Closing {closing?.personName}&apos;s enquiry takes it out of the
-            open queue for good — there is no reopen. Say what the outcome was.
+            queue for good — there is no reopen; if they write again, that is a
+            new enquiry. Say what the outcome was.
           </p>
         }
         confirmLabel="Close enquiry"

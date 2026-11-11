@@ -27,19 +27,29 @@ import {
 const ME = "00000000-0000-4000-8000-000000000001";
 const OTHER = "00000000-0000-4000-8000-000000000002";
 
+const SUPPORT_TEAM = "00000000-0000-4000-8000-0000000000t1";
+const FINANCE_TEAM = "00000000-0000-4000-8000-0000000000t2";
+
 const row = (over: Partial<EnquiryRow> = {}): EnquiryRow => ({
   id: "00000000-0000-4000-8000-0000000000e1",
+  number: "E-000001",
+  subject: null,
   version: 1,
   personId: "00000000-0000-4000-8000-0000000000p1",
   personName: "Tan Mei Ling",
   channel: "whatsapp",
   category: null,
+  categoryLabel: null,
+  teamId: SUPPORT_TEAM,
+  teamName: "Support",
+  priority: "normal",
   status: "open",
   assignedUserId: null,
   assigneeName: null,
   firstMessageAt: null,
   firstResponseAt: null,
   waitedMinutes: 5,
+  slaDueAt: null,
   pastSla: false,
   dealId: null,
   ...over,
@@ -48,11 +58,12 @@ const row = (over: Partial<EnquiryRow> = {}): EnquiryRow => ({
 const dir = "app/(app)/(crm)/enquiries";
 const source = (file: string) => readFileSync(`${dir}/${file}`, "utf8");
 
-test("the eight §9.13 columns, in order", () => {
+test("the eight §9.13 columns, in order, plus Team (migration 019)", () => {
   assert.deepEqual(QUEUE_COLUMNS, [
     "Person",
     "Channel",
     "Category",
+    "Team",
     "Status",
     "Assigned",
     "First message",
@@ -64,11 +75,22 @@ test("the eight §9.13 columns, in order", () => {
 
 test("no first message and no reply read as dashes, not invented times", () => {
   const cells = queueCells(row());
-  assert.equal(cells[5], DASH);
   assert.equal(cells[6], DASH);
+  assert.equal(cells[7], DASH);
   // Unset category and assignee too.
   assert.equal(cells[2], DASH);
-  assert.equal(cells[4], DASH);
+  assert.equal(cells[5], DASH);
+  // The team always has a name: every enquiry has one.
+  assert.equal(cells[3], "Support");
+});
+
+test("a category reads with its label from Settings", () => {
+  assert.equal(
+    queueCells(row({ category: "einvoice", categoryLabel: "E-invoice" }))[2],
+    "E-invoice",
+  );
+  // A code with no row left still reads as words.
+  assert.equal(queueCells(row({ category: "course_info" }))[2], "Course info");
 });
 
 test("set times are shown", () => {
@@ -78,8 +100,8 @@ test("set times are shown", () => {
       firstResponseAt: "2026-11-03T01:10:00.000Z",
     }),
   );
-  assert.notEqual(cells[5], DASH);
   assert.notEqual(cells[6], DASH);
+  assert.notEqual(cells[7], DASH);
 });
 
 test("a person with no name shows the phone the server put in its place", () => {
@@ -119,13 +141,15 @@ test("the first response reads as how long the reply took", () => {
       firstResponseAt: "2026-11-03T01:10:00.000Z",
     }),
   );
-  assert.equal(cells[6], "10m");
+  assert.equal(cells[7], "10m");
 });
 
 test("labels spell brand and acronym values properly", () => {
   assert.equal(enquiryLabel("whatsapp"), "WhatsApp");
   assert.equal(enquiryLabel("hrdc"), "HRDC");
   assert.equal(enquiryLabel("course_info"), "Course info");
+  assert.equal(enquiryLabel("waiting_customer"), "Waiting on customer");
+  assert.equal(enquiryLabel("web_form"), "Help form");
 });
 
 test("a past-SLA row has a text marker beside the highlight (§14)", () => {
@@ -137,9 +161,21 @@ test("a past-SLA row has a text marker beside the highlight (§14)", () => {
 
 // --- Who sees which action (§6, 4.4) ------------------------------------
 
-const full = { viewerId: ME, canWrite: true, assignedOnly: false };
-const readOnly = { viewerId: ME, canWrite: false, assignedOnly: false };
-const partTime = { viewerId: ME, canWrite: true, assignedOnly: true };
+const full = { viewerId: ME, canWrite: true, assignedOnly: false, teamIds: [] };
+const readOnly = {
+  viewerId: ME,
+  canWrite: false,
+  assignedOnly: false,
+  teamIds: [],
+};
+const partTime = {
+  viewerId: ME,
+  canWrite: true,
+  assignedOnly: true,
+  teamIds: [],
+};
+// A read-only role in the Finance team (migration 019).
+const financeMember = { ...readOnly, teamIds: [FINANCE_TEAM] };
 
 test("support and super_admin get every action on an open row", () => {
   assert.deepEqual(rowActions(row(), full), {
@@ -172,9 +208,27 @@ test("a part-timer acts only on their own row, and never assigns", () => {
     });
 });
 
-test("a closed enquiry offers no close", () => {
+test("a closed enquiry offers no close; a waiting one does", () => {
   for (const status of ["closed", "human_resolved", "converted"] as const)
     assert.equal(rowActions(row({ status }), full).close, false, status);
+  assert.equal(
+    rowActions(row({ status: "waiting_customer" }), full).close,
+    true,
+  );
+});
+
+test("a team member works their team's rows whatever their role", () => {
+  assert.deepEqual(rowActions(row({ teamId: FINANCE_TEAM }), financeMember), {
+    assign: true,
+    category: true,
+    close: true,
+  });
+  // …and only their team's.
+  assert.deepEqual(rowActions(row(), financeMember), {
+    assign: false,
+    category: false,
+    close: false,
+  });
 });
 
 // --- The URL is the view (4.2) ------------------------------------------
@@ -183,6 +237,8 @@ const view: QueueView = {
   q: "mei",
   status: "all",
   category: "hrdc",
+  team: SUPPORT_TEAM.replace("t1", "01"),
+  myTeams: true,
   channel: "whatsapp",
   assignee: "unassigned",
   mine: true,
@@ -197,6 +253,8 @@ test("a URL with filters, sort, page and selection reads back as that view", () 
   assert.equal(parsed.q, "mei");
   assert.equal(parsed.status, "all");
   assert.equal(parsed.category, "hrdc");
+  assert.equal(parsed.team, view.team);
+  assert.equal(parsed.myTeams, true);
   assert.equal(parsed.channel, "whatsapp");
   assert.equal(parsed.assignee, "unassigned");
   assert.equal(parsed.mine, true);
@@ -208,8 +266,10 @@ test("a URL with filters, sort, page and selection reads back as that view", () 
 test("the default view leaves the URL bare", () => {
   const bare: QueueView = {
     q: "",
-    status: "open",
+    status: "active",
     category: "",
+    team: "",
+    myTeams: false,
     channel: "",
     assignee: "",
     mine: false,
@@ -221,22 +281,29 @@ test("the default view leaves the URL bare", () => {
   assert.equal(isFiltered(bare), false);
   assert.equal(isFiltered({ ...bare, status: "closed" }), true);
   assert.equal(isFiltered({ ...bare, mine: true }), true);
+  assert.equal(isFiltered({ ...bare, status: "open" }), true);
+  assert.equal(isFiltered({ ...bare, myTeams: true }), true);
   // Sorting or paging is not filtering.
   assert.equal(isFiltered({ ...bare, sort: "-age", page: 2 }), false);
 });
 
 // --- The §13 states and the stub (4.2, 4.3) -----------------------------
 
-test("the stub is gone and no screen state offers an Add enquiry control", () => {
+test("the stub is gone; New enquiry shows only to those who may create", () => {
   assert.doesNotMatch(source("page.tsx"), /Not available yet/);
-  for (const file of ["page.tsx", "enquiries-queue.tsx", "context-panel.tsx"])
+  for (const file of ["page.tsx", "context-panel.tsx"])
     assert.doesNotMatch(source(file), /Add enquiry|New enquiry/i, file);
   const queue = source("enquiries-queue.tsx");
+  assert.match(queue, /\{canCreate && \(/);
+  assert.match(queue, /href="\/enquiries\/new"/);
   assert.match(queue, /<SkeletonRows/);
   assert.match(queue, /<ListError/);
   assert.match(queue, /No enquiries match these filters/);
   assert.match(queue, /Clear filters/);
-  assert.match(queue, /arrive here from the\s+WhatsApp intake/);
+  assert.match(
+    queue,
+    /They arrive from the help form, from\s+the inbox, or are added by hand/,
+  );
 });
 
 // --- The context panel (5.x) ---------------------------------------------

@@ -1,16 +1,19 @@
 import type { EnquiryRow } from "@/lib/enquiries/types";
 import type { DealSummary } from "@/lib/people/types";
 import { enumLabel } from "../../../../lib/classes/types.ts";
+import { isActiveStatus } from "../../../../lib/enquiries/types.ts";
 import { formatDate, formatDateTime } from "../../../../lib/format/date.ts";
 
 // Spec §9.13 view logic, in a plain module so a test can drive it without a
 // browser, and so the server page can import its values (a `"use client"`
 // module would hand it a reference instead; tests/client-boundary.test.ts).
-// The eight columns in §9.13's order.
+// The eight columns in §9.13's order, plus Team after Category (migration
+// 019: the team decides who works it).
 export const QUEUE_COLUMNS = [
   "Person",
   "Channel",
   "Category",
+  "Team",
   "Status",
   "Assigned",
   "First message",
@@ -32,6 +35,9 @@ const LABELS: Record<string, string> = {
   ctwa: "WhatsApp ad",
   hrdc: "HRDC",
   walk_in: "Walk-in",
+  web_form: "Help form",
+  waiting_customer: "Waiting on customer",
+  active: "Open or waiting",
   ai_resolved: "Resolved by AI",
   human_resolved: "Resolved",
 };
@@ -68,12 +74,14 @@ export function responseLabel(row: EnquiryRow): string {
 }
 
 // One row's cells, in QUEUE_COLUMNS order. The name has already fallen back
-// to the phone on the server (§11.2, `displayName`).
+// to the phone on the server (§11.2, `displayName`). A category reads with
+// its label from Settings; a code with no row left falls back to its words.
 export function queueCells(row: EnquiryRow): string[] {
   return [
     row.personName,
     enquiryLabel(row.channel),
-    row.category ? enquiryLabel(row.category) : DASH,
+    row.category ? (row.categoryLabel ?? enquiryLabel(row.category)) : DASH,
+    row.teamName,
     enquiryLabel(row.status),
     row.assigneeName ?? DASH,
     row.firstMessageAt ? queueDateTime(row.firstMessageAt) : DASH,
@@ -84,24 +92,35 @@ export function queueCells(row: EnquiryRow): string[] {
 
 export type QueueAccess = {
   viewerId: string;
-  // §6 enquiry write at all: super_admin, support, part_time.
+  // §6 enquiry write: super_admin, support, part_time.
   canWrite: boolean;
   // §6 "A": part_time, limited to rows assigned to them.
   assignedOnly: boolean;
+  // The viewer's teams (migration 019): their rows are theirs to work,
+  // whatever the role.
+  teamIds: string[];
 };
 
-// What the screen offers on a row. Mirrors the service's rules so no control
-// is shown that the route would refuse — the route still checks (§9.13).
+// Whether any row could offer an action: the Actions column shows.
+export const mayWriteAny = (access: QueueAccess) =>
+  access.canWrite || access.teamIds.length > 0;
+
+// What the screen offers on a row. Mirrors the service's rules
+// (lib/enquiries/access.ts, service.ts) so no control is shown that the route
+// would refuse — the route still checks (§9.13).
 export function rowActions(row: EnquiryRow, access: QueueAccess) {
+  const inTeam = access.teamIds.includes(row.teamId);
   const mayTouch =
-    access.canWrite &&
-    (!access.assignedOnly || row.assignedUserId === access.viewerId);
+    inTeam ||
+    (access.canWrite &&
+      (!access.assignedOnly || row.assignedUserId === access.viewerId));
   return {
-    // Handing work out is for the roles that write every enquiry.
-    assign: mayTouch && !access.assignedOnly,
+    // Handing work out is for the roles that write every enquiry, and for
+    // the enquiry's own team.
+    assign: mayTouch && (inTeam || !access.assignedOnly),
     category: mayTouch,
-    // Closing is final, so only an open enquiry offers it.
-    close: mayTouch && row.status === "open",
+    // Closing is final, so only an enquiry still being worked offers it.
+    close: mayTouch && isActiveStatus(row.status),
   };
 }
 
@@ -115,6 +134,8 @@ export type QueueView = {
   q: string;
   status: string;
   category: string;
+  team: string;
+  myTeams: boolean;
   channel: string;
   assignee: string;
   mine: boolean;
@@ -126,9 +147,11 @@ export type QueueView = {
 export function queueParams(v: QueueView): URLSearchParams {
   const p = new URLSearchParams();
   if (v.q) p.set("q", v.q);
-  // `open` is the default, so it stays out of the URL.
-  if (v.status && v.status !== "open") p.set("filter[status]", v.status);
+  // `active` is the default, so it stays out of the URL.
+  if (v.status && v.status !== "active") p.set("filter[status]", v.status);
   if (v.category) p.set("filter[category]", v.category);
+  if (v.team) p.set("filter[team]", v.team);
+  if (v.myTeams) p.set("filter[myTeams]", "true");
   if (v.channel) p.set("filter[channel]", v.channel);
   if (v.assignee) p.set("filter[assignee]", v.assignee);
   if (v.mine) p.set("filter[mine]", "true");
@@ -143,8 +166,10 @@ export function queueParams(v: QueueView): URLSearchParams {
 export const isFiltered = (v: QueueView) =>
   Boolean(
     v.q ||
-    v.status !== "open" ||
+    v.status !== "active" ||
     v.category ||
+    v.team ||
+    v.myTeams ||
     v.channel ||
     v.assignee ||
     v.mine,

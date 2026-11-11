@@ -23,10 +23,10 @@ const query = (search: string) =>
 
 // --- GET /api/enquiries query -------------------------------------------
 
-test("no query is the §9.13 default: open, page 1 of 25", () => {
+test("no query is the §9.13 default: open or waiting, page 1 of 25", () => {
   const parsed = query("");
   assert.ok(parsed.success);
-  assert.equal(parsed.data.status, "open");
+  assert.equal(parsed.data.status, "active");
   assert.equal(parsed.data.sort, undefined);
   assert.equal(parsed.data.page, 1);
   assert.equal(parsed.data.limit, 25);
@@ -45,9 +45,12 @@ test("an unknown sort is refused, not ignored", () => {
     assert.ok(query(`sort=${sort}`).success, sort);
 });
 
-test("a category outside §5 is refused", () => {
-  assert.equal(query("filter[category]=refund").success, false);
+// Since migration 019 categories are rows edited in Settings, so the filter
+// takes any well-formed code; an unknown one simply matches nothing.
+test("a malformed category is refused", () => {
+  assert.equal(query("filter[category]=Refund!").success, false);
   assert.ok(query("filter[category]=hrdc").success);
+  assert.ok(query("filter[category]=einvoice").success);
 });
 
 test("over 100 rows is refused rather than cut down (§14)", () => {
@@ -55,9 +58,11 @@ test("over 100 rows is refused rather than cut down (§14)", () => {
   assert.ok(query("limit=100").success);
 });
 
-test("status takes the five §5 values and all", () => {
+test("status takes the §5 values, waiting_customer, active and all", () => {
   for (const s of [
     "open",
+    "waiting_customer",
+    "active",
     "ai_resolved",
     "human_resolved",
     "converted",
@@ -141,10 +146,13 @@ test("assign takes a user id, me, or null to clear", () => {
   assert.equal(patch({ action: "assign", assignee: "bob" }).success, false);
 });
 
-test("category takes the ten §5 values only", () => {
+// The code's shape here; whether it is an active category is the service's
+// check (unknown_category, a 422).
+test("category takes a well-formed code", () => {
   assert.ok(patch({ action: "category", category: "hrdc" }).success);
+  assert.ok(patch({ action: "category", category: "receipt" }).success);
   assert.equal(
-    patch({ action: "category", category: "refund" }).success,
+    patch({ action: "category", category: "Not a code" }).success,
     false,
   );
 });

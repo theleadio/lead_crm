@@ -114,17 +114,25 @@ export function ContextPanel({
           <X className="size-4" aria-hidden />
         </Link>
       </div>
-      <Link
-        href={`/people/${person.id}`}
-        className="text-blue-ink text-sm hover:underline"
-      >
-        Open their full record
-      </Link>
+      <div className="flex flex-col gap-1">
+        <Link
+          href={`/enquiries/${enquiry.id}`}
+          className="text-blue-ink text-sm hover:underline"
+        >
+          Open enquiry {enquiry.number}: history, notes and messages
+        </Link>
+        <Link
+          href={`/people/${person.id}`}
+          className="text-blue-ink text-sm hover:underline"
+        >
+          Open their full record
+        </Link>
+      </div>
 
       {/* The enquiry itself, so the panel reads alone when it sits below
           the queue on a narrow screen. */}
       <Panel title="Enquiry">
-        {[1, 2, 4, 5, 6, 7].map((i) => (
+        {[1, 2, 3, 5, 6, 7, 8].map((i) => (
           <Row key={i}>
             <span className="text-ink-muted">{QUEUE_COLUMNS[i]}</span>
             <span>{cells[i]}</span>

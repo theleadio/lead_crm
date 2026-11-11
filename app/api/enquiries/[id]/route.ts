@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { permissionFor } from "@/lib/auth/permissions";
+import { mayUseEnquiries } from "@/lib/enquiries/access";
 import {
   apiError,
   forbidden,
@@ -11,6 +11,8 @@ import {
   assignEnquiry,
   closeEnquiry,
   setEnquiryCategory,
+  setEnquiryPriority,
+  setEnquiryStatus,
   type EnquiryWriteResult,
 } from "@/lib/enquiries/service";
 import { enquiryUpdateSchema } from "@/lib/validation/enquiry";
@@ -24,15 +26,17 @@ const CLOSED_AS: Record<string, string> = {
 };
 
 // PATCH /api/enquiries/:id — §7, §9.13: assign, set category, close with an
-// outcome. super_admin and support write any enquiry, part_time only one
-// assigned to them (the service applies that), the rest get an audited 403.
+// outcome; and since migration 019 waiting-on-customer and priority.
+// super_admin and support write any enquiry, part_time only one assigned to
+// them, a team member their team's (lib/enquiries/access.ts, applied by the
+// service); the rest get an audited 403.
 export async function PATCH(
   request: NextRequest,
   ctx: RouteContext<"/api/enquiries/[id]">,
 ) {
   const viewer = await getCurrentUser();
   if (!viewer) return apiError(401, "unauthenticated", "Sign in to continue.");
-  if (!permissionFor(viewer, "enquiry", "write").allowed)
+  if (!(await mayUseEnquiries(viewer, "write")))
     return forbidden(viewer, request, {
       what: "change enquiries",
       resource: "enquiry",
@@ -58,6 +62,10 @@ export async function PATCH(
     result = await assignEnquiry(id, body.assignee, ifMatch, viewer);
   else if (body.action === "category")
     result = await setEnquiryCategory(id, body.category, ifMatch, viewer);
+  else if (body.action === "status")
+    result = await setEnquiryStatus(id, body.status, ifMatch, viewer);
+  else if (body.action === "priority")
+    result = await setEnquiryPriority(id, body.priority, ifMatch, viewer);
   else result = await closeEnquiry(id, body, ifMatch, viewer);
 
   switch (result.kind) {
@@ -87,11 +95,25 @@ export async function PATCH(
         "That person's account is switched off, so they can't take new work. Pick someone else.",
         { fields: { assignee: "Pick an active user" } },
       );
+    case "not_in_team":
+      return apiError(
+        422,
+        "not_in_team",
+        "This enquiry belongs to a restricted team, so only a member of that team can take it. Pick someone from the team, or add them in Settings.",
+        { fields: { assignee: "Pick a member of the team" } },
+      );
+    case "unknown_category":
+      return apiError(
+        422,
+        "unknown_category",
+        "That category is switched off or no longer exists. Pick another.",
+        { fields: { category: "Pick a category from the list" } },
+      );
     case "not_open":
       return apiError(
         422,
         "not_open",
-        `This enquiry is already ${CLOSED_AS[result.status] ?? "closed"}, and closing is final. Ask a super admin if it was closed by mistake.`,
+        `This enquiry is already ${CLOSED_AS[result.status] ?? "closed"}, and closing is final. If the customer has written again, start a new enquiry.`,
       );
   }
 }
