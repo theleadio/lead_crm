@@ -15,6 +15,7 @@ import type {
   AdsTable,
 } from "@/lib/reports/types";
 import { campaignLabel } from "./panels/campaign-label";
+import { CHANNEL_LABEL } from "./panels/leads-over-time";
 import { PanelCard } from "./panels/panel-card";
 
 // §9.18: the two report tables. Plain counts, no chart — a chart would be the
@@ -194,7 +195,10 @@ export function SourceTable({ table }: { table: AdsTable<AdsSourceRow> }) {
                   <TableCell>{row.leads}</TableCell>
                   <TableCell className="text-ink-muted">
                     {row.byChannel
-                      .map((c) => `${c.channel} ${c.leads}`)
+                      .map(
+                        (c) =>
+                          `${CHANNEL_LABEL[c.channel] ?? c.channel} ${c.leads}`,
+                      )
                       .join(", ")}
                   </TableCell>
                 </TableRow>

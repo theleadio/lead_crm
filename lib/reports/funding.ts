@@ -203,6 +203,7 @@ export type FundingBreakdowns = {
 };
 
 const LANGUAGE_NAME: Record<string, string> = { en: "EN", zh: "CN" };
+const LANGUAGE_LONG: Record<string, string> = { en: "English", zh: "Chinese" };
 
 function fold(
   key: string,
@@ -236,12 +237,7 @@ export function fundingBreakdowns(rows: FundingRow[]): FundingBreakdowns {
   const byTier = [...groupBy(rows, (r) => r.durationDays)]
     .sort(([a], [b]) => a - b)
     .map(([days, list]) =>
-      fold(
-        `tier-${days}`,
-        priceTier(days),
-        `${days === 1 ? "one-day" : `${days}-day`} programmes`,
-        list,
-      ),
+      fold(`tier-${days}`, priceTier(days), `${days}-day programmes`, list),
     );
 
   const byLanguage = [...groupBy(rows, (r) => r.language)]
@@ -250,7 +246,7 @@ export function fundingBreakdowns(rows: FundingRow[]): FundingBreakdowns {
       fold(
         `lang-${language}`,
         LANGUAGE_NAME[language] ?? language,
-        "programmes",
+        `classes taught in ${LANGUAGE_LONG[language] ?? language}`,
         list,
       ),
     );

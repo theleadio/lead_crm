@@ -75,10 +75,10 @@ function RoasBars({ rows }: { rows: RoasRow[] }) {
       {charted.map((row) => (
         <li
           key={row.campaignId ?? row.campaign}
-          className="grid grid-cols-[minmax(0,14rem)_1fr] items-center gap-3 sm:grid-cols-[minmax(0,20rem)_1fr]"
+          className="grid grid-cols-1 items-center gap-1 sm:grid-cols-[minmax(0,20rem)_1fr] sm:gap-3"
           title={`${row.campaign}\n${row.stripeRoas!.toFixed(1)}× · ${formatMoneyMyr(row.stripeRevenue)} revenue on ${formatMoneyMyr(row.spend)} spend${row.stripeOrders === null ? "" : ` · ${row.stripeOrders} orders`}`}
         >
-          <span className="text-ink truncate text-right text-sm">
+          <span className="text-ink text-sm leading-snug break-words sm:text-right">
             {row.label ?? campaignLabel(row.campaign)}
           </span>
           <span className="flex min-w-0 items-center gap-2">

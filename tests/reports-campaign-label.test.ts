@@ -87,3 +87,16 @@ test("campaignLabels: a month spelled out longer still counts (July2026)", () =>
     "Ai Engineering Webinar · Leads · June 2026",
   );
 });
+
+test("campaignLabels: the objective is spelled one way whatever the name typed", () => {
+  const labels = campaignLabels(
+    new Map([
+      ["1", "LEAD | Oct2026 | Whatsapp | AI Automation EN 11-12 Nov"],
+      ["2", "LEAD | Oct2026 | SALES | Claude EN 1 Nov"],
+      ["3", "LEAD | Oct2026 | Lead | Vibe Coding Masterclass EN 18 Nov"],
+    ]),
+  );
+  assert.equal(labels.get("1"), "AI Automation EN 11-12 Nov · WhatsApp");
+  assert.equal(labels.get("2"), "Claude EN 1 Nov · Sales");
+  assert.equal(labels.get("3"), "Vibe Coding Masterclass EN 18 Nov · Leads");
+});

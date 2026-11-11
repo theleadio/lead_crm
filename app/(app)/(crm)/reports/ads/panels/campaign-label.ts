@@ -41,9 +41,18 @@ export function campaignLabel(name: string): string {
         part,
       ),
     );
-  return objective && !base.toLowerCase().includes(objective.toLowerCase())
-    ? `${base} · ${objective}`
-    : base;
+  if (!objective || base.toLowerCase().includes(objective.toLowerCase()))
+    return base;
+  // One spelling on screen: the names are retyped per campaign ("Whatsapp",
+  // "WhatsApp"), and two spellings side by side read as two things.
+  const lower = objective.toLowerCase();
+  const spelled =
+    lower === "whatsapp"
+      ? "WhatsApp"
+      : lower === "lead" || lower === "leads"
+        ? "Leads"
+        : lower[0].toUpperCase() + lower.slice(1);
+  return `${base} · ${spelled}`;
 }
 
 // The month segment Meta names carry ("Oct2026", "July2026"): what usually tells a rerun

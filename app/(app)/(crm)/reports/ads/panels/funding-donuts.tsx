@@ -135,7 +135,7 @@ export function FundingDonutsPanel({
             ? " Funding is read from the LMS, the only place that records it today."
             : " Funding is what the deal records."}{" "}
           The tiers group programmes by length; each programme&apos;s list price
-          is in the table of the next panel.
+          is under Figures in the next panel.
         </>
       }
     >

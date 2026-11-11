@@ -20,7 +20,7 @@ import { Figures, PanelCard } from "./panel-card";
 // decision 9). Facets need no second hue, and the real question is how a
 // channel moved week to week, which a facet answers and a stack buries.
 
-const CHANNEL_LABEL: Record<string, string> = {
+export const CHANNEL_LABEL: Record<string, string> = {
   lead_form: "Meta Lead Ads",
   ctwa: "Click to WhatsApp",
   web_form: "Website form",
@@ -28,7 +28,9 @@ const CHANNEL_LABEL: Record<string, string> = {
   walk_in: "Walk-in",
   referral: "Referral",
   payment_link: "Payment link",
-  import: "Import",
+  // The SalesProcess attribution import: where every Meta lead comes from
+  // until WhatsApp chats and Lead Ads forms reach the CRM directly.
+  import: "SalesProcess",
 };
 
 // Tall enough to read a week-on-week change; columns share the card's width
