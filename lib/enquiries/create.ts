@@ -39,7 +39,9 @@ export type NewEnquiry = {
   conversationId?: string | null;
   // web_form, whatsapp, email, messenger, instagram, walk_in, phone…
   channel: string;
-  category: string;
+  // Null only for one the system makes before anyone has categorised it
+  // (lib/wati/webhook.ts): the default team gets it and staff set one.
+  category: string | null;
   subject: string;
   priority?: EnquiryPriority;
   note?: string | null;

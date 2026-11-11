@@ -2,7 +2,8 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { writeAudit } from "../audit.ts";
 import { findDuplicate } from "../people/dedupe.ts";
 import { normalizePhoneE164 } from "../format/phone.ts";
-import { followUpEnquiry } from "../enquiries/create.ts";
+import { createEnquiry, followUpEnquiry } from "../enquiries/create.ts";
+import { suggestCategory } from "../enquiries/routing.ts";
 import { markFirstResponse } from "../enquiries/service.ts";
 import { raiseDuplicateTask } from "../people/duplicate-review.ts";
 import { dedupeCandidates } from "../people/service.ts";
@@ -26,10 +27,21 @@ import { db, withTransaction } from "../sql.ts";
 // deadline stops (lib/enquiries/service.ts markFirstResponse). A template
 // does not: automations send those.
 //
-// A customer writing again on a thread whose latest enquiry is resolved or
-// closed, with none still open, gets a new enquiry linked to that one
-// (decided 4 Nov: the old one stays closed). A converted one is left alone:
-// that customer's next step is their deal.
+// A customer message on a thread with no enquiry still being worked opens
+// one (§11.2: the WhatsApp intake makes the enquiry):
+//   - the thread's first enquiry: uncategorised unless a keyword suggests a
+//     category, so the default team (or a rule) gets it and staff set one
+//   - after a resolved or closed one: a follow-up linked to it (decided
+//     4 Nov: the old one stays closed)
+//   - none after a converted one: that customer's next step is their deal
+//
+// Attribution (§11.2): a message that came from a click-to-WhatsApp ad
+// carries a referral; it becomes a `ctwa` touchpoint with the ad id and
+// click id, which the ads report already counts. A person this message
+// created gets a `whatsapp` touchpoint as their first touch otherwise.
+// Check the referral's field names against a real ad click: they follow
+// the WhatsApp Cloud API's `referral` object, which WATI is expected to pass
+// through.
 //
 // WATI documents no signature, so the URL carries a long random secret
 // (WATI_WEBHOOK_SECRET, ?token=…). The webhook records each event in
@@ -147,7 +159,7 @@ async function findOrCreatePerson(
   e164: string,
   name: string | null,
   numberAsSent: string,
-): Promise<string> {
+): Promise<{ id: string; created: boolean }> {
   const candidate = {
     fullName: name ?? numberAsSent,
     emailNorm: null,
@@ -155,7 +167,7 @@ async function findOrCreatePerson(
     companyNorm: null,
   };
   const dup = findDuplicate(candidate, await dedupeCandidates(candidate, null));
-  if (dup.kind === "hard") return dup.match.id;
+  if (dup.kind === "hard") return { id: dup.match.id, created: false };
   const reason =
     dup.kind === "soft"
       ? `possible_duplicate_${dup.on}`
@@ -182,7 +194,7 @@ async function findOrCreatePerson(
     before: null,
     after: { source: "wati" },
   });
-  return p.id as string;
+  return { id: p.id as string, created: true };
 }
 
 function e164Of(e: WatiEvent): string {
@@ -218,11 +230,12 @@ async function saveMessage(
   // second waits here, then finds the person the first one made, and does
   // not fail on the unique phone number.
   await sql`SELECT pg_advisory_xact_lock(hashtext(${`wati:${e164}`}))`;
-  const personId = await findOrCreatePerson(
+  const person = await findOrCreatePerson(
     e164,
     str(e.senderName),
     str(e.waId) ?? e164,
   );
+  const personId = person.id;
   const at = whenOf(e);
   const inboundAt = direction === "in" ? at : null;
   const [conv] = await sql`
@@ -241,43 +254,143 @@ async function saveMessage(
             ${direction === "in" ? "received" : "sent"})
     ON CONFLICT (channel, external_message_id) DO NOTHING
     RETURNING id`;
-  if (added && direction === "in") await followUpIfClosed(conv.id, at);
+  if (added && direction === "in") {
+    const ad = referralOf(e);
+    await asideFromMessage("touchpoint", () =>
+      recordTouch(personId, at, ad, person.created, e),
+    );
+    await asideFromMessage("enquiry", () =>
+      openEnquiryIfNone(conv.id, personId, at, ad !== null, bodyOf(e)),
+    );
+  }
   return conv.id as string;
 }
 
-// A follow-up only when the thread has no enquiry still being worked (an
-// older open one counts too), and only for a message sent after the latest
-// one was closed: a retried or late event from before the close is not the
-// customer writing again.
-async function followUpIfClosed(conversationId: string, at: Date) {
-  const [latest] = await db()`
-    SELECT e.id FROM enquiry e
-    WHERE e.conversation_id = ${conversationId}
-      AND e.status IN ('human_resolved', 'ai_resolved', 'closed')
-      AND e.closed_at < ${at}
-      AND NOT EXISTS (
-        SELECT 1 FROM enquiry o
-        WHERE o.conversation_id = ${conversationId}
-          AND o.status IN ('open', 'waiting_customer'))
-      AND e.created_at = (
-        SELECT max(created_at) FROM enquiry WHERE conversation_id = ${conversationId})
-    ORDER BY e.id DESC
-    LIMIT 1`;
-  if (!latest) return;
-  // In its own savepoint: saving the customer's message never depends on
-  // enquiry routing. A failure here is logged (no message text, no number)
-  // and the message still reaches the inbox, where staff can make the
-  // enquiry by hand.
+// Each in its own savepoint: saving the customer's message never depends on
+// attribution or enquiry routing. A failure is logged (no message text, no
+// number) and the message still reaches the inbox.
+async function asideFromMessage(what: string, fn: () => Promise<unknown>) {
   try {
-    const r = await withTransaction(() =>
-      followUpEnquiry(latest.id as string, at, undefined, "whatsapp"),
-    );
-    if (r.kind !== "ok") console.error(`wati: follow-up not made: ${r.kind}`);
-  } catch (e) {
+    await withTransaction(fn);
+  } catch (err) {
     console.error(
-      `wati: follow-up failed: ${e instanceof Error ? e.message : String(e)}`,
+      `wati: ${what} not made: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
+}
+
+// ---- Attribution -----------------------------------------------------------------
+
+export type Referral = {
+  adId: string | null;
+  ctwaClid: string | null;
+  url: string | null;
+};
+
+// The click-to-WhatsApp ad a message came from, if any: the Cloud API's
+// `referral` object (source_id = the ad id, ctwa_clid = the click id),
+// accepted as `referral` or `data.referral`, in snake or camel case.
+export function referralOf(e: WatiEvent): Referral | null {
+  const data =
+    e.data && typeof e.data === "object" ? (e.data as WatiEvent) : {};
+  const r = [e.referral, data.referral].find(
+    (x): x is WatiEvent => Boolean(x) && typeof x === "object",
+  );
+  if (!r) return null;
+  const adId = str(r.source_id) ?? str(r.sourceId);
+  const ctwaClid = str(r.ctwa_clid) ?? str(r.ctwaClid);
+  const type = str(r.source_type) ?? str(r.sourceType);
+  if (!ctwaClid && !(adId && (type === null || type === "ad"))) return null;
+  return {
+    adId: type === null || type === "ad" ? adId : null,
+    ctwaClid,
+    url: str(r.source_url) ?? str(r.sourceUrl),
+  };
+}
+
+async function recordTouch(
+  personId: string,
+  at: Date,
+  ad: Referral | null,
+  createdNow: boolean,
+  e: WatiEvent,
+) {
+  if (!ad && !createdNow) return;
+  const sql = db();
+  const [{ n }] = await sql`
+    SELECT count(*)::int AS n FROM touchpoint WHERE person_id = ${personId}`;
+  const [tp] = await sql`
+    INSERT INTO touchpoint (person_id, channel, occurred_at, ctwa_clid,
+                            utm_ad_id, landing_url, is_first_touch, external_ref)
+    VALUES (${personId}, ${ad ? "ctwa" : "whatsapp"}, ${at},
+            ${ad?.ctwaClid ?? null}, ${ad?.adId ?? null}, ${ad?.url ?? null},
+            ${n === 0}, ${`wati:${str(e.whatsappMessageId) ?? str(e.id)}`})
+    RETURNING id`;
+  // §12.9: a touchpoint counts as activity.
+  await sql`
+    UPDATE person
+    SET last_activity_at = greatest(last_activity_at, ${at}),
+        first_touchpoint_id = coalesce(first_touchpoint_id,
+                                       ${n === 0 ? tp.id : null})
+    WHERE id = ${personId}`;
+}
+
+// ---- Enquiries -------------------------------------------------------------------
+
+async function openEnquiryIfNone(
+  conversationId: string,
+  personId: string,
+  at: Date,
+  fromAd: boolean,
+  text: string,
+) {
+  const sql = db();
+  const [open] = await sql`
+    SELECT 1 FROM enquiry
+    WHERE conversation_id = ${conversationId}
+      AND status IN ('open', 'waiting_customer')
+    LIMIT 1`;
+  if (open) return;
+  const [latest] = await sql`
+    SELECT id, status, closed_at FROM enquiry
+    WHERE conversation_id = ${conversationId}
+    ORDER BY created_at DESC, id DESC
+    LIMIT 1`;
+  if (latest) {
+    // A follow-up only for a message sent after the close: a retried or
+    // late event from before it is not the customer writing again.
+    if (
+      ["human_resolved", "ai_resolved", "closed"].includes(latest.status) &&
+      latest.closed_at < at
+    ) {
+      const r = await followUpEnquiry(
+        latest.id as string,
+        at,
+        undefined,
+        "whatsapp",
+      );
+      if (r.kind !== "ok") console.error(`wati: follow-up not made: ${r.kind}`);
+    }
+    return;
+  }
+  const firstLine = text.split(/\r?\n/)[0].trim();
+  const r = await createEnquiry(
+    {
+      personId,
+      conversationId,
+      channel: fromAd ? "ctwa" : "whatsapp",
+      category: await suggestCategory(text),
+      subject:
+        firstLine.length > 3
+          ? firstLine.length > 80
+            ? `${firstLine.slice(0, 77)}…`
+            : firstLine
+          : "WhatsApp message",
+      receivedAt: at,
+    },
+    null,
+  );
+  if (r.kind !== "ok") console.error(`wati: enquiry not made: ${r.kind}`);
 }
 
 // Staff answered on this thread: the first reply on each open enquiry of

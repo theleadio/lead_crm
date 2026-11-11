@@ -78,8 +78,17 @@ export async function categoryTeam(category: string): Promise<string> {
   return cat.team_id as string;
 }
 
-export async function route(category: string, channel: string): Promise<Route> {
-  const teamId = await categoryTeam(category);
+// `category` null: an enquiry nobody has categorised yet (a first WhatsApp
+// message with no keyword match). It goes to the default team, and only
+// rules that match no category apply.
+export async function route(
+  category: string | null,
+  channel: string,
+): Promise<Route> {
+  const teamId =
+    category === null
+      ? ((await db()`SELECT id FROM team WHERE is_default`)[0].id as string)
+      : await categoryTeam(category);
   const [rule] = await db()`
     SELECT set_team_id, assign_mode, assign_user_id FROM enquiry_rule
     WHERE active
