@@ -447,6 +447,21 @@ export function fillWeeks(
   return out;
 }
 
+// How many of a Monday-start week's seven days the report range covers, so
+// a week the range cuts short can say so: three days of leads beside a full
+// week reads as a drop that never happened (browser check, 11 Nov). Dates
+// are YYYY-MM-DD Kuala Lumpur days, compared as UTC midnights.
+export function daysInRange(
+  weekStart: string,
+  from: string,
+  to: string,
+): number {
+  const day = (d: string) => Date.parse(`${d}T00:00:00Z`) / 86_400_000;
+  const start = Math.max(day(weekStart), day(from));
+  const end = Math.min(day(weekStart) + 6, day(to));
+  return Math.max(0, end - start + 1);
+}
+
 // §9.18 efficiency map, the half that needs no ad tables: seat-holding
 // enrolments (§12.1) credited to the campaign of the buyer's first touch.
 //
@@ -484,8 +499,10 @@ function paidSql(sql: postgres.Sql, q: AdsReportQuery) {
              sp.paid_at, sp.amount_myr - sp.refunded_myr AS net
       FROM salesprocess_payment sp
       -- The bare import row only: it carries the contact id, uses the
-      -- (channel, external_ref) index, and is one per person.
-      JOIN touchpoint b ON b.channel = 'import'
+      -- (channel, external_ref) index, and is one per person. A left join:
+      -- a payment whose buyer was never imported still counts as paid in
+      -- the range (its person is null, so no campaign is credited with it).
+      LEFT JOIN touchpoint b ON b.channel = 'import'
                        AND b.external_ref = 'ghl:' || sp.ghl_contact_id
       WHERE sp.live_mode
         AND sp.status IN ('succeeded', 'partially_refunded')

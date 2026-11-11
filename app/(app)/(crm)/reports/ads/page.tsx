@@ -242,6 +242,28 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
           ? { rows: funding.data, source: "deal" as const }
           : null;
 
+  // WhatsApp chats reach the CRM only once the WATI inbound lands. Until a
+  // lead in range has come from one, the leads panel says how many chats
+  // Meta counted, so its total is not read against Meta's as lost leads.
+  const leadChannels = sources.ok
+    ? sources.data.rows.flatMap((r) => r.byChannel.map((c) => c.channel))
+    : [];
+  const messages = adSpend
+    .filter((r) => r.adName !== null)
+    .reduce((n, r) => n + r.messages, 0);
+  const chatsNotRecorded =
+    sources.ok &&
+    spend.ok &&
+    messages > 0 &&
+    !leadChannels.some((c) => c === "ctwa" || c === "whatsapp")
+      ? {
+          messages,
+          onlyImported:
+            leadChannels.length > 0 &&
+            leadChannels.every((c) => c === "import"),
+        }
+      : null;
+
   // The scatter follows the same decision as the rings and bars, or the
   // screen would show deal seats beside LMS seats and no label saying so.
   // When that decision is no source at all (the LMS read failed and no deal
@@ -379,7 +401,12 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
         />
       )}
       {weekly.ok ? (
-        <LeadsOverTimePanel data={weekly.data} />
+        <LeadsOverTimePanel
+          data={weekly.data}
+          from={query.from}
+          to={query.to}
+          chats={chatsNotRecorded}
+        />
       ) : (
         <PanelError what="leads per week" />
       )}

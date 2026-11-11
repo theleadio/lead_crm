@@ -8,6 +8,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDate } from "@/lib/format/date";
+import { daysInRange } from "@/lib/reports/ads";
 import type { AdsWeeks } from "@/lib/reports/types";
 import { Figures, PanelCard } from "./panel-card";
 
@@ -47,14 +48,19 @@ function Facet({
   channel,
   weeks,
   peak,
+  daysOf,
 }: {
   channel: string;
   weeks: AdsWeeks["weeks"];
   peak: number;
+  // Days of each week inside the range: under 7 is a part week.
+  daysOf: (weekStart: string) => number;
 }) {
   const total = weeks.reduce((n, w) => n + (w.byChannel[channel] ?? 0), 0);
-  // The tallest column in this facet, direct-labelled — one label, not a
-  // number on every bar.
+  // Every column carries its number while there are few enough to read;
+  // past a dozen only the tallest does.
+  const labelAll = weeks.length <= 12;
+  // The tallest column in this facet, direct-labelled.
   const best = weeks.reduce(
     (b, w) =>
       (w.byChannel[channel] ?? 0) > (b.byChannel[channel] ?? 0) ? w : b,
@@ -80,10 +86,11 @@ function Facet({
       >
         {weeks.map((w) => {
           const n = w.byChannel[channel] ?? 0;
+          const days = daysOf(w.weekStart);
           return (
             <div
               key={w.weekStart}
-              title={`Week of ${formatDate(`${w.weekStart}T00:00:00Z`)}: ${n} ${n === 1 ? "lead" : "leads"}`}
+              title={`Week of ${formatDate(`${w.weekStart}T00:00:00Z`)}: ${n} ${n === 1 ? "lead" : "leads"}${days < 7 ? ` (part week: ${days} of 7 days in range)` : ""}`}
               className="flex h-full min-w-0 flex-1 items-end justify-center"
             >
               {/* Anchored to the baseline, so a tall column means more leads
@@ -93,10 +100,16 @@ function Facet({
                   className="relative w-full max-w-12 rounded-t-[4px]"
                   style={{
                     height: `${peak > 0 ? (n / peak) * 100 : 0}%`,
-                    backgroundColor: "var(--lead-blue)",
+                    // A part week is paler, so it is not read beside a
+                    // whole one as a drop. The fill alone, so the number
+                    // on top keeps its full ink.
+                    backgroundColor:
+                      days < 7
+                        ? "color-mix(in srgb, var(--lead-blue) 55%, transparent)"
+                        : "var(--lead-blue)",
                   }}
                 >
-                  {w === best && (
+                  {(labelAll || w === best) && (
                     <span className="text-ink absolute bottom-full left-1/2 mb-1 -translate-x-1/2 text-xs font-medium tabular-nums">
                       {n}
                     </span>
@@ -108,21 +121,48 @@ function Facet({
         })}
       </div>
       <div aria-hidden="true" className="flex gap-1.5">
-        {weeks.map((w, i) => (
-          <span
-            key={w.weekStart}
-            className="text-ink-muted min-w-0 flex-1 truncate text-center text-xs"
-          >
-            {i % every === 0 ? shortDay(w.weekStart) : ""}
-          </span>
-        ))}
+        {weeks.map((w, i) => {
+          const days = daysOf(w.weekStart);
+          return (
+            <span
+              key={w.weekStart}
+              className="text-ink-muted flex min-w-0 flex-1 flex-col items-center text-center text-xs"
+            >
+              <span className="w-full truncate">
+                {i % every === 0 ? shortDay(w.weekStart) : ""}
+              </span>
+              {days < 7 && (
+                <span className="w-full truncate">
+                  {days} {days === 1 ? "day" : "days"}
+                </span>
+              )}
+            </span>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-export function LeadsOverTimePanel({ data }: { data: AdsWeeks }) {
+export function LeadsOverTimePanel({
+  data,
+  from,
+  to,
+  chats,
+}: {
+  data: AdsWeeks;
+  // The report's range, so a week it cuts short is marked as one.
+  from: string;
+  to: string;
+  // Set when no lead in range came from a WhatsApp chat: the chats Meta
+  // counted are not in the CRM yet (they arrive with the WATI inbound), so
+  // the panel says how many are missing rather than let the totals be read
+  // against Meta's.
+  chats: { messages: number; onlyImported: boolean } | null;
+}) {
   const { channels, weeks, peak } = data;
+  const daysOf = (weekStart: string) => daysInRange(weekStart, from, to);
+  const partWeeks = weeks.some((w) => daysOf(w.weekStart) < 7);
   const grand = weeks.reduce((n, w) => n + w.total, 0);
 
   return (
@@ -138,6 +178,18 @@ export function LeadsOverTimePanel({ data }: { data: AdsWeeks }) {
         <>
           Weeks start on Monday, Malaysia time. One chart per Meta platform, all
           on the same scale, so a tall column means the same number in each.
+          {partWeeks &&
+            " A paler column is a part week: the date range covers only the days written under it."}
+          {chats && (
+            <>
+              {" "}
+              WhatsApp chats started from ads are not recorded in the CRM yet,
+              so none are in these leads; Meta counted{" "}
+              {chats.messages.toLocaleString("en-MY")} in this range.
+              {chats.onlyImported &&
+                " Every lead here came through SalesProcess."}
+            </>
+          )}
         </>
       }
     >
@@ -156,6 +208,7 @@ export function LeadsOverTimePanel({ data }: { data: AdsWeeks }) {
                 channel={channel}
                 weeks={weeks}
                 peak={peak}
+                daysOf={daysOf}
               />
             ))}
           </div>
@@ -177,6 +230,8 @@ export function LeadsOverTimePanel({ data }: { data: AdsWeeks }) {
                     <TableRow key={w.weekStart}>
                       <TableCell>
                         {formatDate(`${w.weekStart}T00:00:00Z`)}
+                        {daysOf(w.weekStart) < 7 &&
+                          ` (${daysOf(w.weekStart)} days in range)`}
                       </TableCell>
                       {channels.map((c) => (
                         <TableCell key={c}>{w.byChannel[c] ?? 0}</TableCell>

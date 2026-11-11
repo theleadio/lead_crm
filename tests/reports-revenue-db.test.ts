@@ -202,5 +202,12 @@ it("paid in range: everything paid, credited or not, so the ROAS note can say wh
     paidAt: "2031-04-02T04:00:00Z",
   });
 
-  assert.equal(await paidInRange(v, RANGE), "2180.00");
+  // Not credited: a SalesProcess payment whose buyer was never imported.
+  await db()`
+    INSERT INTO salesprocess_payment (id, order_id, ghl_contact_id, status, amount_myr,
+                                      currency, live_mode, paid_at)
+    VALUES (${uid()}, ${uid()}, ${uid()}, 'succeeded', 44, 'MYR', true,
+            '2031-03-16T04:00:00Z')`;
+
+  assert.equal(await paidInRange(v, RANGE), "2224.00");
 });
