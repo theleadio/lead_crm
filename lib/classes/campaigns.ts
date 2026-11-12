@@ -10,6 +10,7 @@ import {
   requirePermission,
   type Viewer,
 } from "../auth/permissions.ts";
+import { isUuid } from "../people/service.ts";
 import { db, withTransaction } from "../sql.ts";
 
 export type LinkedCampaign = {
@@ -70,6 +71,7 @@ export async function classCampaigns(
   viewer: Viewer,
 ): Promise<{ linked: LinkedCampaign[]; choices: CampaignChoice[] }> {
   requirePermission(viewer, "class", "read");
+  if (!isUuid(classId)) return { linked: [], choices: [] };
   const sql = db();
   const [cls] = await sql`
     SELECT to_char(start_date, 'YYYY-MM-DD') AS start_date FROM class
@@ -134,6 +136,7 @@ export async function linkCampaign(
   campaignId: string,
 ): Promise<LinkResult> {
   if (!canLinkCampaigns(viewer)) throw new PermissionError("class");
+  if (!isUuid(classId)) return { ok: false, reason: "not_found" };
   return withTransaction(async () => {
     const sql = db();
     const [cls] = await sql`SELECT id FROM class WHERE id = ${classId}`;
@@ -159,7 +162,7 @@ export async function linkCampaign(
         classCode: code,
       } as const;
 
-    let inserted: unknown[];
+    let inserted: { length: number };
     try {
       // A savepoint, so a lost race on the one-class key leaves this
       // transaction usable for the answer below.
@@ -201,6 +204,7 @@ export async function unlinkCampaign(
   campaignId: string,
 ): Promise<{ ok: true; removed: boolean }> {
   if (!canLinkCampaigns(viewer)) throw new PermissionError("class");
+  if (!isUuid(classId)) return { ok: true, removed: false };
   return withTransaction(async () => {
     const sql = db();
     const [removed] = await sql`

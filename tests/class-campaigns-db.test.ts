@@ -123,6 +123,18 @@ it("an unknown campaign or class is refused", async () => {
     await linkCampaign(user, "00000000-0000-4000-8000-0000000000ff", campaign),
     { ok: false, reason: "not_found" },
   );
+  assert.deepEqual(await linkCampaign(user, "not-a-uuid", campaign), {
+    ok: false,
+    reason: "not_found",
+  });
+  assert.deepEqual(await unlinkCampaign(user, "not-a-uuid", campaign), {
+    ok: true,
+    removed: false,
+  });
+  assert.deepEqual(await classCampaigns("not-a-uuid", user), {
+    linked: [],
+    choices: [],
+  });
 });
 
 it("unlinking removes the link and is audited", async () => {
@@ -140,8 +152,9 @@ it("unlinking removes the link and is audited", async () => {
     removed: false,
   });
   assert.equal((await classCampaigns(classId, user)).linked.length, 0);
+  // Both rows carry the transaction's now(), so their order is not defined.
   assert.deepEqual(
-    (await auditRows(classId)).map((r) => r.action),
+    (await auditRows(classId)).map((r) => r.action).sort(),
     ["create", "delete"],
   );
 });
