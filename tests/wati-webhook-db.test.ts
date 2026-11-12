@@ -13,7 +13,6 @@ import {
   runWatiQueue,
   verifyWatiToken,
   type WatiEvent,
-  referralOf,
 } from "../lib/wati/webhook.ts";
 import { createEnquiry } from "../lib/enquiries/create.ts";
 import { closeDb, db } from "../lib/sql.ts";
@@ -722,14 +721,13 @@ it("a new contact's first message is their first touch; a known person's adds no
 it("a message from a click-to-WhatsApp ad records the ad and click, and the enquiry is ctwa", async () => {
   const wa = phone();
   await handle(inbound(wa));
+  // WATI's shape (lib/import/wati-ctwa.ts).
   const ad = {
-    referral: {
-      source_url: "https://fb.me/abc",
-      source_id: "120200000000001",
-      source_type: "ad",
+    messageReferral: {
+      url: "https://fb.me/abc",
+      sourceId: "120200000000001",
       headline: "AI for managers",
-      ctwa_clid:
-        "ARAkLkA8rmlFeiCktEJQ-QTwRiyYHAFDLMNDBH0CD3qpjd0HR4irJ6LEkR7JwFF4XvnO2E4Nx0-eM-GABDLOPaOdRMv-_zfUQ2a",
+      ctwaClid: `ARAk${rnd()}`,
     },
   };
   // Later, from an ad: a second touch, not the first.
@@ -758,9 +756,18 @@ it("a message from a click-to-WhatsApp ad records the ad and click, and the enqu
   // A brand-new contact straight from an ad: the ad is their first touch and
   // the enquiry is ctwa.
   const wa2 = phone();
-  await handle(inbound(wa2, ad));
-  const [first] = await touchesOf(wa2);
-  assert.deepEqual([first.channel, first.is_first_touch], ["ctwa", true]);
+  const ad2 = {
+    messageReferral: { ...ad.messageReferral, ctwaClid: `ARAk${rnd()}` },
+  };
+  await handle(inbound(wa2, ad2));
+  // WATI repeats the referral on the next message: still one touch.
+  await handle(inbound(wa2, { whatsappMessageId: `wamid.${rnd()}`, ...ad2 }));
+  const t2 = await touchesOf(wa2);
+  assert.deepEqual(
+    t2.map((t) => [t.channel, t.is_first_touch, t.is_persons_first]),
+    [["ctwa", true, true]],
+    "the ad is the first touch, and no whatsapp touch beside it",
+  );
   const [e] = await enquiriesOf(wa2);
   assert.equal(e.channel, "ctwa");
 });
@@ -794,28 +801,10 @@ it("no new enquiry after a converted one, and none for our own outgoing messages
 
 it("a redelivered message adds no second touch or enquiry", async () => {
   const wa = phone();
-  const e = inbound(wa, { referral: { source_id: "1", source_type: "ad" } });
+  const e = inbound(wa, { messageReferral: { sourceId: "1" } });
   await handle(e);
   // WATI sends the same event again: recorded once, processed once.
   await handle(e);
   assert.equal((await touchesOf(wa)).length, 1);
   assert.equal((await enquiriesOf(wa)).length, 1);
-});
-
-test("the ad referral: snake or camel case, at the top or under data; a non-ad source with no click id is none", () => {
-  assert.deepEqual(
-    referralOf({
-      referral: { source_id: "9", source_type: "ad", ctwa_clid: "c" },
-    }),
-    { adId: "9", ctwaClid: "c", url: null },
-  );
-  assert.deepEqual(
-    referralOf({ data: { referral: { sourceId: "9", sourceUrl: "u" } } }),
-    { adId: "9", ctwaClid: null, url: "u" },
-  );
-  assert.equal(
-    referralOf({ referral: { source_id: "9", source_type: "post" } }),
-    null,
-  );
-  assert.equal(referralOf({ text: "hi" }), null);
 });
