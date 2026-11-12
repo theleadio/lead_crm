@@ -13,6 +13,7 @@
     "db:seed": "node --env-file=.env.local scripts/seed-dev.ts",
     "ghl:import": "node --env-file=.env.local scripts/import-ghl-contacts.ts",
     "ghl:attribution": "node --env-file=.env.local scripts/import-ghl-attribution.ts",
+    "ghl:forms": "node --env-file=.env.local scripts/import-ghl-forms.ts",
     "ghl:payments": "node --env-file=.env.local scripts/sync-salesprocess-payments.ts",
     "ghl:enrolments": "node --env-file=.env.local scripts/import-salesprocess-enrolments.ts",
     "lms:sync": "node --env-file=.env.local scripts/sync-lms.ts",
