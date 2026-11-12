@@ -218,8 +218,9 @@ const OPTIN_COLUMNS = 7;
 const dash = <span className="text-ink-muted">—</span>;
 
 // WhatsApp opt-ins per click-to-WhatsApp ad, from WATI (sync-wati-ctwa). An
-// opt-in is a person's first message from an ad; Meta's own message count
-// sits beside it so the two can be compared.
+// opt-in is a person who messaged through the ad in range (new + again); the
+// header counts each person once across all ads, and cost is per new person
+// (Shawn, 11 Nov). Meta's own message count sits beside it to compare.
 export function WhatsappOptinTable({
   table,
 }: {
@@ -232,18 +233,22 @@ export function WhatsappOptinTable({
         <>
           WhatsApp opt-ins by ad{" "}
           <span className="text-ink-muted font-normal">
-            ({table.total} {table.total === 1 ? "opt-in" : "opt-ins"})
+            ({table.total} {table.total === 1 ? "person" : "people"})
           </span>
         </>
       }
       description={
         <>
-          From WATI: one opt-in per person, their first WhatsApp message that
-          came from a Meta ad, credited to that ad. New are people we had no
-          earlier contact with. Again is someone who opted in before and came
-          back through this ad. Meta messages is Meta&apos;s own count of
-          conversations the ad started. Ads that spent on conversations and won
-          no opt-in are listed at zero.
+          From WATI: everyone who messaged us through a Meta ad in this range,
+          counted once per ad. New are people messaging us for the first time; a
+          contact we only had from the SalesProcess import still counts as new.
+          Again are people we had heard from before, through another ad, another
+          channel, or this ad before this date range. New plus Again is the
+          opt-ins. The number at the top counts each person once, even if they
+          came through several ads. Cost per new person divides the ad&apos;s
+          spend by its new people only. Meta messages is Meta&apos;s own count
+          of conversations the ad started. Ads that spent on conversations and
+          won no opt-in are listed at zero.
         </>
       }
     >
@@ -257,7 +262,7 @@ export function WhatsappOptinTable({
               <TableHead>Again</TableHead>
               <TableHead>Meta messages</TableHead>
               <TableHead>Spend</TableHead>
-              <TableHead>Cost per opt-in</TableHead>
+              <TableHead>Cost per new person</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -268,7 +273,7 @@ export function WhatsappOptinTable({
             ) : (
               table.rows.map((row) => {
                 const per = row.spendMyr
-                  ? costPer(row.spendMyr, row.optins)
+                  ? costPer(row.spendMyr, row.fresh)
                   : null;
                 return (
                   <TableRow
