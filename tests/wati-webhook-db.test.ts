@@ -487,21 +487,35 @@ const ctwaTouches = (waId: string) => db()`
 
 it("ctwa: a message from an ad adds one opt-in touchpoint, once", async () => {
   const wa = phone();
-  const ref = { sourceId: "52508930802001", ctwaClid: `clid-${rnd()}`, url: "https://fb.me/x" };
-  assert.equal((await handle(inbound(wa, { messageReferral: ref }))).kind, "saved");
+  const ref = {
+    sourceId: "52508930802001",
+    ctwaClid: `clid-${rnd()}`,
+    url: "https://fb.me/x",
+  };
+  assert.equal(
+    (await handle(inbound(wa, { messageReferral: ref }))).kind,
+    "saved",
+  );
   // The next message in the same conversation repeats the referral.
   await handle(inbound(wa, { messageReferral: ref }));
   const rows = await ctwaTouches(wa);
   assert.equal(rows.length, 1);
   assert.deepEqual(
     { ...rows[0] },
-    { channel: "ctwa", utm_ad_id: "52508930802001", ctwa_clid: ref.ctwaClid, is_first_touch: true },
+    {
+      channel: "ctwa",
+      utm_ad_id: "52508930802001",
+      ctwa_clid: ref.ctwaClid,
+      is_first_touch: true,
+    },
   );
 });
 
 it("ctwa: flat sourceId / ctwaClid on the event are read too", async () => {
   const wa = phone();
-  await handle(inbound(wa, { sourceId: "52509437936001", ctwaClid: `clid-${rnd()}` }));
+  await handle(
+    inbound(wa, { sourceId: "52509437936001", ctwaClid: `clid-${rnd()}` }),
+  );
   const rows = await ctwaTouches(wa);
   assert.equal(rows[0]?.utm_ad_id, "52509437936001");
 });
@@ -510,4 +524,141 @@ it("ctwa: a message without a referral adds no touchpoint", async () => {
   const wa = phone();
   await handle(inbound(wa));
   assert.equal((await ctwaTouches(wa)).length, 0);
+});
+
+// Unix seconds a little after now: a message sent after a close stamped now().
+const later = (s = 60) => String(Math.floor(Date.now() / 1000) + s);
+
+async function threadWithEnquiry(
+  over: { category?: string; channel?: string } = {},
+) {
+  const wa = phone();
+  await handle(inbound(wa));
+  const [c] = await db()`
+    SELECT id, person_id FROM conversation
+    WHERE channel = 'whatsapp' AND external_thread_id = ${wa}`;
+  const made = await createEnquiry(
+    {
+      personId: c.person_id,
+      conversationId: c.id,
+      channel: over.channel ?? "whatsapp",
+      category: over.category ?? "receipt",
+      subject: "Receipt please",
+    },
+    null,
+    new Set(),
+  );
+  if (made.kind !== "ok") throw new Error(made.kind);
+  const count = async () =>
+    (
+      await db()`SELECT count(*)::int AS n FROM enquiry WHERE conversation_id = ${c.id}`
+    )[0].n;
+  const close = (enquiryId: string) =>
+    db()`UPDATE enquiry SET status = 'human_resolved', closed_at = now(),
+                            resolution = 'Sent'
+         WHERE id = ${enquiryId}`;
+  const say = (text: string, timestamp = later()) =>
+    handle(
+      inbound(wa, { whatsappMessageId: `wamid.${rnd()}`, text, timestamp }),
+    );
+  return {
+    wa,
+    conv: c.id as string,
+    first: made.enquiry.id,
+    count,
+    close,
+    say,
+  };
+}
+
+it("a customer writing again after their enquiry was closed gets a linked follow-up; an open one gets none", async () => {
+  const t = await threadWithEnquiry();
+  // Still open: another message adds no enquiry.
+  await t.say("?");
+  assert.equal(await t.count(), 1);
+
+  await t.close(t.first);
+  await t.say("One more thing");
+  assert.equal(await t.count(), 2);
+  const [next] = await db()`
+    SELECT previous_enquiry_id, category, subject, status, channel FROM enquiry
+    WHERE conversation_id = ${t.conv} AND id <> ${t.first}`;
+  assert.deepEqual(
+    [
+      next.previous_enquiry_id,
+      next.category,
+      next.subject,
+      next.status,
+      next.channel,
+    ],
+    [t.first, "receipt", "Re: Receipt please", "open", "whatsapp"],
+  );
+
+  // A redelivered event is not a new message: no third enquiry.
+  await db()`UPDATE enquiry SET status = 'closed', closed_at = now(), resolution = 'x'
+             WHERE conversation_id = ${t.conv} AND status = 'open'`;
+  const last = inbound(t.wa, {
+    whatsappMessageId: `wamid.${rnd()}`,
+    timestamp: later(),
+  });
+  await handle(last);
+  await handle(last);
+  assert.equal(await t.count(), 3);
+});
+
+it("no follow-up while an older enquiry on the thread is still open", async () => {
+  const t = await threadWithEnquiry();
+  const [c] =
+    await db()`SELECT person_id FROM conversation WHERE id = ${t.conv}`;
+  // A second, newer enquiry on the same thread, then closed; the first stays open.
+  const newer = await createEnquiry(
+    {
+      personId: c.person_id,
+      conversationId: t.conv,
+      channel: "whatsapp",
+      category: "voucher",
+      subject: "Voucher",
+    },
+    null,
+    new Set(),
+  );
+  assert.equal(newer.kind, "ok");
+  if (newer.kind !== "ok") return;
+  await t.close(newer.enquiry.id);
+  await t.say("Hello?");
+  assert.equal(await t.count(), 2, "the open one already covers it");
+});
+
+it("a message sent before the close (a retry or a late delivery) opens no follow-up", async () => {
+  const t = await threadWithEnquiry();
+  await t.close(t.first);
+  await t.say("Sent before you closed it", later(-3600));
+  assert.equal(await t.count(), 1);
+});
+
+it("a follow-up to a phone enquiry is a WhatsApp one; a switched-off category falls back to other", async () => {
+  const t = await threadWithEnquiry({ channel: "phone", category: "voucher" });
+  await db()`UPDATE enquiry_category SET active = false WHERE code = 'voucher'`;
+  await t.close(t.first);
+  await t.say("Still broken");
+  const [next] = await db()`
+    SELECT channel, category FROM enquiry
+    WHERE conversation_id = ${t.conv} AND id <> ${t.first}`;
+  assert.deepEqual([next.channel, next.category], ["whatsapp", "other"]);
+});
+
+it("if making the follow-up fails, the customer's message is still saved", async () => {
+  const t = await threadWithEnquiry();
+  await t.close(t.first);
+  // Any new enquiry now fails inside the database.
+  await db()`
+    ALTER TABLE enquiry ADD CONSTRAINT test_no_new_enquiry
+      CHECK (subject IS NULL OR subject NOT LIKE 'Re:%') NOT VALID`;
+  const r = await t.say("Are you there?");
+  assert.equal(r.kind, "saved");
+  assert.equal(await t.count(), 1, "no follow-up");
+  const [m] = await db()`
+    SELECT body FROM conversation_message
+    WHERE conversation_id = ${t.conv} AND body = 'Are you there?'`;
+  assert.ok(m, "the message reached the inbox");
 });

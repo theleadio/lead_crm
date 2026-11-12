@@ -156,12 +156,15 @@ export async function createEnquiry(
 
 // The customer wrote again about an enquiry that is already resolved or
 // closed: a new enquiry, linked to the old one, same person, category and
-// conversation (decided 4 Nov for tickets). The old one stays as it is, since
-// closing is final (§9.13).
+// conversation (decided 4 Nov for tickets). `channel` is where they wrote
+// again (an enquiry logged as a phone call can be followed up on WhatsApp);
+// without it the old enquiry's channel is kept. The old one stays as it is,
+// since closing is final (§9.13).
 export async function followUpEnquiry(
   previousId: string,
   receivedAt: Date,
   holidays?: Holidays,
+  channel?: string,
 ): Promise<CreateResult> {
   if (!isUuid(previousId))
     return { kind: "invalid", field: "previousId", message: "No such enquiry" };
@@ -177,12 +180,17 @@ export async function followUpEnquiry(
       field: "previousId",
       message: "That enquiry is still open",
     };
+  // A category switched off since falls back to `other`, which stays on.
+  const [active] = prev.category
+    ? await db()`
+        SELECT 1 FROM enquiry_category WHERE code = ${prev.category} AND active`
+    : [];
   return createEnquiry(
     {
       personId: prev.person_id,
       conversationId: prev.conversation_id,
-      channel: prev.channel,
-      category: prev.category ?? "other",
+      channel: channel ?? prev.channel,
+      category: active ? prev.category : "other",
       subject: prev.subject
         ? `Re: ${prev.subject}`.slice(0, 200)
         : `Follows ${prev.number}`,

@@ -99,6 +99,8 @@ export type QueueAccess = {
   // The viewer's teams (migration 019): their rows are theirs to work,
   // whatever the role.
   teamIds: string[];
+  // §6 deal write: converting opens a deal, so it needs both.
+  canWriteDeal?: boolean;
 };
 
 // Whether any row could offer an action: the Actions column shows.
@@ -121,6 +123,9 @@ export function rowActions(row: EnquiryRow, access: QueueAccess) {
     category: mayTouch,
     // Closing is final, so only an enquiry still being worked offers it.
     close: mayTouch && isActiveStatus(row.status),
+    // Converting closes it too, and opens a deal.
+    convert:
+      mayTouch && isActiveStatus(row.status) && Boolean(access.canWriteDeal),
   };
 }
 

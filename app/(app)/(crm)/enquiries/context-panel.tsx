@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { DetailError, Panel, Row } from "@/components/detail-kit";
@@ -27,9 +28,11 @@ type LoadState =
 export function ContextPanel({
   enquiry,
   closeHref,
+  canConvert,
 }: {
   enquiry: EnquiryRow;
   closeHref: string;
+  canConvert: boolean;
 }) {
   const personId = enquiry.personId;
   const [state, setState] = useState<LoadState>({ status: "loading" });
@@ -200,15 +203,26 @@ export function ContextPanel({
         </Panel>
       )}
 
-      <ConvertControl enquiry={enquiry} />
+      <ConvertControl enquiry={enquiry} canConvert={canConvert} />
     </aside>
   );
 }
 
-// Convert to deal waits for POST /api/enquiries/:id/convert, its own change.
-// Until then the control says so and sends nothing; a converted enquiry
-// links its deal instead.
-export function ConvertControl({ enquiry }: { enquiry: EnquiryRow }) {
+// §9.13 convert to deal (POST /api/enquiries/:id/convert): opens a deal for
+// this person in the chosen pipeline, closes the enquiry as converted and
+// goes to the deal, where the rest is filled in. A converted enquiry links
+// its deal instead.
+export function ConvertControl({
+  enquiry,
+  canConvert,
+}: {
+  enquiry: EnquiryRow;
+  canConvert: boolean;
+}) {
+  const router = useRouter();
+  const [pipeline, setPipeline] = useState("individual");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
   if (enquiry.status === "converted" && enquiry.dealId)
     return (
       <Link
@@ -218,14 +232,57 @@ export function ConvertControl({ enquiry }: { enquiry: EnquiryRow }) {
         Open the deal this enquiry became
       </Link>
     );
+  if (!canConvert) return null;
   return (
-    <div className="space-y-1">
-      <Button variant="outline" disabled aria-describedby="convert-reason">
-        Convert to deal
+    <form
+      className="space-y-2 text-sm"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        setMessage(null);
+        const res = await fetch(`/api/enquiries/${enquiry.id}/convert`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "If-Match": String(enquiry.version),
+          },
+          body: JSON.stringify({ pipeline }),
+        }).catch(() => null);
+        const data = res ? await res.json().catch(() => null) : null;
+        if (!res || !res.ok) {
+          setBusy(false);
+          setMessage(
+            data?.error?.message ??
+              "Couldn't convert — check your connection and try again.",
+          );
+          return;
+        }
+        // Converted: stay busy while the deal page loads, so a second click
+        // can't send the old If-Match and report a conflict.
+        if (typeof data?.dealId === "string")
+          router.push(`/deals/${data.dealId}`);
+        else router.refresh();
+      }}
+    >
+      {message && (
+        <p role="alert" className="text-danger">
+          {message}
+        </p>
+      )}
+      <label className="flex items-center gap-2">
+        <span>Pipeline</span>
+        <select
+          value={pipeline}
+          onChange={(e) => setPipeline(e.target.value)}
+          className="border-line-strong bg-surface-sunken text-ink focus-visible:outline-focus-ring h-8 rounded-sm border px-2.5 text-[13px] focus-visible:outline-2 focus-visible:outline-offset-2"
+        >
+          <option value="individual">Individual</option>
+          <option value="corporate">Corporate</option>
+        </select>
+      </label>
+      <Button type="submit" variant="outline" disabled={busy}>
+        {busy ? "Converting…" : "Convert to deal"}
       </Button>
-      <p id="convert-reason" className="text-ink-muted text-sm">
-        Coming in a later release. For now, add a deal from their full record.
-      </p>
-    </div>
+    </form>
   );
 }

@@ -182,6 +182,7 @@ test("support and super_admin get every action on an open row", () => {
     assign: true,
     category: true,
     close: true,
+    convert: false,
   });
 });
 
@@ -191,6 +192,7 @@ test("management, sales and operations get no action at all", () => {
       assign: false,
       category: false,
       close: false,
+      convert: false,
     });
 });
 
@@ -199,12 +201,14 @@ test("a part-timer acts only on their own row, and never assigns", () => {
     assign: false,
     category: true,
     close: true,
+    convert: false,
   });
   for (const assignedUserId of [OTHER, null])
     assert.deepEqual(rowActions(row({ assignedUserId }), partTime), {
       assign: false,
       category: false,
       close: false,
+      convert: false,
     });
 });
 
@@ -222,12 +226,14 @@ test("a team member works their team's rows whatever their role", () => {
     assign: true,
     category: true,
     close: true,
+    convert: false,
   });
   // …and only their team's.
   assert.deepEqual(rowActions(row(), financeMember), {
     assign: false,
     category: false,
     close: false,
+    convert: false,
   });
 });
 
@@ -323,19 +329,23 @@ test("open deals leave out won and lost", () => {
   );
 });
 
-test("the panel says why convert is off, sends nothing, and links a converted deal", () => {
+test("convert sends to its route with If-Match, and a converted enquiry links its deal", () => {
   const panel = source("context-panel.tsx");
   assert.match(panel, /shortcut: /);
-  // The control is disabled and has no handler that could send a request.
-  assert.match(
-    panel,
-    /<Button variant="outline" disabled aria-describedby="convert-reason">/,
-  );
-  assert.doesNotMatch(panel, /enquiries\/\$\{[^}]+\}\/convert/);
+  assert.match(panel, /`\/api\/enquiries\/\$\{enquiry\.id\}\/convert`/);
+  assert.match(panel, /"If-Match": String\(enquiry\.version\)/);
+  assert.match(panel, /if \(!canConvert\) return null;/);
   assert.match(panel, /enquiry\.status === "converted" && enquiry\.dealId/);
   assert.match(panel, /href=\{`\/deals\/\$\{enquiry\.dealId\}`\}/);
   // The five §9.13 sections and the §9.2 link.
   for (const title of ["Contact", "Company", "Open deals", "Enrolments"])
     assert.match(panel, new RegExp(`title="${title}"`), title);
   assert.match(panel, /href=\{`\/people\/\$\{person\.id\}`\}/);
+});
+
+test("convert is offered only with deal write, on a row still being worked", () => {
+  const withDeals = { ...full, canWriteDeal: true };
+  assert.equal(rowActions(row(), withDeals).convert, true);
+  assert.equal(rowActions(row(), full).convert, false, "no deal write");
+  assert.equal(rowActions(row({ status: "closed" }), withDeals).convert, false);
 });
