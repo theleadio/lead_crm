@@ -479,6 +479,54 @@ it("a reply typed in the WATI app stops the reply deadline of the thread's open 
   assert.ok(await firstResponse(), "a typed reply is");
 });
 
+// Click-to-WhatsApp: an inbound message carrying Meta's referral is also an
+// opt-in touchpoint (lib/import/wati-ctwa.ts), live rather than nightly.
+const ctwaTouches = (waId: string) => db()`
+  SELECT t.channel, t.utm_ad_id, t.ctwa_clid, t.is_first_touch
+  FROM touchpoint t JOIN person p ON p.id = t.person_id
+  WHERE p.phone_e164 = ${`+${waId}`} AND t.channel = 'ctwa'`;
+
+it("ctwa: a message from an ad adds one opt-in touchpoint, once", async () => {
+  const wa = phone();
+  const ref = {
+    sourceId: "52508930802001",
+    ctwaClid: `clid-${rnd()}`,
+    url: "https://fb.me/x",
+  };
+  assert.equal(
+    (await handle(inbound(wa, { messageReferral: ref }))).kind,
+    "saved",
+  );
+  // The next message in the same conversation repeats the referral.
+  await handle(inbound(wa, { messageReferral: ref }));
+  const rows = await ctwaTouches(wa);
+  assert.equal(rows.length, 1);
+  assert.deepEqual(
+    { ...rows[0] },
+    {
+      channel: "ctwa",
+      utm_ad_id: "52508930802001",
+      ctwa_clid: ref.ctwaClid,
+      is_first_touch: true,
+    },
+  );
+});
+
+it("ctwa: flat sourceId / ctwaClid on the event are read too", async () => {
+  const wa = phone();
+  await handle(
+    inbound(wa, { sourceId: "52509437936001", ctwaClid: `clid-${rnd()}` }),
+  );
+  const rows = await ctwaTouches(wa);
+  assert.equal(rows[0]?.utm_ad_id, "52509437936001");
+});
+
+it("ctwa: a message without a referral adds no touchpoint", async () => {
+  const wa = phone();
+  await handle(inbound(wa));
+  assert.equal((await ctwaTouches(wa)).length, 0);
+});
+
 // Unix seconds a little after now: a message sent after a close stamped now().
 const later = (s = 60) => String(Math.floor(Date.now() / 1000) + s);
 
