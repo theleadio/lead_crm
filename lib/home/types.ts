@@ -59,17 +59,17 @@ export type HomeClass = {
   optins: { linkedCampaigns: number; people: number } | null;
 };
 
-// A free workshop on Home, read from its "| Lead |" campaign names
+// A free workshop on Home, read from its GHL registration form's name
 // (lib/home/workshops.ts). Not a class, so there is no id to link to.
 export type HomeWorkshop = {
   title: string;
   language: "en" | "zh";
   // YYYY-MM-DD
   date: string;
-  // Distinct live people with a touchpoint on any of its campaigns, all time.
+  // Distinct live people who registered on any of its forms, all time.
   signups: number;
-  // How many campaign spellings were merged into this workshop.
-  campaigns: number;
+  // How many registration forms were merged into this workshop.
+  forms: number;
   // Sign-up goal set on Home (app_setting), null until someone sets one;
   // goalVersion is what an edit sends back (§7).
   goal: number | null;

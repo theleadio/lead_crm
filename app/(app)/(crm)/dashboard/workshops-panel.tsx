@@ -5,7 +5,7 @@ import { daysUntil, startsLabel } from "./classes-panel";
 import { WorkshopGoal } from "./workshop-goal";
 
 // Home, 12 Nov 2026: free workshops in the next 14 days with how many people
-// signed up through their lead ads. Free workshops are not CRM classes yet,
+// registered on their GHL sign-up form. Free workshops are not CRM classes yet,
 // so a card has nowhere to link to.
 export function WorkshopsPanel({
   workshops,
@@ -37,7 +37,7 @@ export function WorkshopsPanel({
             No free workshop in the next 14 days.
           </p>
           <p className="mt-1">
-            A workshop appears here once its lead ads bring sign-ups.
+            A workshop appears here once people register on its sign-up form.
           </p>
         </div>
       ) : (

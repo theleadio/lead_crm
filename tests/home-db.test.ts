@@ -10,6 +10,7 @@ import {
   upcomingClasses,
 } from "../lib/home/service.ts";
 import { setWorkshopGoal, upcomingWorkshops } from "../lib/home/workshops.ts";
+import { parseWorkshopForm } from "../lib/import/ghl-forms.ts";
 import { listClasses } from "../lib/classes/service.ts";
 import { classListQuerySchema } from "../lib/validation/class-query.ts";
 import { closeDb, db, rollbackAfter } from "../lib/sql.ts";
@@ -405,64 +406,74 @@ it("part_time sees no opt-ins", async () => {
   assert.equal(found.optins, null);
 });
 
-// Free workshops (Home, 12 Nov): read from "| Lead |" campaign names, which
-// the GHL import copies onto touchpoints as utm_campaign.
+// Free workshops (Home, 12 Nov): registrations are GHL form submissions,
+// imported by ghl:forms as touchpoints named after the form.
 const MON = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ");
 
-// A lead campaign name for a workshop `days` from today in Kuala Lumpur.
-function workshopCampaign(
+// A registration form name for a workshop `days` from today in Kuala Lumpur.
+function workshopForm(
   title: string,
   days: number,
-  spelling: { brand?: string; kind?: string; lang?: string } = {},
+  spelling: { prefix?: string; dash?: boolean } = {},
 ): string {
   const today = new Date().toLocaleDateString("en-CA", {
     timeZone: "Asia/Kuala_Lumpur",
   });
   const at = new Date(Date.parse(`${today}T00:00:00Z`) + days * 864e5);
-  const mon = MON[at.getUTCMonth()];
-  return `${spelling.brand ?? "LEAD"} | ${mon}${at.getUTCFullYear()} | ${spelling.kind ?? "Lead"} | ${title} ${spelling.lang ?? "EN"} ${at.getUTCDate()} ${mon}`;
+  return `${spelling.prefix ?? ".02"} LEAD - ${title}${spelling.dash ? " -" : ""} ${at.getUTCDate()} ${MON[at.getUTCMonth()]} ${at.getUTCFullYear()}`;
 }
 
-async function signUp(campaign: string, person: string): Promise<void> {
+async function signUp(form: string, person: string): Promise<void> {
   await db()`
-    INSERT INTO touchpoint (person_id, channel, utm_campaign, form_name)
-    VALUES (${person}, 'import', ${campaign}, 'ghl-attribution')`;
+    INSERT INTO touchpoint (person_id, channel, form_name, external_ref)
+    VALUES (${person}, 'import', ${form}, ${`ghl-form:${crypto.randomUUID()}`})`;
 }
 
 const uniqueTitle = () => `Test Workshop ${crypto.randomUUID().slice(0, 8)}`;
 
-it("two spellings make one workshop; a person on both counts once", async () => {
+it("two forms for one workshop make one card; a person on both counts once", async () => {
   const user = await newUser("marketing");
   const title = uniqueTitle();
-  const upper = workshopCampaign(title, 5);
-  const lower = workshopCampaign(title.toLowerCase(), 5, {
-    brand: "Lead",
-    lang: "En",
+  const first = workshopForm(title, 5);
+  const second = workshopForm(title.toLowerCase(), 5, {
+    prefix: ".05",
+    dash: true,
   });
   const [a, b, c] = [await newPerson(), await newPerson(), await newPerson()];
-  await signUp(upper, a);
-  await signUp(upper, b);
-  await signUp(lower, b);
-  await signUp(lower, c);
+  await signUp(first, a);
+  await signUp(first, b);
+  await signUp(second, b);
+  await signUp(second, c);
 
   const found = (await upcomingWorkshops(user)).filter(
     (w) => w.title.toLowerCase() === title.toLowerCase(),
   );
   assert.equal(found.length, 1);
   assert.equal(found[0].signups, 3);
-  assert.equal(found[0].campaigns, 2);
+  assert.equal(found[0].forms, 2);
   assert.equal(found[0].language, "en");
 });
 
-it("skips paid campaigns, deleted people and workshops past 14 days", async () => {
+it("a lead campaign without a registration no longer counts", async () => {
+  const user = await newUser("marketing");
+  const title = uniqueTitle();
+  await db()`
+    INSERT INTO touchpoint (person_id, channel, utm_campaign, form_name)
+    VALUES (${await newPerson()}, 'import',
+            ${`LEAD | Nov2026 | Lead | ${title} EN 20 Nov`}, 'ghl-attribution')`;
+  const titles = (await upcomingWorkshops(user)).map((w) => w.title);
+  assert.equal(titles.includes(title), false);
+});
+
+it("skips interest forms, deleted people and workshops past 14 days", async () => {
   const user = await newUser("marketing");
   const paid = uniqueTitle();
   const far = uniqueTitle();
   const near = uniqueTitle();
-  await signUp(workshopCampaign(paid, 3, { kind: "Sales" }), await newPerson());
-  await signUp(workshopCampaign(far, 15), await newPerson());
-  await signUp(workshopCampaign(near, 14), await newPerson({ deleted: true }));
-  await signUp(workshopCampaign(near, 14), await newPerson());
+  await signUp(`.03 LEAD - EN - ${paid} Interest Form`, await newPerson());
+  await signUp(workshopForm(far, 15), await newPerson());
+  await signUp(workshopForm(near, 14), await newPerson({ deleted: true }));
+  await signUp(workshopForm(near, 14), await newPerson());
 
   const titles = (await upcomingWorkshops(user)).map((w) => w.title);
   assert.equal(titles.includes(paid), false);
@@ -485,11 +496,9 @@ async function upcomingOne(user: Viewer, title: string) {
 }
 
 async function workshopKey(title: string, days: number) {
-  const name = workshopCampaign(title, days);
+  const name = workshopForm(title, days);
   await signUp(name, await newPerson());
-  const parsed = (
-    await import("../lib/home/workshops.ts")
-  ).parseWorkshopCampaign(name);
+  const parsed = parseWorkshopForm(name);
   assert.ok(parsed);
   return parsed;
 }
