@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
-import { Row } from "@/components/detail-kit";
 import { Button } from "@/components/ui/button";
 import type { CampaignChoice, LinkedCampaign } from "@/lib/classes/campaigns";
 import { formatDate } from "@/lib/format/date";
@@ -72,7 +71,12 @@ export function ClassCampaigns({
       ) : (
         <div>
           {linked.map((c) => (
-            <Row key={c.campaignId}>
+            <div
+              key={c.campaignId}
+              // Not detail-kit's Row: its two equal columns halve the name
+              // and right-align it when there is no Remove (review, 12 Nov).
+              className="border-line flex items-start justify-between gap-3 border-t py-2 text-sm first:border-t-0"
+            >
               <span className="flex min-w-0 flex-col">
                 <span className="break-words">{c.name}</span>
                 <span className="text-ink-muted text-xs">
@@ -89,13 +93,13 @@ export function ClassCampaigns({
                     size="sm"
                     disabled={busy}
                     onClick={() => send("DELETE", c.campaignId)}
-                    aria-label={`Unlink ${c.name}`}
+                    aria-label={`Remove ${c.name}`}
                   >
                     Remove
                   </Button>
                 </span>
               )}
-            </Row>
+            </div>
           ))}
         </div>
       )}
@@ -129,9 +133,11 @@ export function ClassCampaigns({
                     {suggested.map(option)}
                   </optgroup>
                 )}
-                <optgroup label="Other campaigns (last 90 days)">
-                  {others.map(option)}
-                </optgroup>
+                {others.length > 0 && (
+                  <optgroup label="Other campaigns (last 90 days)">
+                    {others.map(option)}
+                  </optgroup>
+                )}
               </select>
               <Button type="submit" size="sm" disabled={busy || !picked}>
                 Link

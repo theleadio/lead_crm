@@ -43,6 +43,10 @@ export function canLinkCampaigns(viewer: Viewer): boolean {
 }
 
 const MONTHS = "jan feb mar apr may jun jul aug sep oct nov dec".split(" ");
+const FULL_MONTHS = (
+  "january february march april may june july " +
+  "august september october november december"
+).split(" ");
 
 // "LEAD | Oct2026 | WhatsApp | AI Full-Stack CN 14-15 Nov KL" names its class
 // in the part after the third "|". The "Oct2026" part is when the campaign
@@ -55,19 +59,19 @@ export function suggestsClass(
   if (parts.length < 4) return false;
   const event = parts.slice(3).join("|");
   const day = Number(startDate.slice(8, 10));
-  const month = MONTHS[Number(startDate.slice(5, 7)) - 1];
+  const m = Number(startDate.slice(5, 7)) - 1;
+  // The month as a whole word, short or full ("Nov", "28Nov", "November"),
+  // so "Marketing" or "Junior" are never read as Mar or Jun (review, 12 Nov).
+  const month = [MONTHS[m], FULL_MONTHS[m], ...(m === 8 ? ["sept"] : [])].join(
+    "|",
+  );
   return (
     new RegExp(`(^|\\D)0?${day}(\\D|$)`).test(event) &&
-    new RegExp(`(^|[^a-z])${month}`, "i").test(event)
+    new RegExp(`(^|[^a-z])(${month})(?![a-z])`, "i").test(event)
   );
 }
 
-const MONTH_WORDS = new Set([
-  ...MONTHS,
-  ..."january february march april june july august sept september october november december".split(
-    " ",
-  ),
-]);
+const MONTH_WORDS = new Set([...MONTHS, ...FULL_MONTHS, "sept"]);
 
 // Words too common to tell two courses apart.
 const GENERIC = new Set(
@@ -129,11 +133,13 @@ export async function classCampaigns(
     WHERE id = ${classId}`;
   if (!cls) return { linked: [], choices: [] };
 
-  // Meta's latest name per campaign, and its last day with a row.
-  const meta = sql`
+  // Meta's latest name per campaign and its last day with a row, read only
+  // for the campaigns asked about (review, 12 Nov: the whole table was
+  // aggregated twice on every class page).
+  const meta = (only: ReturnType<typeof sql>) => sql`
     SELECT campaign_id, (array_agg(campaign_name ORDER BY day DESC))[1] AS name,
            max(day) AS last_day
-    FROM meta_ad_insight WHERE true ${accountSql(sql)}
+    FROM meta_ad_insight WHERE ${only} ${accountSql(sql)}
     GROUP BY campaign_id`;
 
   const linked = await sql`
@@ -141,18 +147,23 @@ export async function classCampaigns(
            to_char(m.last_day, 'YYYY-MM-DD') AS last_day,
            l.created_by IS NULL AS automatic
     FROM class_meta_campaign l
-    LEFT JOIN (${meta}) m ON m.campaign_id = l.meta_campaign_id
+    LEFT JOIN (${meta(sql`campaign_id IN (SELECT meta_campaign_id FROM class_meta_campaign
+                                           WHERE class_id = ${classId})`)}) m
+      ON m.campaign_id = l.meta_campaign_id
     WHERE l.class_id = ${classId}
     ORDER BY m.last_day DESC NULLS LAST, name`;
 
-  const choices = await sql`
-    SELECT m.campaign_id, m.name, to_char(m.last_day, 'YYYY-MM-DD') AS last_day,
-           k.code AS linked_to
-    FROM (${meta}) m
-    LEFT JOIN class_meta_campaign l ON l.meta_campaign_id = m.campaign_id
-    LEFT JOIN class k ON k.id = l.class_id
-    WHERE m.last_day >= (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date - ${CHOICE_DAYS}::int
-      AND l.class_id IS DISTINCT FROM ${classId}::uuid`;
+  // The picker lists every recent campaign, so only people who may link get
+  // it; other class readers see the linked ones only (review, 12 Nov).
+  const choices = canLinkCampaigns(viewer)
+    ? await sql`
+        SELECT m.campaign_id, m.name, to_char(m.last_day, 'YYYY-MM-DD') AS last_day,
+               k.code AS linked_to
+        FROM (${meta(sql`day >= (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date - ${CHOICE_DAYS}::int`)}) m
+        LEFT JOIN class_meta_campaign l ON l.meta_campaign_id = m.campaign_id
+        LEFT JOIN class k ON k.id = l.class_id
+        WHERE l.class_id IS DISTINCT FROM ${classId}::uuid`
+    : [];
 
   return {
     linked: linked.map((r) => ({
@@ -215,27 +226,23 @@ export async function linkCampaign(
         classCode: code,
       } as const;
 
-    let inserted: { length: number };
-    try {
-      // A savepoint, so a lost race on the one-class key leaves this
-      // transaction usable for the answer below.
-      inserted = await withTransaction(
-        () => sql`
-          INSERT INTO class_meta_campaign (class_id, meta_campaign_id, campaign_name, created_by)
-          VALUES (${classId}, ${campaignId}, ${campaign.name}, ${viewer.id})
-          ON CONFLICT (class_id, meta_campaign_id) DO NOTHING
-          RETURNING class_id`,
-      );
-    } catch (err) {
-      const raced =
-        (err as { constraint_name?: string }).constraint_name ===
-        "class_meta_campaign_one_class";
-      if (!raced) throw err;
-      return {
-        ok: false,
-        reason: "linked_elsewhere",
-        classCode: (await elsewhere()) ?? "another class",
-      } as const;
+    // No conflict target: a same-pair relink and a lost race on the
+    // one-class key both insert nothing, rather than raising (review, 12 Nov:
+    // a caught unique violation still failed the outer transaction). A new
+    // statement then sees the winner's commit and says which class it is.
+    const inserted = await sql`
+      INSERT INTO class_meta_campaign (class_id, meta_campaign_id, campaign_name, created_by)
+      VALUES (${classId}, ${campaignId}, ${campaign.name}, ${viewer.id})
+      ON CONFLICT DO NOTHING
+      RETURNING class_id`;
+    if (!inserted.length) {
+      const winner = await elsewhere();
+      if (winner)
+        return {
+          ok: false,
+          reason: "linked_elsewhere",
+          classCode: winner,
+        } as const;
     }
 
     if (inserted.length)
@@ -339,28 +346,36 @@ export async function autoLinkCampaigns(opts: { apply: boolean }): Promise<{
         bump("skip: someone removed this link");
         continue;
       }
+      if (opts.apply) {
+        // A person may have linked it since the read above: then nothing is
+        // inserted, audited or counted (review, 12 Nov).
+        const made = await sql`
+          INSERT INTO class_meta_campaign (class_id, meta_campaign_id, campaign_name)
+          VALUES (${k.id}, ${c.campaign_id}, ${c.name})
+          ON CONFLICT DO NOTHING
+          RETURNING class_id`;
+        if (!made.length) {
+          bump("skip: linked by someone meanwhile");
+          continue;
+        }
+        await writeAudit({
+          userId: null,
+          action: "create",
+          entity: "class",
+          entityId: k.id,
+          before: null,
+          after: {
+            linkedCampaign: { id: c.campaign_id, name: c.name },
+            by: "auto-link",
+          },
+        });
+      }
       links.push({
         classCode: k.code,
         campaignId: c.campaign_id,
         name: c.name,
       });
       bump("links");
-      if (!opts.apply) continue;
-      await sql`
-        INSERT INTO class_meta_campaign (class_id, meta_campaign_id, campaign_name)
-        VALUES (${k.id}, ${c.campaign_id}, ${c.name})
-        ON CONFLICT DO NOTHING`;
-      await writeAudit({
-        userId: null,
-        action: "create",
-        entity: "class",
-        entityId: k.id,
-        before: null,
-        after: {
-          linkedCampaign: { id: c.campaign_id, name: c.name },
-          by: "auto-link",
-        },
-      });
     }
     return { links, stats };
   });

@@ -105,3 +105,23 @@ test("a course word that only starts like a month still matches", () => {
     true,
   );
 });
+
+// Review (12 Nov): the month must be a whole word, so "Marketing", "Augmented",
+// "Junior", "Decision" or "Novice" never read as a month.
+test("a word that starts like a month is not the class's month", () => {
+  for (const [name, start] of [
+    ["LEAD | Nov2026 | Sales | AI Marketing EN 11 Nov", "2027-03-11"],
+    ["LEAD | Nov2026 | Sales | AI Augmented Coding 5 Nov", "2027-08-05"],
+    ["LEAD | Nov2026 | Sales | Junior Coders 6 Dec", "2027-06-06"],
+    ["LEAD | Nov2026 | Sales | Decision AI 3 Nov", "2026-12-03"],
+    ["LEAD | Nov2026 | Sales | Novice Python 7 Dec", "2026-11-07"],
+  ])
+    assert.equal(suggestsClass(name, start), false, name);
+  assert.equal(
+    suggestsClass(
+      "LEAD | Nov2026 | Sales | AI Engineering 9 December",
+      "2026-12-09",
+    ),
+    true,
+  );
+});

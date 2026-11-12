@@ -44,6 +44,11 @@ async function newClass(
   return c.id;
 }
 
+// The account the service filters on when META_AD_ACCOUNT_ID is set, stored
+// without "act_" as the Meta sync stores it.
+const ACCOUNT =
+  process.env.META_AD_ACCOUNT_ID?.trim().replace(/^act_/, "") || "act_test";
+
 const numericId = () => String(Math.floor(1e14 + Math.random() * 8e14));
 
 // One spend row for a campaign, `daysAgo` days back, as the Meta sync writes it.
@@ -56,7 +61,7 @@ async function metaCampaign(
     INSERT INTO meta_ad_insight (ad_id, day, account_id, campaign_id, campaign_name,
                                  adset_id, adset_name, ad_name, currency, spend,
                                  impressions, clicks)
-    VALUES (${numericId()}, current_date - ${daysAgo}::int, 'act_test', ${id},
+    VALUES (${numericId()}, current_date - ${daysAgo}::int, ${ACCOUNT}, ${id},
             ${name}, 's', 's', 'a', 'MYR', '1.00', 1, 1)`;
   return id;
 }
@@ -168,7 +173,11 @@ it("sales can read the links but not change them", async () => {
   const user = await newUser("sales");
   const classId = await newClass(`C-${crypto.randomUUID()}`);
   const campaign = await metaCampaign("LEAD | Nov2026 | Sales | Test");
-  await assert.doesNotReject(classCampaigns(classId, user));
+  await linkCampaign(await newUser("marketing"), classId, campaign);
+  const seen = await classCampaigns(classId, user);
+  assert.equal(seen.linked.length, 1);
+  // The picker's list (every recent campaign) is only for those who can link.
+  assert.deepEqual(seen.choices, []);
   await assert.rejects(linkCampaign(user, classId, campaign), PermissionError);
   await assert.rejects(
     unlinkCampaign(user, classId, campaign),

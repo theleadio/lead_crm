@@ -44,7 +44,7 @@ async function handle(
     return apiError(
       409,
       "linked_elsewhere",
-      `This campaign already sells ${result.classCode}. Unlink it there first.`,
+      `This campaign already sells ${result.classCode}. Remove it there first.`,
     );
   if (result.reason === "not_found")
     return apiError(404, "not_found", "This class no longer exists.");
