@@ -247,7 +247,7 @@ Tested on an empty PostgreSQL 18 database with 001–023 applied (12 Nov): 023 1
 
 ## Migration 024 — browser roles off the inbox tables (12 Nov)
 
-Migration 019 left `conversation`, `conversation_message`, `enquiry_category`, `enquiry_event`, `enquiry_rule`, `holiday`, `team` and `team_member` readable by Supabase's `anon` and `authenticated` roles, so the public anon key could read customer WhatsApp text through the REST API. 024 revokes them, as 014 and 023 do for their tables; both apps use the direct connection, so nothing reads them that way. Applied to production by hand on 12 Nov, the day it was found.
+Migration 019 left `conversation`, `conversation_message`, `enquiry_category`, `enquiry_event`, `enquiry_rule`, `holiday`, `team` and `team_member` readable by Supabase's `anon` and `authenticated` roles, so the public anon key could read customer WhatsApp text through the REST API. 024 revokes them, as 014 and 023 do for their tables, and the views `consent_current` and `payment_net` too (owned by `postgres`, not `security_invoker`, so they read past the RLS on `consent` and `payment`); both apps use the direct connection, so nothing reads them that way. Applied to production by hand on 12 Nov, the day it was found.
 
 ## Where this is stricter or more specific than the spec
 
