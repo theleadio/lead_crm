@@ -2,10 +2,17 @@ import {
   canReviewFlagged,
   canWriteClass,
   PermissionError,
+  permissionFor,
   requirePermission,
   type Viewer,
 } from "../auth/permissions.ts";
 import { classWhenSql, seatTakenSql } from "../classes/seats.ts";
+import {
+  campaignIdSql,
+  campaignJoinSql,
+  campaignMapSql,
+  livePersonSql,
+} from "../reports/ads.ts";
 import { listDeals } from "../deals/service.ts";
 import { PIPELINES, type Pipeline, type Stage } from "../deals/types.ts";
 import { sumMyr } from "../format/money.ts";
@@ -154,6 +161,10 @@ export async function upcomingClasses(viewer: Viewer): Promise<HomeClass[]> {
       AND c.start_date <= (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date + 14
     ORDER BY c.start_date, c.code`;
 
+  const optins = canSeeLeadCounts(viewer)
+    ? await classOptins(rows.map((r) => r.id as string))
+    : null;
+
   return rows.map((r) => ({
     id: r.id,
     code: r.code,
@@ -167,7 +178,54 @@ export async function upcomingClasses(viewer: Viewer): Promise<HomeClass[]> {
     status: r.status,
     capacity: r.capacity,
     sold: r.sold,
+    optins: optins
+      ? (optins.get(r.id) ?? { linkedCampaigns: 0, people: 0 })
+      : null,
   }));
+}
+
+// Opt-ins and sign-ups are totals over everyone's leads, so they follow the
+// ads report's rule (requireReportReader): person read without the
+// assigned-only limit. Other roles get the classes without the number.
+export function canSeeLeadCounts(viewer: Viewer): boolean {
+  const read = permissionFor(viewer, "person", "read");
+  return read.allowed && !read.assignedOnly;
+}
+
+// Per class: how many Meta campaigns are linked (migration 023) and how many
+// live people opted in on WhatsApp through any of them, all time. The ad's
+// campaign is resolved the way the ads report does it, so a card and the
+// report agree on which campaign a chat came from.
+async function classOptins(
+  classIds: string[],
+): Promise<Map<string, { linkedCampaigns: number; people: number }>> {
+  if (classIds.length === 0) return new Map();
+  const sql = db();
+  const rows = await sql`
+    WITH ${campaignMapSql(sql)},
+    links AS (
+      SELECT class_id, meta_campaign_id FROM class_meta_campaign
+      WHERE class_id = ANY(${classIds}::uuid[])
+    ),
+    ctwa AS (
+      SELECT DISTINCT t.person_id, ${campaignIdSql(sql)} AS campaign_id
+      FROM touchpoint t
+      JOIN person p ON p.id = t.person_id
+      ${campaignJoinSql(sql)}
+      WHERE t.channel = 'ctwa' AND ${livePersonSql(sql)}
+    )
+    SELECT l.class_id,
+           count(DISTINCT l.meta_campaign_id)::int AS linked,
+           count(DISTINCT c.person_id)::int AS people
+    FROM links l
+    LEFT JOIN ctwa c ON c.campaign_id = l.meta_campaign_id
+    GROUP BY l.class_id`;
+  return new Map(
+    rows.map((r) => [
+      r.class_id as string,
+      { linkedCampaigns: r.linked as number, people: r.people as number },
+    ]),
+  );
 }
 
 // Spec §9.0 needs attention: one count per item, each gated on its own

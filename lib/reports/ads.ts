@@ -197,7 +197,7 @@ function rangeSql(sql: postgres.Sql, q: AdsReportQuery, alias = "t") {
 
 // §12.10: a deleted or merged-away person's touchpoints are gone from every
 // count, so a merge never changes a campaign's total.
-function livePersonSql(sql: postgres.Sql) {
+export function livePersonSql(sql: postgres.Sql) {
   return sql`p.deleted_at IS NULL AND p.merged_into_id IS NULL`;
 }
 

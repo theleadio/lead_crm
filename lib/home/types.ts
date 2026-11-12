@@ -53,6 +53,10 @@ export type HomeClass = {
   capacity: number;
   // Seats taken per §12.1.
   sold: number;
+  // WhatsApp opt-ins from the Meta campaigns linked to this class (migration
+  // 023): distinct live people, all time. null when this viewer may not see
+  // lead counts (canSeeLeadCounts).
+  optins: { linkedCampaigns: number; people: number } | null;
 };
 
 // One count per item, and null for an item this role cannot act on (§9.0:

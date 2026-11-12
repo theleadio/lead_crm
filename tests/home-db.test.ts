@@ -318,3 +318,88 @@ it("the pending-notice count matches the list its link opens", async () => {
     false,
   );
 });
+
+// Opt-ins on the class cards (Home, 12 Nov): people whose click-to-WhatsApp
+// chat came from a Meta campaign linked to the class (migration 023).
+const numericId = () => String(Math.floor(Math.random() * 1e15));
+
+async function linkCampaign(classId: string): Promise<string> {
+  const campaign = numericId();
+  await db()`
+    INSERT INTO class_meta_campaign (class_id, meta_campaign_id, campaign_name)
+    VALUES (${classId}, ${campaign}, 'LEAD | Nov2026 | WhatsApp | Test')`;
+  return campaign;
+}
+
+// One ad in the campaign, as the daily Meta sync stores it, and one ctwa
+// touch through that ad for the person.
+async function optIn(campaign: string, person: string): Promise<void> {
+  const ad = numericId();
+  await db()`
+    INSERT INTO meta_ad_insight (ad_id, day, account_id, campaign_id, campaign_name,
+                                 adset_id, adset_name, ad_name, currency, spend,
+                                 impressions, clicks)
+    VALUES (${ad}, (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date, 'act_test',
+            ${campaign}, 'LEAD | Nov2026 | WhatsApp | Test', 'set1', 'Set 1',
+            'Ad', 'MYR', '1.00', 10, 1)`;
+  await db()`
+    INSERT INTO touchpoint (person_id, channel, utm_ad_id)
+    VALUES (${person}, 'ctwa', ${ad})`;
+}
+
+it("opt-ins count people on the class's linked campaigns", async () => {
+  const user = await newUser("operations");
+  const classId = await newClass(await newCourse(), 3);
+  const campaign = await linkCampaign(classId);
+  await optIn(campaign, await newPerson());
+  await optIn(campaign, await newPerson());
+
+  const found = (await upcomingClasses(user)).find((c) => c.id === classId);
+  assert.deepEqual(found?.optins, { linkedCampaigns: 1, people: 2 });
+});
+
+it("counts a returning chatter once", async () => {
+  const user = await newUser("operations");
+  const classId = await newClass(await newCourse(), 3);
+  const first = await linkCampaign(classId);
+  const second = await linkCampaign(classId);
+  const person = await newPerson();
+  await optIn(first, person);
+  await optIn(first, person);
+  await optIn(second, person);
+
+  const found = (await upcomingClasses(user)).find((c) => c.id === classId);
+  assert.deepEqual(found?.optins, { linkedCampaigns: 2, people: 1 });
+});
+
+it("ignores another class's campaign and deleted people", async () => {
+  const user = await newUser("operations");
+  const course = await newCourse();
+  const classA = await newClass(course, 3);
+  const classB = await newClass(course, 4);
+  const campaignA = await linkCampaign(classA);
+  const campaignB = await linkCampaign(classB);
+  await optIn(campaignB, await newPerson());
+  await optIn(campaignA, await newPerson({ deleted: true }));
+
+  const found = (await upcomingClasses(user)).find((c) => c.id === classA);
+  assert.deepEqual(found?.optins, { linkedCampaigns: 1, people: 0 });
+});
+
+it("a class with no campaign linked", async () => {
+  const user = await newUser("operations");
+  const classId = await newClass(await newCourse(), 3);
+
+  const found = (await upcomingClasses(user)).find((c) => c.id === classId);
+  assert.deepEqual(found?.optins, { linkedCampaigns: 0, people: 0 });
+});
+
+it("part_time sees no opt-ins", async () => {
+  const user = await newUser("part_time");
+  const classId = await newClass(await newCourse(), 3);
+  await optIn(await linkCampaign(classId), await newPerson());
+
+  const found = (await upcomingClasses(user)).find((c) => c.id === classId);
+  assert.ok(found, "part_time still sees the class");
+  assert.equal(found.optins, null);
+});
