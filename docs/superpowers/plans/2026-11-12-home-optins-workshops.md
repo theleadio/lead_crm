@@ -162,3 +162,41 @@
   - Stop the server afterwards, and say that it showed test data.
 - [ ] **Step 5: Run the full suite** (`node --env-file=.env.test.local --test "tests/**/*.test.ts"`) and `npx tsc --noEmit` and `npm run lint`. Expected: no new failures.
 - [ ] **Step 6: Commit** `feat(home): show opt-ins on class cards and a free workshops section`, then open the PR when Zixuan asks.
+
+---
+
+## Addendum (12 Nov, afternoon): sign-ups from GHL form submissions
+
+Why: a read-only check against GHL showed the registration forms hold the real numbers. The 18 Nov form has 142 submissions and the 12 Nov form 157. Meta reports 325/370 (website pixel, inflated). The CRM's campaign-name rows give 75/31, because the import keeps only each contact's first and last ad. Zixuan: build the import and switch the card to registrations; Zixuan tells Shawn.
+
+Global additions:
+- Imports never fire events: touchpoint has no event trigger, only append-only.
+- No personal data copied. A submission only adds a touchpoint to a person who is already in the CRM, matched by the `ghl:<contactId>` reference, like ghl:attribution.
+- Works until SalesProcess switches off on 14 Dec.
+
+### Task 5: Read a workshop from a GHL form name
+- Create `lib/import/ghl-forms.ts`: `parseWorkshopForm(name: string): WorkshopKey | null`.
+  - A form counts when its name contains `LEAD` and ends in `<day> <Mon> <YYYY>`.
+  - Title = the text after `LEAD -`, with the date and any ` - ` before it removed.
+  - Language = `zh` when the title has CJK characters, otherwise `en`.
+- Tests (`tests/ghl-forms.test.ts`):
+  - `'.02 LEAD - AI Vibe Coding Masterclass 18 Nov 2026'` → `{title:'AI Vibe Coding Masterclass', language:'en', date:'2026-11-18'}`
+  - `'.02 LEAD - AI Vibe Coding 氛围编程讲座表格 - 12 Nov 2026'` → `{title:'AI Vibe Coding 氛围编程讲座表格', language:'zh', date:'2026-11-12'}`
+  - `'.03 LEAD - EN - AI Engineering Interest Form'`, `'LEAD Programme Signup Form'`, `'Form 21'` → null
+  - `'.02 LEAD - X 31 Feb 2026'` → null
+
+### Task 6: `ghl:forms` import
+- `lib/import/salesprocess-api.ts`: `fetchForms()` and `fetchFormSubmissions(formId)`, paged by `meta.nextPage`.
+- `lib/import/ghl-forms.ts`: pure `planFormTouchpoints(forms, submissionsByForm, personOf, done) → { rows, stats }`.
+  - Only workshop forms count.
+  - One row per submission: `external_ref 'ghl-form:<submission id>'`, `occurred_at = createdAt`, `form_name =` the form's name, `channel 'import'`, `is_first_touch false`.
+  - Skip and count: contacts not in the CRM, submissions already imported.
+- `scripts/import-ghl-forms.ts`: dry run by default, `--apply`. It refuses to apply when under half of the submitters are found (wrong DB), and inserts with `ON CONFLICT DO NOTHING`.
+- Add `package.json` `ghl:forms`, and a `daily-sync.yml` step after attribution.
+- Tests: `planFormTouchpoints` covers mapping, skipping unmatched contacts, skipping done ones, and ignoring non-workshop forms.
+
+### Task 7: Home counts registrations
+- `upcomingWorkshops` reads `form_name` of import touchpoints whose `external_ref LIKE 'ghl-form:%'` and groups by `parseWorkshopForm`.
+- `parseWorkshopCampaign` and its tests are removed (replaced). `HomeWorkshop.campaigns` becomes `forms`.
+- The DB tests' `signUp` writes a form touchpoint.
+- Goals keep the same key format.
