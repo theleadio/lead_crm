@@ -59,6 +59,19 @@ export type HomeClass = {
   optins: { linkedCampaigns: number; people: number } | null;
 };
 
+// A free workshop on Home, read from its "| Lead |" campaign names
+// (lib/home/workshops.ts). Not a class, so there is no id to link to.
+export type HomeWorkshop = {
+  title: string;
+  language: "en" | "zh";
+  // YYYY-MM-DD
+  date: string;
+  // Distinct live people with a touchpoint on any of its campaigns, all time.
+  signups: number;
+  // How many campaign spellings were merged into this workshop.
+  campaigns: number;
+};
+
 // One count per item, and null for an item this role cannot act on (§9.0:
 // "each shown only to roles that can act on it"). Operations approves notices
 // but only reads people; sales is the other way round.

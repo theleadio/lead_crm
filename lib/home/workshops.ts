@@ -5,6 +5,11 @@
 //   "LEAD | Nov2026 | Lead | Vibe Coding Masterclass EN 19 Nov"
 //    brand   month+year  kind   title                 lang day month
 // Only kind "Lead" is a free workshop; "Sales" campaigns sell paid classes.
+import { PermissionError, type Viewer } from "../auth/permissions.ts";
+import { livePersonSql } from "../reports/ads.ts";
+import { db } from "../sql.ts";
+import { canSeeLeadCounts } from "./service.ts";
+import type { HomeWorkshop } from "./types.ts";
 
 export type WorkshopKey = {
   title: string;
@@ -58,4 +63,72 @@ export function parseWorkshopCampaign(name: string): WorkshopKey | null {
     language: titled[2].toLowerCase() === "cn" ? "zh" : "en",
     date: at.toISOString().slice(0, 10),
   };
+}
+
+const WINDOW_DAYS = 14;
+
+// Free workshops dated today to 14 days ahead in Kuala Lumpur (§4), the same
+// window as Upcoming classes. Campaign spellings that differ only in case
+// ("LEAD"/"Lead", "EN"/"En") are one workshop; a person on two of them counts
+// once. Sign-ups are counted over all time: each campaign is for one date.
+export async function upcomingWorkshops(
+  viewer: Viewer,
+): Promise<HomeWorkshop[]> {
+  if (!canSeeLeadCounts(viewer)) throw new PermissionError("person");
+  const sql = db();
+  // The pattern only narrows the read; parseWorkshopCampaign decides.
+  // shortcut: groups in TypeScript over every lead-campaign touch; move into
+  // SQL if lead touches pass ~50k.
+  const rows = await sql`
+    SELECT DISTINCT t.utm_campaign, t.person_id
+    FROM touchpoint t
+    JOIN person p ON p.id = t.person_id
+    WHERE t.utm_campaign ILIKE '%|%lead%|%' AND ${livePersonSql(sql)}`;
+
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Asia/Kuala_Lumpur",
+  });
+  const last = new Date(Date.parse(`${today}T00:00:00Z`) + WINDOW_DAYS * 864e5)
+    .toISOString()
+    .slice(0, 10);
+
+  const groups = new Map<
+    string,
+    {
+      key: WorkshopKey;
+      people: Set<string>;
+      // People per spelling, to show the most-used one.
+      titles: Map<string, Set<string>>;
+      campaigns: Set<string>;
+    }
+  >();
+  for (const r of rows) {
+    const key = parseWorkshopCampaign(r.utm_campaign as string);
+    if (!key || key.date < today || key.date > last) continue;
+    const id = `${key.title.toLowerCase()}|${key.language}|${key.date}`;
+    const g = groups.get(id) ?? {
+      key,
+      people: new Set(),
+      titles: new Map(),
+      campaigns: new Set(),
+    };
+    g.people.add(r.person_id as string);
+    g.campaigns.add(r.utm_campaign as string);
+    const spelled = g.titles.get(key.title) ?? new Set<string>();
+    spelled.add(r.person_id as string);
+    g.titles.set(key.title, spelled);
+    groups.set(id, g);
+  }
+
+  return [...groups.values()]
+    .map((g) => ({
+      title: [...g.titles].sort((a, b) => b[1].size - a[1].size)[0][0],
+      language: g.key.language,
+      date: g.key.date,
+      signups: g.people.size,
+      campaigns: g.campaigns.size,
+    }))
+    .sort(
+      (a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title),
+    );
 }
