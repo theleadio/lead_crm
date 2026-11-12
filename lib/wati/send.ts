@@ -4,6 +4,7 @@ import { db } from "../sql.ts";
 import {
   sendTemplate,
   sendText,
+  WatiBusy,
   WatiRefused,
   type WatiOpts,
 } from "./client.ts";
@@ -20,12 +21,17 @@ export { watiFromEnv, type WatiOpts } from "./client.ts";
 // The reply is saved first as `out`, with an id of our own ("app:<uuid>").
 // WATI's echo of it (lib/wati/webhook.ts) is matched by thread, text and
 // time, and the row takes WATI's id, so delivery and read events find it.
+// A template's id goes to WATI as local_message_id; an event that finds the
+// row by it stores WATI's id beside ours (provider_message_id, migration
+// 022). A 429 / 408 is "busy": not sent, send again in a minute.
 
 export type ReplyResult =
   | { kind: "sent" }
   | { kind: "not_found" }
   | { kind: "invalid"; message: string }
   | { kind: "send_failed" }
+  // WATI is rate-limiting: not sent, send again in a minute.
+  | { kind: "busy" }
   // Template only: WATI gave no clear answer, so it may have gone out.
   | { kind: "unknown" };
 
@@ -63,11 +69,11 @@ export async function sendInboxReply(
     UPDATE conversation SET last_message_at = now() WHERE id = ${conversationId}`;
   try {
     await sendText(o, c.external_thread_id, body);
-  } catch {
+  } catch (e) {
     await db()`
       UPDATE conversation_message SET status = 'failed'
       WHERE channel = 'whatsapp' AND external_message_id = ${ext}`;
-    return { kind: "send_failed" };
+    return { kind: e instanceof WatiBusy ? "busy" : "send_failed" };
   }
   // Only if still queued: an echo that arrived first may have taken WATI's
   // id and status already.
@@ -125,7 +131,7 @@ export async function sendInboxTemplate(
       await db()`
         UPDATE conversation_message SET status = 'failed'
         WHERE channel = 'whatsapp' AND external_message_id = ${ext}`;
-      return { kind: "send_failed" };
+      return { kind: e instanceof WatiBusy ? "busy" : "send_failed" };
     }
     return { kind: "unknown" };
   }

@@ -27,6 +27,7 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/019_enquiry_tickets.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/020_message_imported.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/021_after_hours_reply.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/022_message_provider_id.sql
     psql -d <db> -f lib/db/tests/schema_constraints.sql
     psql -d <db> -f lib/db/tests/002_merge_erase_tests.sql
     psql -d <db> -f lib/db/tests/003_company_from_form_tests.sql
@@ -227,6 +228,10 @@ Tested on PostgreSQL 16 after 001–016, 018 and 019, applied twice: `019_enquir
 ## Migration 021 — WhatsApp after-hours reply (11 Nov)
 
 `conversation.after_hours_reply_until` (timestamptz): the opening time of the after-hours stretch a thread was last auto-answered in, so one stretch (closing to the next 08:30 working-day opening) gets one reply. `conversation_message.automated` (boolean, default false): sent by the system; WATI's echo of it is not counted as staff's first response. Used by `lib/wati/auto-reply.ts`. No backfill.
+
+## Migration 022 — WATI's id on our sends (12 Nov)
+
+`conversation_message.provider_message_id` (text, nullable): WATI's `whatsappMessageId` for a message saved under an id of ours (an inbox template or auto-reply, `app:<uuid>`, or a lead_sales automation, `auto:<run>:<step>`, sent to WATI as `local_message_id`). The webhook stores it when an event finds the row by our id, so delivered / read / failed events carrying only WATI's id still find it; the row keeps our id, which lead_sales looks up so a retry never sends twice. Plus a partial index on outgoing `[template …]` rows for the inbox's template suggestions. No backfill.
 
 ## Where this is stricter or more specific than the spec
 

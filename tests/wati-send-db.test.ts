@@ -261,3 +261,27 @@ test("template parameters: one name=value per line", () => {
     { name: "flag", value: "" },
   ]);
 });
+
+it("WATI busy (429, 408) is not a wrong name: the row is failed and the user is told to send again", async () => {
+  const u = await newUser("management");
+  const { conv } = await chat("1 hour");
+  assert.equal(
+    (await sendInboxTemplate(fake(429).o, u, conv, "follow_up_en", [])).kind,
+    "busy",
+  );
+  assert.equal(
+    (await sendInboxReply(fake(408).o, u, conv, "Hello")).kind,
+    "busy",
+  );
+  assert.equal(
+    (await sendInboxTemplate(fake(400).o, u, conv, "follow_up_en", [])).kind,
+    "send_failed",
+  );
+  const rows = await db()`
+    SELECT status FROM conversation_message
+    WHERE conversation_id = ${conv} ORDER BY created_at`;
+  assert.deepEqual(
+    rows.map((r) => r.status),
+    ["failed", "failed", "failed"],
+  );
+});

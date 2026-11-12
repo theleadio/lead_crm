@@ -61,6 +61,12 @@ export async function POST(
       return apiError(422, "invalid", r.message, {
         fields: { template: r.message },
       });
+    case "busy":
+      return apiError(
+        429,
+        "busy",
+        "WATI is busy right now, so it wasn't sent. Wait a minute and send it again.",
+      );
     case "send_failed":
       return apiError(
         422,

@@ -808,3 +808,54 @@ it("a redelivered message adds no second touch or enquiry", async () => {
   assert.equal((await touchesOf(wa)).length, 1);
   assert.equal((await enquiriesOf(wa)).length, 1);
 });
+
+it("a send found by our local id keeps it and takes WATI's id, so later events with only WATI's id find it", async () => {
+  const wa = phone();
+  await handle(inbound(wa));
+  const [c] = await db()`
+    SELECT id, person_id FROM conversation WHERE external_thread_id = ${wa}`;
+  // A lead_sales automation send: saved under its run key before WATI is called.
+  const key = `auto:${rnd()}:1`;
+  await db()`
+    INSERT INTO conversation_message (conversation_id, person_id, channel,
+      direction, external_message_id, body, status)
+    VALUES (${c.id}, ${c.person_id}, 'whatsapp', 'out', ${key},
+            '[template onboarding]', 'queued')`;
+  const wamid = `wamid.${rnd()}`;
+  await handle({
+    eventType: "templateMessageSent_v2",
+    id: `rec-${rnd()}`,
+    whatsappMessageId: wamid,
+    localMessageId: key,
+    waId: wa,
+    templateName: "onboarding",
+    timestamp: later(),
+  });
+  // Delivered, then failed, carrying WATI's id only.
+  for (const [type, status] of [
+    ["sentMessageDELIVERED_v2", "delivered"],
+    ["templateMessageFailed", "delivered"], // never moves back
+    ["sentMessageREAD_v2", "read"],
+  ] as const) {
+    assert.equal(
+      (
+        await handle({
+          eventType: type,
+          id: `rec-${rnd()}`,
+          whatsappMessageId: wamid,
+          waId: wa,
+        })
+      ).kind,
+      "saved",
+      type,
+    );
+    const rows = await db()`
+      SELECT external_message_id, provider_message_id, status
+      FROM conversation_message WHERE conversation_id = ${c.id} AND direction = 'out'`;
+    assert.deepEqual(
+      rows.map((r) => [r.external_message_id, r.provider_message_id, r.status]),
+      [[key, wamid, status]],
+      `${type}: one row, our key kept`,
+    );
+  }
+});

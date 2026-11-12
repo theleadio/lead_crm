@@ -15,6 +15,10 @@ export type WatiOpts = {
 // WATI sent it.
 export class WatiRefused extends Error {}
 
+// WATI is busy (429 rate limit, 408 timeout reading our request): not sent,
+// and the same message can go again in a minute. Not the name or number.
+export class WatiBusy extends WatiRefused {}
+
 async function post(o: WatiOpts, path: string, body: unknown): Promise<void> {
   let origin: string;
   try {
@@ -31,6 +35,8 @@ async function post(o: WatiOpts, path: string, body: unknown): Promise<void> {
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(15_000),
   });
+  if (res.status === 408 || res.status === 429)
+    throw new WatiBusy(`WATI is busy (${res.status})`);
   if (res.status >= 400 && res.status < 500)
     throw new WatiRefused(`WATI refused it (${res.status})`);
   if (!res.ok) throw new Error(`WATI answered ${res.status}`);
