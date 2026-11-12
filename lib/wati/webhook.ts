@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { writeAudit } from "../audit.ts";
+import { referralOf, saveCtwaTouch } from "../import/wati-ctwa.ts";
 import { findDuplicate } from "../people/dedupe.ts";
 import { normalizePhoneE164 } from "../format/phone.ts";
 import { createEnquiry, followUpEnquiry } from "../enquiries/create.ts";
@@ -40,12 +41,10 @@ import { db, withTransaction } from "../sql.ts";
 //   - none after a converted one: that customer's next step is their deal
 //
 // Attribution (§11.2): a message that came from a click-to-WhatsApp ad
-// carries a referral; it becomes a `ctwa` touchpoint with the ad id and
-// click id, which the ads report already counts. A person this message
-// created gets a `whatsapp` touchpoint as their first touch otherwise.
-// Check the referral's field names against a real ad click: they follow
-// the WhatsApp Cloud API's `referral` object, which WATI is expected to pass
-// through.
+// carries WATI's `messageReferral`; it becomes the `ctwa` touchpoint the ads
+// report counts (lib/import/wati-ctwa.ts), recorded before anything else so
+// a new contact's first touch is the ad. A person this message created with
+// no ad behind it gets a `whatsapp` first touch instead.
 //
 // WATI documents no signature, so the URL carries a long random secret
 // (WATI_WEBHOOK_SECRET, ?token=…). The webhook records each event in
@@ -114,6 +113,8 @@ function kept(e: WatiEvent): Record<string, unknown> {
     whatsappMessageId: str(e.whatsappMessageId),
     failedCode: str(e.failedCode),
     failedDetail: str(e.failedDetail),
+    // The ad, for tracing an opt-in back to its event (an id, not text).
+    adId: referralOf(e)?.adId ?? null,
   };
 }
 
@@ -258,14 +259,25 @@ async function saveMessage(
             ${direction === "in" ? "received" : "sent"})
     ON CONFLICT (channel, external_message_id) DO NOTHING
     RETURNING id`;
-  if (added && direction === "in") {
+  if (direction === "in") {
+    // From a click-to-WhatsApp ad: the `ctwa` opt-in touch first, so a new
+    // contact's first touch is the ad (lib/import/wati-ctwa.ts, #65; keyed
+    // on the click id, so a referral WATI repeats counts once, and the
+    // nightly sync finds it already there). Otherwise a new contact's first
+    // touch is `whatsapp`.
     const ad = referralOf(e);
-    await asideFromMessage("touchpoint", () =>
-      recordTouch(personId, at, ad, person.created, e),
-    );
-    await asideFromMessage("enquiry", () =>
-      openEnquiryIfNone(conv.id, personId, at, ad !== null, bodyOf(e)),
-    );
+    if (ad)
+      await asideFromMessage("ad touchpoint", () =>
+        saveCtwaTouch(str(e.waId) ?? "", str(e.senderName), ad, at),
+      );
+    else if (added && person.created)
+      await asideFromMessage("touchpoint", () =>
+        recordWhatsAppTouch(personId, at, e),
+      );
+    if (added)
+      await asideFromMessage("enquiry", () =>
+        openEnquiryIfNone(conv.id, personId, at, ad !== null, bodyOf(e)),
+      );
   }
   return { conversationId: conv.id as string, added: Boolean(added) };
 }
@@ -285,57 +297,24 @@ async function asideFromMessage(what: string, fn: () => Promise<unknown>) {
 
 // ---- Attribution -----------------------------------------------------------------
 
-export type Referral = {
-  adId: string | null;
-  ctwaClid: string | null;
-  url: string | null;
-};
-
-// The click-to-WhatsApp ad a message came from, if any: the Cloud API's
-// `referral` object (source_id = the ad id, ctwa_clid = the click id),
-// accepted as `referral` or `data.referral`, in snake or camel case.
-export function referralOf(e: WatiEvent): Referral | null {
-  const data =
-    e.data && typeof e.data === "object" ? (e.data as WatiEvent) : {};
-  const r = [e.referral, data.referral].find(
-    (x): x is WatiEvent => Boolean(x) && typeof x === "object",
-  );
-  if (!r) return null;
-  const adId = str(r.source_id) ?? str(r.sourceId);
-  const ctwaClid = str(r.ctwa_clid) ?? str(r.ctwaClid);
-  const type = str(r.source_type) ?? str(r.sourceType);
-  if (!ctwaClid && !(adId && (type === null || type === "ad"))) return null;
-  return {
-    adId: type === null || type === "ad" ? adId : null,
-    ctwaClid,
-    url: str(r.source_url) ?? str(r.sourceUrl),
-  };
-}
-
-async function recordTouch(
-  personId: string,
-  at: Date,
-  ad: Referral | null,
-  createdNow: boolean,
-  e: WatiEvent,
-) {
-  if (!ad && !createdNow) return;
+// A person this message created, with no ad behind it: `whatsapp` as their
+// first touch. (An ad's `ctwa` touch is saveCtwaTouch's, recorded first.)
+async function recordWhatsAppTouch(personId: string, at: Date, e: WatiEvent) {
   const sql = db();
   const [{ n }] = await sql`
     SELECT count(*)::int AS n FROM touchpoint WHERE person_id = ${personId}`;
+  if (n > 0) return;
   const [tp] = await sql`
-    INSERT INTO touchpoint (person_id, channel, occurred_at, ctwa_clid,
-                            utm_ad_id, landing_url, is_first_touch, external_ref)
-    VALUES (${personId}, ${ad ? "ctwa" : "whatsapp"}, ${at},
-            ${ad?.ctwaClid ?? null}, ${ad?.adId ?? null}, ${ad?.url ?? null},
-            ${n === 0}, ${`wati:${str(e.whatsappMessageId) ?? str(e.id)}`})
+    INSERT INTO touchpoint (person_id, channel, occurred_at, is_first_touch,
+                            external_ref)
+    VALUES (${personId}, 'whatsapp', ${at}, true,
+            ${`wati:${str(e.whatsappMessageId) ?? str(e.id)}`})
     RETURNING id`;
   // §12.9: a touchpoint counts as activity.
   await sql`
     UPDATE person
     SET last_activity_at = greatest(last_activity_at, ${at}),
-        first_touchpoint_id = coalesce(first_touchpoint_id,
-                                       ${n === 0 ? tp.id : null})
+        first_touchpoint_id = coalesce(first_touchpoint_id, ${tp.id})
     WHERE id = ${personId}`;
 }
 
