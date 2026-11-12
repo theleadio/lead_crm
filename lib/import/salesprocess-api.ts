@@ -95,14 +95,18 @@ export async function fetchForms<T>(): Promise<T[]> {
 }
 
 // Every submission of one form. Each also carries the submitter's name, email
-// and answers: callers must not log or store them.
+// and answers: callers must not log or store them. Without startAt/endAt the
+// API returns only about the last month (12 Nov: one form showed 0 by default
+// and 1,340 over all time), so the range is always given.
 export async function fetchFormSubmissions<T>(formId: string): Promise<T[]> {
   const { loc, headers } = config();
+  const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+  const range = `startAt=2020-01-01&endAt=${tomorrow}`;
   const all: T[] = [];
   for (let page: number | null = 1; page;) {
     const body: { submissions?: T[]; meta?: { nextPage?: number | null } } =
       await getPage(
-        `${BASE}/forms/submissions?locationId=${loc}&formId=${formId}&limit=100&page=${page}`,
+        `${BASE}/forms/submissions?locationId=${loc}&formId=${formId}&${range}&limit=100&page=${page}`,
         headers,
       );
     all.push(...(body.submissions ?? []));
