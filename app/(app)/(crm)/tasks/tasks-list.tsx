@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/table";
 import { formatDate, formatOverdue, formatTime } from "@/lib/format/date";
 import type { ListResponse } from "@/lib/people/types";
-import { TASK_TYPE_LABELS } from "@/lib/tasks/labels";
+import { CLOSES_ELSEWHERE, TASK_TYPE_LABELS } from "@/lib/tasks/labels";
 import type { TaskRow } from "@/lib/tasks/types";
 import { TASKS_PAGE_SIZE } from "@/lib/validation/task";
 import { TaskDialog } from "./task-dialog";
@@ -33,7 +33,8 @@ import { TASK_ICONS } from "./task-icons";
 
 // Spec §9.14: open tasks, earliest due first, so overdue ones lead. Mine by
 // default (§7 filter[mine]=true); everyone's for the roles that read every
-// task. A tick closes a task in place, and the toast can undo it.
+// task. A tick closes a task in place, and the toast can undo it. A duplicate
+// review or a payment match has no tick: it closes where its work is done.
 
 const LIMIT = TASKS_PAGE_SIZE;
 
@@ -329,22 +330,35 @@ export function TasksList({
                     <>
                       {access.canWrite && (
                         <TableCell>
-                          <button
-                            type="button"
-                            disabled={pending === task.id}
-                            aria-label={`Mark done: ${task.title}`}
-                            onClick={() => complete(task)}
-                            className={`group focus-visible:outline-focus-ring flex size-5 items-center justify-center rounded-full border-2 focus-visible:outline-2 focus-visible:outline-offset-2 ${
-                              task.isOverdue
-                                ? "border-danger"
-                                : "border-line-strong"
-                            } hover:border-success hover:bg-success-soft disabled:opacity-50`}
-                          >
-                            <Check
-                              aria-hidden="true"
-                              className="text-success size-3 opacity-0 group-hover:opacity-100"
-                            />
-                          </button>
+                          {CLOSES_ELSEWHERE[task.type] ? (
+                            // Closes where its work is done, not with a tick
+                            // (decided 12 Nov); the row still opens it.
+                            <span
+                              title={CLOSES_ELSEWHERE[task.type]}
+                              className="border-line-strong block size-5 rounded-full border-2 border-dashed"
+                            >
+                              <span className="sr-only">
+                                {CLOSES_ELSEWHERE[task.type]}
+                              </span>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={pending === task.id}
+                              aria-label={`Mark done: ${task.title}`}
+                              onClick={() => complete(task)}
+                              className={`group focus-visible:outline-focus-ring flex size-5 items-center justify-center rounded-full border-2 focus-visible:outline-2 focus-visible:outline-offset-2 ${
+                                task.isOverdue
+                                  ? "border-danger"
+                                  : "border-line-strong"
+                              } hover:border-success hover:bg-success-soft disabled:opacity-50`}
+                            >
+                              <Check
+                                aria-hidden="true"
+                                className="text-success size-3 opacity-0 group-hover:opacity-100"
+                              />
+                            </button>
+                          )}
                         </TableCell>
                       )}
                       <TableCell className="text-ink max-w-80 truncate font-medium">

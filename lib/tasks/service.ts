@@ -5,6 +5,7 @@ import { isUuid, visibleSql } from "../people/service.ts";
 import { db, withTransaction } from "../sql.ts";
 import type { TaskCreate, TaskUpdate } from "../validation/task.ts";
 import { dueAtSql } from "./due.ts";
+import { CLOSES_ELSEWHERE } from "./labels.ts";
 import { taskRow } from "./list.ts";
 import type { TaskWriteResult } from "./types.ts";
 
@@ -190,6 +191,8 @@ export async function updateTask(
     return writeTask(id, ifMatch, viewer, async (before) => {
       if (before.done_at)
         return { kind: "conflict", message: "This task is already done." };
+      const elsewhere = CLOSES_ELSEWHERE[before.type as string];
+      if (elsewhere) return { kind: "closes_elsewhere", message: elsewhere };
       return {
         set: { done_by: viewer.id },
         extra: { done_at: sql`now()` },

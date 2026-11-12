@@ -39,6 +39,10 @@ export type TaskWriteResult =
   | { kind: "inactive_user" }
   // 422: the due time of an hrdc_deadline task follows the deal (§12.6).
   | { kind: "due_locked" }
+  // 422: a task that closes only where its work is done (decided 12 Nov):
+  // a duplicate review on the person (§9.2), a payment on the match screen
+  // (§11.3). A tick would leave the flag or the payment behind.
+  | { kind: "closes_elsewhere"; message: string }
   // 409 other than stale: already done, already open, withdrawn, or a
   // one-open-task index holds another open task (design 4).
   | { kind: "conflict"; message: string };
