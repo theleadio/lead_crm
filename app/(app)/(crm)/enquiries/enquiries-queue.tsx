@@ -434,9 +434,9 @@ export function EnquiriesQueue({
                   ) : (
                     <EmptyRow columns={columns}>
                       This is the support queue: every enquiry waiting for a
-                      reply, oldest first. They arrive from the help form, from
-                      the inbox, or are added by hand — there are none open
-                      right now.
+                      reply, oldest first. They arrive from WhatsApp, the help
+                      form and the inbox, or are added by hand — there are none
+                      open right now.
                     </EmptyRow>
                   ))}
                 {rows.map((row) => {

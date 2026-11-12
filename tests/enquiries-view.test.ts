@@ -308,7 +308,7 @@ test("the stub is gone; New enquiry shows only to those who may create", () => {
   assert.match(queue, /Clear filters/);
   assert.match(
     queue,
-    /They arrive from the help form, from\s+the inbox, or are added by hand/,
+    /They arrive from WhatsApp, the help\s+form and the inbox, or are added by hand/,
   );
 });
 

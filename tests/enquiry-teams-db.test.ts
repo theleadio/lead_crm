@@ -143,6 +143,33 @@ it("the first matching rule wins: team and fixed assignee", async () => {
   assert.equal(wa.assignedUserId, null, "rule 2: assign none");
 });
 
+it("a whatsapp rule covers click-to-WhatsApp chats; a ctwa rule covers only those", async () => {
+  await fresh();
+  const ops = await member("operations", "operations");
+  await db()`
+    INSERT INTO enquiry_rule (position, match_channel, set_team_id, assign_mode, assign_user_id)
+    VALUES (1, 'whatsapp', ${await teamId("operations")}, 'fixed', ${ops.id})`;
+  const fromAd = await make("other", null, { channel: "ctwa" });
+  assert.deepEqual(
+    [fromAd.teamId, fromAd.assignedUserId],
+    [await teamId("operations"), ops.id],
+  );
+
+  await fresh();
+  const sales = await member("sales");
+  await db()`
+    INSERT INTO enquiry_rule (position, match_channel, set_team_id, assign_mode, assign_user_id)
+    VALUES (1, 'ctwa', ${await teamId("sales")}, 'fixed', ${sales.id})`;
+  assert.equal(
+    (await make("other", null, { channel: "ctwa" })).teamId,
+    await teamId("sales"),
+  );
+  assert.equal(
+    (await make("other", null, { channel: "whatsapp" })).teamId,
+    await teamId("support"),
+  );
+});
+
 it("keywords suggest a category; nothing matches → null", async () => {
   assert.equal(
     await suggestCategory("Hi, can I get the E-Invoice please"),

@@ -533,22 +533,19 @@ async function threadWithEnquiry(
   over: { category?: string; channel?: string } = {},
 ) {
   const wa = phone();
+  // The first message opens the thread's enquiry by itself.
   await handle(inbound(wa));
   const [c] = await db()`
     SELECT id, person_id FROM conversation
     WHERE channel = 'whatsapp' AND external_thread_id = ${wa}`;
-  const made = await createEnquiry(
-    {
-      personId: c.person_id,
-      conversationId: c.id,
-      channel: over.channel ?? "whatsapp",
-      category: over.category ?? "receipt",
-      subject: "Receipt please",
-    },
-    null,
-    new Set(),
-  );
-  if (made.kind !== "ok") throw new Error(made.kind);
+  const [first] = await db()`
+    UPDATE enquiry
+    SET category = ${over.category ?? "receipt"},
+        channel = ${over.channel ?? "whatsapp"},
+        subject = 'Receipt please'
+    WHERE conversation_id = ${c.id}
+    RETURNING id`;
+  const made = { enquiry: { id: first.id as string } };
   const count = async () =>
     (
       await db()`SELECT count(*)::int AS n FROM enquiry WHERE conversation_id = ${c.id}`
@@ -661,4 +658,153 @@ it("if making the follow-up fails, the customer's message is still saved", async
     SELECT body FROM conversation_message
     WHERE conversation_id = ${t.conv} AND body = 'Are you there?'`;
   assert.ok(m, "the message reached the inbox");
+});
+
+// ---- Auto enquiry and attribution (§11.2) ----------------------------------
+
+const enquiriesOf = (wa: string) =>
+  db()`
+    SELECT e.status, e.channel, e.category, e.subject, e.sla_due_at, t.code AS team
+    FROM enquiry e JOIN conversation c ON c.id = e.conversation_id
+    JOIN team t ON t.id = e.team_id
+    WHERE c.channel = 'whatsapp' AND c.external_thread_id = ${wa}`;
+const touchesOf = (wa: string) =>
+  db()`
+    SELECT t.channel, t.is_first_touch, t.ctwa_clid, t.utm_ad_id, t.landing_url,
+           p.first_touchpoint_id = t.id AS is_persons_first
+    FROM touchpoint t JOIN person p ON p.id = t.person_id
+    WHERE p.phone_e164 = ${`+${wa}`}
+    ORDER BY t.occurred_at, t.id`;
+
+it("a first message opens an enquiry, uncategorised for the default team unless a keyword suggests one", async () => {
+  const wa = phone();
+  await handle(
+    inbound(wa, { text: "Hi, is the Dec class still open?\nThanks" }),
+  );
+  const [e] = await enquiriesOf(wa);
+  assert.equal(e.status, "open");
+  assert.equal(e.channel, "whatsapp");
+  assert.equal(e.category, null);
+  assert.equal(e.team, "support");
+  assert.equal(e.subject, "Hi, is the Dec class still open?");
+  assert.ok(e.sla_due_at, "a reply deadline is set");
+  await handle(inbound(wa, { whatsappMessageId: `wamid.${rnd()}`, text: "?" }));
+  assert.equal(
+    (await enquiriesOf(wa)).length,
+    1,
+    "one open enquiry covers more messages",
+  );
+
+  const wa2 = phone();
+  await handle(inbound(wa2, { text: "Can I get my e-invoice?" }));
+  const [f] = await enquiriesOf(wa2);
+  assert.deepEqual([f.category, f.team], ["einvoice", "finance"]);
+});
+
+it("a new contact's first message is their first touch; a known person's adds none", async () => {
+  const wa = phone();
+  await handle(inbound(wa));
+  const [t] = await touchesOf(wa);
+  assert.deepEqual(
+    [t.channel, t.is_first_touch, t.is_persons_first],
+    ["whatsapp", true, true],
+  );
+
+  const known = phone();
+  await newPerson("Known", `+${known}`);
+  await db()`UPDATE person SET phone_e164 = ${`+${known}`} WHERE phone = ${`+${known}`}`;
+  await handle(inbound(known));
+  assert.equal((await touchesOf(known)).length, 0);
+  assert.equal((await enquiriesOf(known)).length, 1, "but still an enquiry");
+});
+
+it("a message from a click-to-WhatsApp ad records the ad and click, and the enquiry is ctwa", async () => {
+  const wa = phone();
+  await handle(inbound(wa));
+  // WATI's shape (lib/import/wati-ctwa.ts).
+  const ad = {
+    messageReferral: {
+      url: "https://fb.me/abc",
+      sourceId: "120200000000001",
+      headline: "AI for managers",
+      ctwaClid: `ARAk${rnd()}`,
+    },
+  };
+  // Later, from an ad: a second touch, not the first.
+  await db()`UPDATE enquiry SET status = 'closed', closed_at = now(), resolution = 'x'
+             WHERE conversation_id = (SELECT id FROM conversation WHERE external_thread_id = ${wa})`;
+  await handle(
+    inbound(wa, {
+      whatsappMessageId: `wamid.${rnd()}`,
+      timestamp: later(),
+      ...ad,
+    }),
+  );
+  const touches = await touchesOf(wa);
+  assert.equal(touches.length, 2);
+  assert.deepEqual(
+    [
+      touches[1].channel,
+      touches[1].is_first_touch,
+      touches[1].utm_ad_id,
+      touches[1].landing_url,
+    ],
+    ["ctwa", false, "120200000000001", "https://fb.me/abc"],
+  );
+  assert.match(touches[1].ctwa_clid, /^ARAk/);
+
+  // A brand-new contact straight from an ad: the ad is their first touch and
+  // the enquiry is ctwa.
+  const wa2 = phone();
+  const ad2 = {
+    messageReferral: { ...ad.messageReferral, ctwaClid: `ARAk${rnd()}` },
+  };
+  await handle(inbound(wa2, ad2));
+  // WATI repeats the referral on the next message: still one touch.
+  await handle(inbound(wa2, { whatsappMessageId: `wamid.${rnd()}`, ...ad2 }));
+  const t2 = await touchesOf(wa2);
+  assert.deepEqual(
+    t2.map((t) => [t.channel, t.is_first_touch, t.is_persons_first]),
+    [["ctwa", true, true]],
+    "the ad is the first touch, and no whatsapp touch beside it",
+  );
+  const [e] = await enquiriesOf(wa2);
+  assert.equal(e.channel, "ctwa");
+});
+
+it("no new enquiry after a converted one, and none for our own outgoing messages", async () => {
+  const wa = phone();
+  await handle(inbound(wa));
+  const [c] =
+    await db()`SELECT id, person_id FROM conversation WHERE external_thread_id = ${wa}`;
+  const [deal] = await db()`
+    INSERT INTO deal (pipeline, stage, person_id) VALUES ('individual', 'new', ${c.person_id})
+    RETURNING id`;
+  await db()`UPDATE enquiry SET status = 'converted', deal_id = ${deal.id}, closed_at = now()
+             WHERE conversation_id = ${c.id}`;
+  await handle(
+    inbound(wa, { whatsappMessageId: `wamid.${rnd()}`, timestamp: later() }),
+  );
+  assert.equal((await enquiriesOf(wa)).length, 1);
+
+  const wa2 = phone();
+  await handle({
+    eventType: "sessionMessageSent_v2",
+    id: `rec-${rnd()}`,
+    whatsappMessageId: `wamid.${rnd()}`,
+    waId: wa2,
+    text: "Hello from LEAD",
+    timestamp: "1767225660",
+  });
+  assert.equal((await enquiriesOf(wa2)).length, 0);
+});
+
+it("a redelivered message adds no second touch or enquiry", async () => {
+  const wa = phone();
+  const e = inbound(wa, { messageReferral: { sourceId: "1" } });
+  await handle(e);
+  // WATI sends the same event again: recorded once, processed once.
+  await handle(e);
+  assert.equal((await touchesOf(wa)).length, 1);
+  assert.equal((await enquiriesOf(wa)).length, 1);
 });
