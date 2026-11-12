@@ -32,6 +32,8 @@ export function taskWriteResponse(
         "That person's account is switched off, so they can't take new work. Pick someone else.",
         { fields: { assignee: "Pick an active user" } },
       );
+    case "closes_elsewhere":
+      return apiError(422, "closes_elsewhere", result.message);
     case "due_locked":
       return apiError(
         422,
