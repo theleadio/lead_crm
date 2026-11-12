@@ -4,6 +4,7 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { PermissionError, type Viewer } from "../lib/auth/permissions.ts";
 import {
+  autoLinkCampaigns,
   classCampaigns,
   linkCampaign,
   unlinkCampaign,
@@ -25,10 +26,14 @@ async function newUser(role: Viewer["role"]): Promise<Viewer> {
   return { id: u.id, role };
 }
 
-async function newClass(code: string, startDays = 10): Promise<string> {
+async function newClass(
+  code: string,
+  startDays = 10,
+  courseName = "Test course",
+): Promise<string> {
   const [co] = await db()`
     INSERT INTO course (code, name_en, track, duration_days)
-    VALUES (${`T-${crypto.randomUUID()}`}, 'Test course', 'workshop', 1)
+    VALUES (${`T-${crypto.randomUUID()}`}, ${courseName}, 'workshop', 1)
     RETURNING id`;
   const [c] = await db()`
     INSERT INTO class (course_id, code, start_date, end_date, language, mode,
@@ -153,10 +158,10 @@ it("unlinking removes the link and is audited", async () => {
   });
   assert.equal((await classCampaigns(classId, user)).linked.length, 0);
   // Both rows carry the transaction's now(), so their order is not defined.
-  assert.deepEqual(
-    (await auditRows(classId)).map((r) => r.action).sort(),
-    ["create", "delete"],
-  );
+  assert.deepEqual((await auditRows(classId)).map((r) => r.action).sort(), [
+    "create",
+    "delete",
+  ]);
 });
 
 it("sales can read the links but not change them", async () => {
@@ -206,4 +211,102 @@ it("choices: last 90 days, Meta's latest name, suggested first", async () => {
     choices.some((c) => c.campaignId === stale),
     false,
   );
+});
+
+// Nightly auto-link (12 Nov): a campaign naming a class's start date and a
+// word of its course is linked when exactly one class fits.
+const MON = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ");
+async function dateTag(classId: string): Promise<string> {
+  const [r] = await db()`
+    SELECT to_char(start_date, 'YYYY-MM-DD') AS d FROM class WHERE id = ${classId}`;
+  const d = new Date(`${r.d}T00:00:00Z`);
+  return `${d.getUTCDate()} ${MON[d.getUTCMonth()]}`;
+}
+// A made-up course word, so real test-DB classes never fit.
+const word = () =>
+  `Zq${crypto
+    .randomUUID()
+    .replace(/[^a-f]/g, "")
+    .slice(0, 6)}`;
+
+it("auto-link: a campaign naming the date and the course is linked", async () => {
+  const viewer = await newUser("marketing");
+  const w = word();
+  const classId = await newClass(
+    `C-${crypto.randomUUID()}`,
+    20,
+    `AI ${w} Certification`,
+  );
+  const campaign = await metaCampaign(
+    `LEAD | Nov2026 | Sales | ${w} EN ${await dateTag(classId)}`,
+  );
+
+  const run = await autoLinkCampaigns({ apply: true });
+  assert.ok(run.links.some((l) => l.campaignId === campaign));
+  const { linked } = await classCampaigns(classId, viewer);
+  assert.deepEqual(
+    linked.map((l) => [l.campaignId, l.automatic]),
+    [[campaign, true]],
+  );
+  const [row] = await auditRows(classId);
+  assert.equal(row.action, "create");
+  assert.equal(row.after.by, "auto-link");
+});
+
+it("auto-link: another course on that date, or two fitting classes, are left alone", async () => {
+  const viewer = await newUser("marketing");
+  const w = word();
+  const classId = await newClass(
+    `C-${crypto.randomUUID()}`,
+    21,
+    `AI ${w} Certification`,
+  );
+  const tag = await dateTag(classId);
+  const otherCourse = await metaCampaign(
+    `LEAD | Nov2026 | Sales | ${word()} EN ${tag}`,
+  );
+
+  const v = word();
+  const twinA = await newClass(`C-${crypto.randomUUID()}`, 22, `${v} Course`);
+  const twinB = await newClass(`C-${crypto.randomUUID()}`, 22, `${v} Course`);
+  const ambiguous = await metaCampaign(
+    `LEAD | Nov2026 | Sales | ${v} EN ${await dateTag(twinA)}`,
+  );
+
+  const run = await autoLinkCampaigns({ apply: true });
+  const linkedIds = run.links.map((l) => l.campaignId);
+  assert.equal(linkedIds.includes(otherCourse), false);
+  assert.equal(linkedIds.includes(ambiguous), false);
+  for (const id of [classId, twinA, twinB])
+    assert.equal((await classCampaigns(id, viewer)).linked.length, 0);
+});
+
+it("auto-link: a link someone removed is never added back", async () => {
+  const viewer = await newUser("operations");
+  const w = word();
+  const classId = await newClass(`C-${crypto.randomUUID()}`, 23, `${w} Course`);
+  const campaign = await metaCampaign(
+    `LEAD | Nov2026 | Sales | ${w} ${await dateTag(classId)}`,
+  );
+  await autoLinkCampaigns({ apply: true });
+  await unlinkCampaign(viewer, classId, campaign);
+
+  const again = await autoLinkCampaigns({ apply: true });
+  assert.equal(
+    again.links.some((l) => l.campaignId === campaign),
+    false,
+  );
+  assert.equal((await classCampaigns(classId, viewer)).linked.length, 0);
+});
+
+it("auto-link: a dry run reports the links but writes nothing", async () => {
+  const viewer = await newUser("marketing");
+  const w = word();
+  const classId = await newClass(`C-${crypto.randomUUID()}`, 24, `${w} Course`);
+  const campaign = await metaCampaign(
+    `LEAD | Nov2026 | Sales | ${w} ${await dateTag(classId)}`,
+  );
+  const run = await autoLinkCampaigns({ apply: false });
+  assert.ok(run.links.some((l) => l.campaignId === campaign));
+  assert.equal((await classCampaigns(classId, viewer)).linked.length, 0);
 });

@@ -18,6 +18,8 @@ export type LinkedCampaign = {
   name: string;
   // Last day the campaign spent, Kuala Lumpur date; null with no Meta rows.
   lastDay: string | null;
+  // Linked by the nightly auto-link (no created_by), not by a person.
+  automatic: boolean;
 };
 
 export type CampaignChoice = {
@@ -60,6 +62,55 @@ export function suggestsClass(
   );
 }
 
+const MONTH_WORDS = new Set([
+  ...MONTHS,
+  ..."january february march april june july august sept september october november december".split(
+    " ",
+  ),
+]);
+
+// Words too common to tell two courses apart.
+const GENERIC = new Set(
+  (
+    "ai en cn zh kl jb pg hrdc self funded the and for with of " +
+    "certification certificate mastery masterclass workshop course courses " +
+    "programme program class online live webinar foundation building " +
+    "sales lead leads whatsapp traffic impression conversion details targeting copy"
+  ).split(" "),
+);
+
+function courseWords(text: string): Set<string> {
+  return new Set(
+    text
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter(
+        (w) =>
+          w.length >= 3 &&
+          !/\d/.test(w) &&
+          !GENERIC.has(w) &&
+          !MONTH_WORDS.has(w),
+      ),
+  );
+}
+
+// The auto-link's second test, beside the date: the campaign's event part
+// shares a real word with the course name or the class code ("Automation",
+// "Full-Stack", "Claude"), so a same-day campaign for another course
+// ("AI 全栈开发课程 11 Nov" against AI Automation 11 Nov) is not linked.
+export function sharesCourseWord(
+  campaignName: string,
+  courseName: string,
+  classCode: string,
+): boolean {
+  const parts = campaignName.split("|");
+  if (parts.length < 4) return false;
+  const course = courseWords(`${courseName} ${classCode}`);
+  for (const w of courseWords(parts.slice(3).join(" ")))
+    if (course.has(w)) return true;
+  return false;
+}
+
 // Meta rows of the configured ad account only, like the ads report.
 function accountSql(sql: ReturnType<typeof db>) {
   const account = process.env.META_AD_ACCOUNT_ID?.trim().replace(/^act_/, "");
@@ -87,7 +138,8 @@ export async function classCampaigns(
 
   const linked = await sql`
     SELECT l.meta_campaign_id, coalesce(m.name, l.campaign_name) AS name,
-           to_char(m.last_day, 'YYYY-MM-DD') AS last_day
+           to_char(m.last_day, 'YYYY-MM-DD') AS last_day,
+           l.created_by IS NULL AS automatic
     FROM class_meta_campaign l
     LEFT JOIN (${meta}) m ON m.campaign_id = l.meta_campaign_id
     WHERE l.class_id = ${classId}
@@ -107,6 +159,7 @@ export async function classCampaigns(
       campaignId: r.meta_campaign_id as string,
       name: r.name as string,
       lastDay: (r.last_day as string | null) ?? null,
+      automatic: r.automatic as boolean,
     })),
     choices: choices
       .map((r) => ({
@@ -223,5 +276,92 @@ export async function unlinkCampaign(
         after: null,
       });
     return { ok: true, removed: Boolean(removed) };
+  });
+}
+
+// Nightly auto-link (Zixuan, 12 Nov 2026), run by scripts/link-class-campaigns.ts
+// after the Meta sync. A campaign that spent in the last 90 days and is not
+// linked yet is linked to a class that starts today or later when:
+//  - its name carries that class's start day and month (suggestsClass), and
+//  - it shares a course word with the class (sharesCourseWord), and
+//  - exactly one class fits both; two fitting classes are left to a person.
+// A link someone removed (an audited unlink of that class and campaign) is
+// never added back. Auto links have no created_by, which the class page shows
+// as "Linked automatically"; the audit row names the script in `after.by`.
+export async function autoLinkCampaigns(opts: { apply: boolean }): Promise<{
+  links: { classCode: string; campaignId: string; name: string }[];
+  stats: Record<string, number>;
+}> {
+  return withTransaction(async () => {
+    const sql = db();
+    const classes = await sql`
+      SELECT k.id, k.code, to_char(k.start_date, 'YYYY-MM-DD') AS start_date,
+             co.name_en AS course_name
+      FROM class k JOIN course co ON co.id = k.course_id
+      WHERE k.status <> 'cancelled'
+        AND k.start_date >= (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date`;
+    const campaigns = await sql`
+      SELECT m.campaign_id, (array_agg(m.campaign_name ORDER BY m.day DESC))[1] AS name
+      FROM meta_ad_insight m
+      WHERE m.day >= (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date - ${CHOICE_DAYS}::int
+        ${accountSql(sql)}
+        AND NOT EXISTS (SELECT 1 FROM class_meta_campaign l
+                        WHERE l.meta_campaign_id = m.campaign_id)
+      GROUP BY m.campaign_id`;
+    const removed = new Set(
+      (
+        await sql`
+          SELECT entity_id::text || '|' || (before -> 'linkedCampaign' ->> 'id') AS pair
+          FROM audit_log
+          WHERE entity = 'class' AND action = 'delete'
+            AND before -> 'linkedCampaign' ->> 'id' IS NOT NULL`
+      ).map((r) => r.pair as string),
+    );
+
+    const stats: Record<string, number> = {
+      "campaigns read": campaigns.length,
+    };
+    const bump = (k: string) => (stats[k] = (stats[k] ?? 0) + 1);
+    const links: { classCode: string; campaignId: string; name: string }[] = [];
+    for (const c of campaigns) {
+      const fits = classes.filter(
+        (k) =>
+          suggestsClass(c.name, k.start_date) &&
+          sharesCourseWord(c.name, k.course_name, k.code),
+      );
+      if (fits.length === 0) continue;
+      if (fits.length > 1) {
+        bump("skip: fits more than one class");
+        continue;
+      }
+      const [k] = fits;
+      if (removed.has(`${k.id}|${c.campaign_id}`)) {
+        bump("skip: someone removed this link");
+        continue;
+      }
+      links.push({
+        classCode: k.code,
+        campaignId: c.campaign_id,
+        name: c.name,
+      });
+      bump("links");
+      if (!opts.apply) continue;
+      await sql`
+        INSERT INTO class_meta_campaign (class_id, meta_campaign_id, campaign_name)
+        VALUES (${k.id}, ${c.campaign_id}, ${c.name})
+        ON CONFLICT DO NOTHING`;
+      await writeAudit({
+        userId: null,
+        action: "create",
+        entity: "class",
+        entityId: k.id,
+        before: null,
+        after: {
+          linkedCampaign: { id: c.campaign_id, name: c.name },
+          by: "auto-link",
+        },
+      });
+    }
+    return { links, stats };
   });
 }

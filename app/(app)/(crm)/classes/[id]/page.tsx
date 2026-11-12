@@ -11,6 +11,7 @@ import {
   permissionFor,
   type Viewer,
 } from "@/lib/auth/permissions";
+import { canLinkCampaigns, classCampaigns } from "@/lib/classes/campaigns";
 import { listClassNotices } from "@/lib/classes/notices";
 import { listRoster } from "@/lib/classes/roster";
 import { getCourse, listCourses } from "@/lib/courses/service";
@@ -101,6 +102,8 @@ export default async function ClassDetailPage(
           // §12.1: seats taken is the two counts the database gave us, so the
           // dialog's number needs no query of its own.
           seatHolders={cls.confirmedCount + cls.reservedCount}
+          campaigns={await classCampaigns(id, user)}
+          canLinkCampaigns={canLinkCampaigns(user)}
         />
       )}
       {tab === "roster" && (

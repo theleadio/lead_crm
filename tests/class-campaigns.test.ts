@@ -1,7 +1,7 @@
 // Which Meta campaigns the class page suggests for a class (12 Nov). Pure.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { suggestsClass } from "../lib/classes/campaigns.ts";
+import { sharesCourseWord, suggestsClass } from "../lib/classes/campaigns.ts";
 
 test("a campaign naming the class's start day and month is suggested", () => {
   assert.equal(
@@ -53,5 +53,55 @@ test("the campaign's own month tag does not count, nor a different day", () => {
   assert.equal(
     suggestsClass("Market Update | Oct 8 | Lead Form", "2026-10-08"),
     false,
+  );
+});
+
+// Auto-link (12 Nov): besides the date, the campaign must name the course.
+test("a campaign sharing a real word with the course matches", () => {
+  assert.equal(
+    sharesCourseWord(
+      "LEAD | Oct2026 | Whatsapp | AI Automation EN 11-12 Nov",
+      "AI Agentic Automation Certification",
+      "ai-automation-11-12-Nov",
+    ),
+    true,
+  );
+  assert.equal(
+    sharesCourseWord(
+      "LEAD | Oct2026 | WhatsApp | AI Full-Stack CN 14-15 Nov KL",
+      "AI Full-Stack Building Certification",
+      "full-stack-building-14-15-Nov",
+    ),
+    true,
+  );
+});
+
+test("another course on the same date, or only generic words, do not match", () => {
+  assert.equal(
+    sharesCourseWord(
+      "LEAD | Nov2026 | Sales | AI 全栈开发课程 11 Nov",
+      "AI Agentic Automation Certification",
+      "ai-automation-11-12-Nov",
+    ),
+    false,
+  );
+  assert.equal(
+    sharesCourseWord(
+      "LEAD | Nov2026 | Sales | AI Mastery Workshop EN 11 Nov",
+      "Claude AI Mastery",
+      "claude-ai-mastery-11-Nov",
+    ),
+    false,
+  );
+});
+
+test("a course word that only starts like a month still matches", () => {
+  assert.equal(
+    sharesCourseWord(
+      "LEAD | Nov2026 | Sales | AI Marketing EN 11 Nov",
+      "AI for Marketing",
+      "ai-marketing-11-Nov",
+    ),
+    true,
   );
 });
