@@ -1,7 +1,10 @@
 import type { Viewer } from "../auth/permissions.ts";
 import { conversationDetail, replyWindow } from "../inbox/service.ts";
 import { db } from "../sql.ts";
+import { sendText, type WatiOpts } from "./client.ts";
 import { markReplied } from "./webhook.ts";
+
+export { watiFromEnv, type WatiOpts } from "./client.ts";
 
 // Replying on WhatsApp from the inbox, through WATI API v3 (docs.wati.io):
 // free text, inside the 24-hour window only. Host only, Bearer token. Errors
@@ -12,34 +15,6 @@ import { markReplied } from "./webhook.ts";
 // The reply is saved first as `out`, with an id of our own ("app:<uuid>").
 // WATI's echo of it (lib/wati/webhook.ts) is matched by thread, text and
 // time, and the row takes WATI's id, so delivery and read events find it.
-
-export type WatiOpts = {
-  host: string;
-  token: string;
-  fetchImpl?: typeof fetch;
-};
-
-async function post(o: WatiOpts, path: string, body: unknown): Promise<void> {
-  const res = await (o.fetchImpl ?? fetch)(new URL(o.host).origin + path, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${o.token.replace(/^Bearer\s+/i, "")}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!res.ok) throw new Error(`WATI answered ${res.status}`);
-  // WATI can answer 200 with result:false.
-  const json = (await res.json().catch(() => null)) as {
-    result?: unknown;
-  } | null;
-  if (json && json.result === false)
-    throw new Error("WATI refused the message");
-}
-
-const sendText = (o: WatiOpts, to: string, text: string) =>
-  post(o, "/api/ext/v3/conversations/messages/text", { target: to, text });
 
 export type ReplyResult =
   | { kind: "sent" }
@@ -95,11 +70,4 @@ export async function sendInboxReply(
       AND status = 'queued'`;
   await markReplied(conversationId);
   return { kind: "sent" };
-}
-
-// From env, or none (the inbox then offers no reply box).
-export function watiFromEnv(): WatiOpts | undefined {
-  const host = process.env.WATI_API_HOST;
-  const token = process.env.WATI_API_TOKEN;
-  return host && token ? { host, token } : undefined;
 }
