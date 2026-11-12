@@ -29,6 +29,7 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/021_after_hours_reply.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/022_message_provider_id.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/023_campaign_link_funding.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/024_revoke_inbox_browser.sql
     psql -d <db> -f lib/db/tests/schema_constraints.sql
     psql -d <db> -f lib/db/tests/002_merge_erase_tests.sql
     psql -d <db> -f lib/db/tests/003_company_from_form_tests.sql
@@ -243,6 +244,10 @@ Agreed with Shawn on 12 Nov, before the 27 Nov freeze. Additive only; old code k
 - **`enrolment.funding_type`**: how this one seat is paid, in the LMS's own values: `self_funded`, `hrdc`, `internal`, `leaders_club`, `refresher`. Who pays stays in `payer_type`; `deal.funding_type` is unchanged. Nullable, no default: old rows are unknown until a sync fills them from the LMS (a separate data step). A value outside the list fails `enrolment_funding_type_check`; the LMS's full list is still owed by its owner, and a new value needs a migration that widens the CHECK.
 
 Tested on an empty PostgreSQL 18 database with 001–023 applied (12 Nov): 023 13 of 13, `schema_constraints.sql` 38, 005 9, 006 26. 009's "24 tables" check fails with or without 023 (34 tables since 013–020), so that test only holds right after 012.
+
+## Migration 024 — browser roles off the inbox tables (12 Nov)
+
+Migration 019 left `conversation`, `conversation_message`, `enquiry_category`, `enquiry_event`, `enquiry_rule`, `holiday`, `team` and `team_member` readable by Supabase's `anon` and `authenticated` roles, so the public anon key could read customer WhatsApp text through the REST API. 024 revokes them, as 014 and 023 do for their tables, and the views `consent_current` and `payment_net` too (owned by `postgres`, not `security_invoker`, so they read past the RLS on `consent` and `payment`); both apps use the direct connection, so nothing reads them that way. Applied to production by hand on 12 Nov, the day it was found.
 
 ## Where this is stricter or more specific than the spec
 
