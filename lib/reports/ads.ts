@@ -672,8 +672,14 @@ export async function signupsPerCampaign(
 }
 
 // WhatsApp opt-ins per click-to-WhatsApp ad, from the `ctwa` touchpoints
-// scripts/sync-wati-ctwa.ts writes. One opt-in per person: their first CTWA
-// touchpoint ever, counted when it falls in range and credited to that ad.
+// scripts/sync-wati-ctwa.ts writes. An opt-in is a person who messaged
+// through that ad in range, counted once per ad: opt-ins = new + again
+// (Zixuan, 11 Nov). New is their first CTWA touchpoint ever, with no earlier
+// contact (a SalesProcess import row doesn't count as contact); again is
+// everyone else, so the two always add up. A person who opted in and came
+// back through the same ad is one opt-in, not two. The total is distinct
+// people across every ad, not the rows added up, so a person on two ads is
+// one (Shawn, 11 Nov).
 // Ads that spent in range on conversations but won no opt-in are listed too,
 // with zero, because an ad that costs and brings nobody is the finding.
 export async function whatsappOptinRows(
@@ -706,13 +712,16 @@ export async function whatsappOptinRows(
       FROM ctwa c
       WHERE c.occurred_at >= ${from} AND c.occurred_at < ${to}
     ),
+    -- One row per ad. Grouping on the campaign id too split an ad in two when
+    -- its touches resolved to different campaigns (utm_campaign_id on some,
+    -- the Meta map on others), and the join below then put its spend on both.
+    -- nth = 1 is one row per person already, so a plain count is distinct.
     optins AS (
-      SELECT campaign_id, ad_id,
-             count(*) FILTER (WHERE nth = 1)::int AS optins,
-             count(*) FILTER (WHERE nth = 1 AND fresh)::int AS fresh,
-             count(DISTINCT person_id) FILTER (WHERE nth > 1)::int AS again
+      SELECT ad_id, min(campaign_id) AS campaign_id,
+             count(DISTINCT person_id)::int AS optins,
+             count(*) FILTER (WHERE nth = 1 AND fresh)::int AS fresh
       FROM in_range
-      GROUP BY campaign_id, ad_id
+      GROUP BY ad_id
     ),
     spend AS (
       SELECT ad_id, min(campaign_id) AS campaign_id, max(ad_name) AS ad_name,
@@ -722,17 +731,21 @@ export async function whatsappOptinRows(
       GROUP BY ad_id
     ),
     joined AS (
-      SELECT coalesce(o.campaign_id, s.campaign_id) AS campaign_id,
+      -- Meta knows which campaign an ad is in: its spend in range, else its
+      -- campaign on any day; the touchpoint's own id only as a last resort.
+      SELECT coalesce(s.campaign_id, am.campaign_id, o.campaign_id)
+               AS campaign_id,
              coalesce(o.ad_id, s.ad_id) AS ad_id, s.ad_name,
              coalesce(o.optins, 0) AS optins, coalesce(o.fresh, 0) AS fresh,
-             coalesce(o.again, 0) AS again, s.spend, s.messages
+             coalesce(o.optins - o.fresh, 0) AS again, s.spend, s.messages
       FROM optins o
       FULL JOIN spend s ON s.ad_id = o.ad_id
+      LEFT JOIN ad_campaign am ON am.ad_id = coalesce(o.ad_id, s.ad_id)
       WHERE o.ad_id IS NOT NULL OR o.optins IS NOT NULL OR s.messages > 0
     )
     SELECT j.*, cn.campaign_name AS campaign, j.spend::text AS spend_myr,
            (count(*) OVER ())::int AS group_count,
-           (sum(j.optins) OVER ())::int AS total_optins
+           (SELECT count(DISTINCT person_id) FROM in_range)::int AS total_people
     FROM joined j
     LEFT JOIN campaign_name cn ON cn.campaign_id = j.campaign_id
     ORDER BY j.optins DESC, j.spend DESC NULLS LAST, j.ad_id
@@ -750,7 +763,7 @@ export async function whatsappOptinRows(
       spendMyr: r.spend_myr,
       metaMessages: r.messages,
     })),
-    total: rows[0]?.total_optins ?? 0,
+    total: rows[0]?.total_people ?? 0,
     dropped: Math.max(0, (rows[0]?.group_count ?? 0) - rows.length),
   };
 }

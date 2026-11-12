@@ -26,6 +26,7 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/018_enquiry_resolution.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/019_enquiry_tickets.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/020_message_imported.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/023_campaign_link_funding.sql
     psql -d <db> -f lib/db/tests/schema_constraints.sql
     psql -d <db> -f lib/db/tests/002_merge_erase_tests.sql
     psql -d <db> -f lib/db/tests/003_company_from_form_tests.sql
@@ -41,6 +42,7 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -f lib/db/tests/013_click_ids_tests.sql
     psql -d <db> -f lib/db/tests/018_enquiry_resolution_tests.sql
     psql -d <db> -f lib/db/tests/019_enquiry_tickets_tests.sql
+    psql -d <db> -f lib/db/tests/023_campaign_link_funding_tests.sql
 
 Current result on PostgreSQL 16 with 001–008 applied: 38 of 38, 42 of 42, 26 of 26, 8 of 8, 9 of 9, 26 of 26, 14 of 14 and 6 of 6. 001–007 were also run with and without Supabase's `anon`/`authenticated` roles present; 008 was run without them (it creates no functions, so privileges don't apply).
 
@@ -222,6 +224,15 @@ Tested on PostgreSQL 16 after 001–016, 018 and 019, applied twice: `019_enquir
 ## Migration 020 — imported WhatsApp history (11 Nov)
 
 `conversation_message.imported`, boolean, default false: set by the WhatsApp history import (`npm run wati:history`, `lib/wati/history.ts`), which also stamps `created_at` with the message's own time. lead_sales' automations trigger "customer message received" skips imported rows, so copying old chats in never starts a flow. Moved from lead_sales (its PR #20) with the inbox.
+
+## Migration 023 — class ↔ Meta campaign link, seat funding (12 Nov)
+
+Agreed with Shawn on 12 Nov, before the 27 Nov freeze. Additive only; old code keeps working.
+
+- **`class_meta_campaign`** (`class_id`, `meta_campaign_id`, `campaign_name`, `created_at`, `created_by`): which Meta campaigns sell which class. Join on `meta_campaign_id` (Meta's numeric id, the `campaign_id` in `meta_ad_insight`), never on the name: `campaign_name` is a display copy taken when the link is made. A class can have many campaigns; a campaign belongs to one class at most (`class_meta_campaign_one_class`), so its opt-ins never count on two class cards. No foreign key to `meta_ad_insight`, which is per ad per day: a campaign can be linked before its first spend row. Not readable from the browser.
+- **`enrolment.funding_type`**: how this one seat is paid, in the LMS's own values: `self_funded`, `hrdc`, `internal`, `leaders_club`, `refresher`. Who pays stays in `payer_type`; `deal.funding_type` is unchanged. Nullable, no default: old rows are unknown until a sync fills them from the LMS (a separate data step). A value outside the list fails `enrolment_funding_type_check`; the LMS's full list is still owed by its owner, and a new value needs a migration that widens the CHECK.
+
+Tested on an empty PostgreSQL 18 database with 001–023 applied (12 Nov): 023 13 of 13, `schema_constraints.sql` 38, 005 9, 006 26. 009's "24 tables" check fails with or without 023 (34 tables since 013–020), so that test only holds right after 012.
 
 ## Where this is stricter or more specific than the spec
 
