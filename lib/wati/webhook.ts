@@ -402,19 +402,26 @@ const idsOf = (e: WatiEvent) =>
   );
 
 async function moveStatus(
-  ids: string[],
+  e: WatiEvent,
   to: keyof typeof RANK,
 ): Promise<boolean> {
   const sql = db();
+  const ids = idsOf(e);
+  const wamid = str(e.whatsappMessageId);
+  // Found by our own id (local_message_id): keep WATI's id beside it
+  // (migration 022), so events that carry only WATI's id find it later.
   const found = await sql`
-    SELECT id FROM conversation_message
+    UPDATE conversation_message
+    SET provider_message_id = coalesce(provider_message_id,
+      CASE WHEN external_message_id <> ${wamid} THEN ${wamid} END)
     WHERE channel = 'whatsapp' AND direction = 'out'
-      AND external_message_id = ANY(${ids})`;
+      AND (external_message_id = ANY(${ids})
+           OR provider_message_id = ANY(${ids}))
+    RETURNING id`;
   if (found.length === 0) return false;
   await sql`
     UPDATE conversation_message SET status = ${to}
-    WHERE channel = 'whatsapp' AND direction = 'out'
-      AND external_message_id = ANY(${ids})
+    WHERE id = ANY(${found.map((r) => r.id as string)})
       AND (CASE status WHEN 'queued' THEN 0 WHEN 'sent' THEN 1
                        WHEN 'failed' THEN 1.5 WHEN 'delivered' THEN 2
                        WHEN 'read' THEN 3 ELSE 0 END) < ${RANK[to]}`;
@@ -466,8 +473,9 @@ type Done =
 async function isAutomated(ids: string[]): Promise<boolean> {
   const [m] = await db()`
     SELECT 1 FROM conversation_message
-    WHERE channel = 'whatsapp' AND external_message_id = ANY(${ids})
-      AND automated
+    WHERE channel = 'whatsapp' AND automated
+      AND (external_message_id = ANY(${ids})
+           OR provider_message_id = ANY(${ids}))
     LIMIT 1`;
   return Boolean(m);
 }
@@ -484,7 +492,7 @@ async function dispatch(e: WatiEvent): Promise<Done> {
     };
   }
   if (ECHO.has(type)) {
-    if (!(await moveStatus(idsOf(e), "sent")) && !(await adoptOurReply(e))) {
+    if (!(await moveStatus(e, "sent")) && !(await adoptOurReply(e))) {
       const m = await saveMessage(e, "out");
       if (isSession(type)) await markReplied(m.conversationId);
     } else if (isSession(type) && !(await isAutomated(idsOf(e)))) {
@@ -496,7 +504,7 @@ async function dispatch(e: WatiEvent): Promise<Done> {
   const to = STATUS[type];
   if (to) {
     // WATI does not promise order: "delivered" can arrive before "sent".
-    if (!(await moveStatus(idsOf(e), to))) throw new NotYet();
+    if (!(await moveStatus(e, to))) throw new NotYet();
     return { kind: "saved" };
   }
   return { kind: "ignored", reason: `event ${type || "(none)"} is not used` };
