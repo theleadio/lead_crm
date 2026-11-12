@@ -16,7 +16,7 @@ import {
 import { listDeals } from "../deals/service.ts";
 import { PIPELINES, type Pipeline, type Stage } from "../deals/types.ts";
 import { sumMyr } from "../format/money.ts";
-import { db } from "../sql.ts";
+import { db, withTransaction } from "../sql.ts";
 import { dealListQuerySchema } from "../validation/deal.ts";
 import type {
   HomeClass,
@@ -162,7 +162,11 @@ export async function upcomingClasses(viewer: Viewer): Promise<HomeClass[]> {
     ORDER BY c.start_date, c.code`;
 
   const optins = canSeeLeadCounts(viewer)
-    ? await classOptins(rows.map((r) => r.id as string))
+    ? await optinsOrNull(() =>
+        // A savepoint inside an open transaction, so a failed read doesn't
+        // abort the caller's work.
+        withTransaction(() => classOptins(rows.map((r) => r.id as string))),
+      )
     : null;
 
   return rows.map((r) => ({
@@ -182,6 +186,20 @@ export async function upcomingClasses(viewer: Viewer): Promise<HomeClass[]> {
       ? (optins.get(r.id) ?? { linkedCampaigns: 0, people: 0 })
       : null,
   }));
+}
+
+// Opt-ins are an extra on the class cards (review, 12 Nov): when their read
+// fails (a timeout, a database without migration 023) the cards still load,
+// without the number, and the reason is logged rather than swallowed (§13).
+export async function optinsOrNull<T>(
+  load: () => Promise<T>,
+): Promise<T | null> {
+  try {
+    return await load();
+  } catch (err) {
+    console.error("[home] class opt-ins failed", err);
+    return null;
+  }
 }
 
 // Opt-ins and sign-ups are totals over everyone's leads, so they follow the
