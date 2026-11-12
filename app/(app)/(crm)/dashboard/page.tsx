@@ -3,16 +3,19 @@ import { getCurrentUser } from "@/lib/auth/current-user";
 import { canWriteClass, permissionFor } from "@/lib/auth/permissions";
 import { formatDate } from "@/lib/format/date";
 import {
+  canSeeLeadCounts,
   myOpenDeals,
   myTasks,
   needsAttention,
   upcomingClasses,
 } from "@/lib/home/service";
+import { canSetWorkshopGoal, upcomingWorkshops } from "@/lib/home/workshops";
 import { ClassesPanel } from "./classes-panel";
 import { DealsPanel } from "./deals-panel";
 import { NeedsAttentionPanel } from "./needs-attention-panel";
 import { PanelError } from "./panel-kit";
 import { TasksPanel } from "./tasks-panel";
+import { WorkshopsPanel } from "./workshops-panel";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -49,7 +52,8 @@ async function panel<T>(name: string, load: () => Promise<T>) {
 }
 
 // Spec §9.0 Home: a work page, not analytics — no charts, no custom
-// metrics, no writes. Panels a role cannot act on are absent, not empty
+// metrics, and no writes except a free workshop's sign-up goal (Zixuan,
+// 12 Nov 2026). Panels a role cannot act on are absent, not empty
 // (§6); the services re-check every permission the page checks here.
 export default async function DashboardPage() {
   const user = await getCurrentUser();
@@ -63,11 +67,14 @@ export default async function DashboardPage() {
   const canReviewPeople = peopleWrite.allowed && !peopleWrite.assignedOnly;
   const canAttend = canReviewPeople || canWriteClass(user);
 
-  const [tasks, deals, classes, attention] = await Promise.all([
+  const [tasks, deals, classes, attention, workshops] = await Promise.all([
     panel("tasks", () => myTasks(user)),
     canReadDeals ? panel("deals", () => myOpenDeals(user)) : null,
     canReadClasses ? panel("classes", () => upcomingClasses(user)) : null,
     canAttend ? panel("needs attention", () => needsAttention(user)) : null,
+    canSeeLeadCounts(user)
+      ? panel("free workshops", () => upcomingWorkshops(user))
+      : null,
   ]);
 
   const now = new Date();
@@ -106,6 +113,17 @@ export default async function DashboardPage() {
           />
         ) : (
           <PanelError what="upcoming classes" />
+        ))}
+
+      {workshops &&
+        (workshops.ok ? (
+          <WorkshopsPanel
+            workshops={workshops.data}
+            canSetGoal={canSetWorkshopGoal(user)}
+            windowLabel={`${formatDate(now)} – ${formatDate(new Date(now.getTime() + 14 * DAY))}`}
+          />
+        ) : (
+          <PanelError what="free workshops" />
         ))}
 
       {deals &&

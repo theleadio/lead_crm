@@ -5,9 +5,10 @@
 //   "LEAD | Nov2026 | Lead | Vibe Coding Masterclass EN 19 Nov"
 //    brand   month+year  kind   title                 lang day month
 // Only kind "Lead" is a free workshop; "Sales" campaigns sell paid classes.
+import { writeAudit } from "../audit.ts";
 import { PermissionError, type Viewer } from "../auth/permissions.ts";
 import { livePersonSql } from "../reports/ads.ts";
-import { db } from "../sql.ts";
+import { db, withTransaction } from "../sql.ts";
 import { canSeeLeadCounts } from "./service.ts";
 import type { HomeWorkshop } from "./types.ts";
 
@@ -85,6 +86,17 @@ export async function upcomingWorkshops(
     JOIN person p ON p.id = t.person_id
     WHERE t.utm_campaign ILIKE '%|%lead%|%' AND ${livePersonSql(sql)}`;
 
+  const goals = new Map(
+    (
+      await sql`
+        SELECT key, (value ->> 'goal')::int AS goal, version FROM app_setting
+        WHERE key LIKE ${GOAL_PREFIX + "%"}`
+    ).map((r) => [
+      r.key as string,
+      { goal: r.goal as number, version: Number(r.version) },
+    ]),
+  );
+
   const today = new Date().toLocaleDateString("en-CA", {
     timeZone: "Asia/Kuala_Lumpur",
   });
@@ -121,14 +133,84 @@ export async function upcomingWorkshops(
   }
 
   return [...groups.values()]
-    .map((g) => ({
-      title: [...g.titles].sort((a, b) => b[1].size - a[1].size)[0][0],
-      language: g.key.language,
-      date: g.key.date,
-      signups: g.people.size,
-      campaigns: g.campaigns.size,
-    }))
+    .map((g) => {
+      const goal = goals.get(workshopGoalKey(g.key));
+      return {
+        title: [...g.titles].sort((a, b) => b[1].size - a[1].size)[0][0],
+        language: g.key.language,
+        date: g.key.date,
+        signups: g.people.size,
+        campaigns: g.campaigns.size,
+        goal: goal?.goal ?? null,
+        goalVersion: goal?.version ?? null,
+      };
+    })
     .sort(
       (a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title),
     );
+}
+
+// Sign-up goals (Zixuan, 12 Nov 2026). Free workshops have no table of their
+// own until they become classes (January), so each goal is an app_setting
+// row keyed by the workshop the way upcomingWorkshops groups it. A campaign
+// renamed to a new title or date is a new workshop and starts without a goal.
+// shortcut: per-event data in the settings table; move goals to class capacity
+// when free workshops become classes, then delete these rows.
+const GOAL_PREFIX = "workshop_goal:";
+
+export function workshopGoalKey(k: WorkshopKey): string {
+  return `${GOAL_PREFIX}${k.title.toLowerCase()}|${k.language}|${k.date}`;
+}
+
+// Zixuan, 12 Nov: management (the boss), marketing and operations set goals.
+export function canSetWorkshopGoal(viewer: Viewer): boolean {
+  return ["super_admin", "management", "marketing", "operations"].includes(
+    viewer.role,
+  );
+}
+
+export type SetGoalResult =
+  | { ok: true; goal: number; version: number }
+  | { ok: false; reason: "conflict" };
+
+// `version` is the goal's version as the screen saw it, null when it saw no
+// goal. Someone else's change in between is refused, not overwritten (§7).
+export async function setWorkshopGoal(
+  viewer: Viewer,
+  input: WorkshopKey & { goal: number; version: number | null },
+): Promise<SetGoalResult> {
+  if (!canSetWorkshopGoal(viewer)) throw new PermissionError("settings");
+  if (!Number.isInteger(input.goal) || input.goal < 1 || input.goal > 10000)
+    throw new RangeError("goal must be a whole number from 1 to 10000");
+  const key = workshopGoalKey(input);
+
+  return withTransaction(async () => {
+    const sql = db();
+    const [before] = await sql`
+      SELECT (value ->> 'goal')::int AS goal, version FROM app_setting
+      WHERE key = ${key} FOR UPDATE`;
+    const seen = before ? Number(before.version) : null;
+    if (seen !== input.version) return { ok: false, reason: "conflict" };
+
+    const [after] = before
+      ? await sql`
+          UPDATE app_setting
+          SET value = ${sql.json({ goal: input.goal })}, updated_by = ${viewer.id},
+              updated_at = now()
+          WHERE key = ${key} RETURNING version`
+      : await sql`
+          INSERT INTO app_setting (key, value, created_by, updated_by)
+          VALUES (${key}, ${sql.json({ goal: input.goal })}, ${viewer.id}, ${viewer.id})
+          RETURNING version`;
+
+    await writeAudit({
+      userId: viewer.id,
+      action: before ? "update" : "create",
+      entity: "workshop_goal",
+      entityId: null,
+      before: before ? { key, goal: before.goal } : null,
+      after: { key, goal: input.goal },
+    });
+    return { ok: true, goal: input.goal, version: Number(after.version) };
+  });
 }

@@ -70,6 +70,10 @@ export type HomeWorkshop = {
   signups: number;
   // How many campaign spellings were merged into this workshop.
   campaigns: number;
+  // Sign-up goal set on Home (app_setting), null until someone sets one;
+  // goalVersion is what an edit sends back (§7).
+  goal: number | null;
+  goalVersion: number | null;
 };
 
 // One count per item, and null for an item this role cannot act on (§9.0:

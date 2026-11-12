@@ -9,7 +9,7 @@ import {
   needsAttention,
   upcomingClasses,
 } from "../lib/home/service.ts";
-import { upcomingWorkshops } from "../lib/home/workshops.ts";
+import { setWorkshopGoal, upcomingWorkshops } from "../lib/home/workshops.ts";
 import { listClasses } from "../lib/classes/service.ts";
 import { classListQuerySchema } from "../lib/validation/class-query.ts";
 import { closeDb, db, rollbackAfter } from "../lib/sql.ts";
@@ -474,4 +474,85 @@ it("skips paid campaigns, deleted people and workshops past 14 days", async () =
 it("part_time is refused the free workshops", async () => {
   const user = await newUser("part_time");
   await assert.rejects(upcomingWorkshops(user), PermissionError);
+});
+
+// Sign-up goals on the Free workshops cards (Zixuan, 12 Nov): app_setting
+// rows, set by super_admin, management, marketing and operations.
+async function upcomingOne(user: Viewer, title: string) {
+  return (await upcomingWorkshops(user)).find(
+    (w) => w.title.toLowerCase() === title.toLowerCase(),
+  );
+}
+
+async function workshopKey(title: string, days: number) {
+  const name = workshopCampaign(title, days);
+  await signUp(name, await newPerson());
+  const parsed = (
+    await import("../lib/home/workshops.ts")
+  ).parseWorkshopCampaign(name);
+  assert.ok(parsed);
+  return parsed;
+}
+
+it("a workshop has no goal until someone sets one", async () => {
+  const user = await newUser("marketing");
+  const title = uniqueTitle();
+  await workshopKey(title, 4);
+  const w = await upcomingOne(user, title);
+  assert.equal(w?.goal, null);
+  assert.equal(w?.goalVersion, null);
+});
+
+it("marketing sets a goal and Home shows it, whatever the title's case", async () => {
+  const user = await newUser("marketing");
+  const title = uniqueTitle();
+  const key = await workshopKey(title, 4);
+  const saved = await setWorkshopGoal(user, {
+    ...key,
+    title: key.title.toUpperCase(),
+    goal: 120,
+    version: null,
+  });
+  assert.deepEqual(saved, { ok: true, goal: 120, version: 1 });
+  const w = await upcomingOne(user, title);
+  assert.equal(w?.goal, 120);
+  assert.equal(w?.goalVersion, 1);
+});
+
+it("a stale goal edit is refused, a current one moves the version", async () => {
+  const user = await newUser("operations");
+  const key = await workshopKey(uniqueTitle(), 4);
+  await setWorkshopGoal(user, { ...key, goal: 50, version: null });
+  assert.deepEqual(
+    await setWorkshopGoal(user, { ...key, goal: 60, version: null }),
+    { ok: false, reason: "conflict" },
+  );
+  assert.deepEqual(
+    await setWorkshopGoal(user, { ...key, goal: 60, version: 1 }),
+    {
+      ok: true,
+      goal: 60,
+      version: 2,
+    },
+  );
+});
+
+it("every goal change is audited", async () => {
+  const user = await newUser("management");
+  const key = await workshopKey(uniqueTitle(), 4);
+  await setWorkshopGoal(user, { ...key, goal: 80, version: null });
+  const [row] = await db()`
+    SELECT action, before, after FROM audit_log
+    WHERE user_id = ${user.id} AND entity = 'workshop_goal'`;
+  assert.equal(row?.action, "create");
+  assert.equal(row?.after.goal, 80);
+});
+
+it("sales may not set a goal", async () => {
+  const user = await newUser("sales");
+  const key = await workshopKey(uniqueTitle(), 4);
+  await assert.rejects(
+    setWorkshopGoal(user, { ...key, goal: 10, version: null }),
+    PermissionError,
+  );
 });
