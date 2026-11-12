@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { writeAudit } from "../audit.ts";
+import { referralOf, saveCtwaTouch } from "../import/wati-ctwa.ts";
 import { findDuplicate } from "../people/dedupe.ts";
 import { normalizePhoneE164 } from "../format/phone.ts";
 import { followUpEnquiry } from "../enquiries/create.ts";
@@ -98,6 +99,8 @@ function kept(e: WatiEvent): Record<string, unknown> {
     whatsappMessageId: str(e.whatsappMessageId),
     failedCode: str(e.failedCode),
     failedDetail: str(e.failedDetail),
+    // The ad, for tracing an opt-in back to its event (an id, not text).
+    adId: referralOf(e)?.adId ?? null,
   };
 }
 
@@ -366,6 +369,11 @@ async function dispatch(e: WatiEvent): Promise<Done> {
   const type = str(e.eventType) ?? "";
   if (INBOUND.has(type)) {
     await saveMessage(e, "in");
+    // From a click-to-WhatsApp ad: the opt-in touchpoint, live. The nightly
+    // sync (scripts/sync-wati-ctwa.ts) records the same click once only.
+    const ref = referralOf(e);
+    if (ref)
+      await saveCtwaTouch(str(e.waId) ?? "", str(e.senderName), ref, whenOf(e));
     return { kind: "saved" };
   }
   if (ECHO.has(type)) {

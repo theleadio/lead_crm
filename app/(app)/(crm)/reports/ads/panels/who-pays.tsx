@@ -93,8 +93,8 @@ export function WhoPaysPanel({
       description={
         <>
           {source === "deal"
-            ? "Seat-holding enrolments (§12.1) by programme and class language. HRDC means the deal records HRDC funding; an enrolment with no deal has no recorded funding and is counted as not HRDC rather than guessed."
-            : "Seats by programme and class language, counted in the LMS, which is the only place that records how each was funded — no deal in the CRM carries it yet. HRDC means the LMS says hrdc; self-funded, internal, leaders' club and refresher seats all count as not HRDC."}
+            ? "Seats by programme and class language. HRDC means the deal records HRDC funding; a seat with no deal has no funding recorded and is counted as not HRDC rather than guessed."
+            : "Seats by programme and class language, counted in the LMS, which is the only place that records how each was funded — no deal in the CRM carries it yet. HRDC means the LMS marks the seat as HRDC; self-funded, internal, leaders' club and refresher seats all count as not HRDC."}
         </>
       }
     >
