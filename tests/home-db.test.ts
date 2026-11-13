@@ -335,7 +335,11 @@ async function linkCampaign(classId: string): Promise<string> {
 
 // One ad in the campaign, as the daily Meta sync stores it, and one ctwa
 // touch through that ad for the person.
-async function optIn(campaign: string, person: string): Promise<void> {
+async function optIn(
+  campaign: string,
+  person: string,
+  at: Date = new Date(),
+): Promise<void> {
   const ad = numericId();
   await db()`
     INSERT INTO meta_ad_insight (ad_id, day, account_id, campaign_id, campaign_name,
@@ -345,8 +349,8 @@ async function optIn(campaign: string, person: string): Promise<void> {
             ${campaign}, 'LEAD | Nov2026 | WhatsApp | Test', 'set1', 'Set 1',
             'Ad', 'MYR', '1.00', 10, 1)`;
   await db()`
-    INSERT INTO touchpoint (person_id, channel, utm_ad_id)
-    VALUES (${person}, 'ctwa', ${ad})`;
+    INSERT INTO touchpoint (person_id, channel, utm_ad_id, occurred_at)
+    VALUES (${person}, 'ctwa', ${ad}, ${at})`;
 }
 
 it("opt-ins count people on the class's linked campaigns", async () => {
@@ -372,6 +376,21 @@ it("counts a returning chatter once", async () => {
 
   const found = (await upcomingClasses(user)).find((c) => c.id === classId);
   assert.deepEqual(found?.optins, { linkedCampaigns: 2, people: 1 });
+});
+
+it("counts a person only where their first WhatsApp chat came from", async () => {
+  // Same rule as the ads report's Opt-ins: a contact who first chatted from
+  // another campaign is a returning chat here, not an opt-in.
+  const user = await newUser("operations");
+  const classId = await newClass(await newCourse(), 3);
+  const linked = await linkCampaign(classId);
+  const elsewhere = numericId();
+  const person = await newPerson();
+  await optIn(elsewhere, person, new Date(Date.now() - 864e5));
+  await optIn(linked, person);
+
+  const found = (await upcomingClasses(user)).find((c) => c.id === classId);
+  assert.deepEqual(found?.optins, { linkedCampaigns: 1, people: 0 });
 });
 
 it("ignores another class's campaign and deleted people", async () => {
