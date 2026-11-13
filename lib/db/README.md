@@ -232,7 +232,7 @@ Tested on PostgreSQL 16 after 001–016, 018 and 019, applied twice: `019_enquir
 
 ## Migration 021 — WhatsApp after-hours reply (11 Nov)
 
-`conversation.after_hours_reply_until` (timestamptz): the opening time of the after-hours stretch a thread was last auto-answered in, so one stretch (closing to the next 08:30 working-day opening) gets one reply. `conversation_message.automated` (boolean, default false): sent by the system; WATI's echo of it is not counted as staff's first response. Used by `lib/wati/auto-reply.ts`. No backfill.
+`conversation.after_hours_reply_until` (timestamptz): the opening time of the after-hours stretch a thread was last auto-answered in, so one stretch (closing to the next 08:30 working-day opening) gets one reply. `conversation_message.automated` (boolean, default false): sent by the system; WATI's echo of it is not counted as staff's first response. Used by the after-hours auto-reply, removed on 13 Nov; the columns stay, unused except `automated` on rows it already sent. No backfill.
 
 ## Migration 022 — WATI's id on our sends (12 Nov)
 
