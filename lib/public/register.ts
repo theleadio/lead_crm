@@ -54,9 +54,16 @@ export function returnUrls(
   env: RegisterDeps["env"],
   locale: "en" | "zh",
   classCode: string,
+  returnUrl?: string | null,
 ): { successUrl: string; cancelUrl: string } | null {
   const base = appBase(env);
   if (!base) return null;
+  // A lead_sales page brings its own thank-you address; only ours is believed.
+  if (returnUrl?.startsWith("https://ai.thelead.io/"))
+    return {
+      successUrl: `${returnUrl}${returnUrl.includes("?") ? "&" : "?"}session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: returnUrl,
+    };
   const prefix = locale === "zh" ? "/zh" : "";
   return {
     // Stripe fills {CHECKOUT_SESSION_ID} itself; the thank-you page only
@@ -75,7 +82,11 @@ export async function register(
   // Step 1: §8.2, whole. A refused class below still leaves the lead, its
   // attribution, its consent and its deal behind — a visitor who clicked a
   // stale link is still worth having.
-  const lead = await captureLead(input, ctx);
+  // A registration always has a deal: createDeal is not the register route's.
+  const lead = (await captureLead({ ...input, createDeal: true }, ctx)) as {
+    personId: string;
+    dealId: string;
+  };
 
   const sql = db();
   // Step 2: the class. Seats are not judged here (§8.3): a stored `full` can
@@ -99,7 +110,7 @@ export async function register(
     return { kind: "hrdc", personId: lead.personId, dealId: lead.dealId };
 
   if (!checkoutConfigured(deps.env)) return { kind: "not_configured" };
-  const urls = returnUrls(deps.env, input.locale, cls.code as string);
+  const urls = returnUrls(deps.env, input.locale, cls.code as string, input.returnUrl);
   if (!urls) return { kind: "not_configured" };
 
   // Step 4: the amount, before anything is held. A class with no price and a

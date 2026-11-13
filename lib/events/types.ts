@@ -21,7 +21,7 @@ export type EventType = (typeof EVENT_TYPES)[number];
 export type EventPayloads = {
   LeadCaptured: {
     personId: string;
-    dealId: string;
+    dealId: string | null;
     formName: string;
     touchpointId: string;
   };

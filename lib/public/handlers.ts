@@ -280,7 +280,10 @@ async function intakeFlow<T extends IntakeInput>(
   intake: Intake<T>,
 ): Promise<Response> {
   // Step 1: rate limit per IP, before any parsing or CAPTCHA call.
-  const ip = requestIp(request.headers);
+  const ip = requestIp(
+    request.headers,
+    checkApiKey(d.env, request.headers.get("x-api-key")) === "ok",
+  );
   if (await ipLimited(d.env, ip)) {
     const res = rateLimited();
     res.headers.set("Retry-After", "60");
@@ -361,7 +364,7 @@ async function intakeFlow<T extends IntakeInput>(
 function leadOk(
   d: PublicDeps,
   origin: string | null,
-  r: { personId: string; dealId: string },
+  r: { personId: string; dealId: string | null },
 ) {
   return withCors(
     d.env,
