@@ -107,6 +107,8 @@ export type Touchpoint = {
   channel: string;
   utmSource: string | null;
   utmCampaign: string | null;
+  // A GHL workshop registration (ghl:forms): "<workshop> · <date>", else null.
+  registeredFor: string | null;
 };
 
 export type DealSummary = {

@@ -83,3 +83,6 @@ jobs:
       - run: node --import=./scripts/ci-errors.mjs scripts/import-ghl-attribution.ts --apply --accept-approx-dates
       - run: node --import=./scripts/ci-errors.mjs scripts/sync-salesprocess-payments.ts --apply
       - run: node --import=./scripts/ci-errors.mjs scripts/import-salesprocess-enrolments.ts --apply
+      # Workshop registrations for Home's Free workshops (12 Nov). Last in the
+      # job, so a failure here never stops payments or enrolments.
+      - run: node --import=./scripts/ci-errors.mjs scripts/import-ghl-forms.ts --apply

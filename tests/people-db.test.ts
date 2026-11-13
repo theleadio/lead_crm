@@ -809,3 +809,25 @@ it("concurrency: a save whose row is gone is not_found, not stale", async () => 
   const r = await updatePerson(id, { jobTitle: "x" }, loaded, admin);
   assert.equal(r.kind, "not_found");
 });
+
+// Review (12 Nov): a GHL workshop registration (ghl:forms) is often a
+// person's latest touch, and must say which workshop, not a bare "import".
+it("detail: a workshop registration as latest touch names the workshop", async () => {
+  const [p] = await db()`
+    INSERT INTO person (full_name) VALUES ('Registration Test') RETURNING id`;
+  await db()`
+    INSERT INTO touchpoint (person_id, channel, form_name, utm_campaign, occurred_at, is_first_touch)
+    VALUES (${p.id}, 'import', 'ghl-attribution', 'LEAD | Nov2026 | Lead | X', '2026-11-01', true)`;
+  await db()`
+    INSERT INTO touchpoint (person_id, channel, form_name, external_ref, occurred_at)
+    VALUES (${p.id}, 'import', '.02 LEAD - AI Vibe Coding Masterclass 18 Nov 2026',
+            ${`ghl-form:${crypto.randomUUID()}`}, '2026-11-08')`;
+  const r = await getPersonDetail(p.id, admin);
+  assert.equal(r.kind, "ok");
+  if (r.kind !== "ok") return;
+  assert.equal(
+    r.detail.attribution.latestTouch?.registeredFor,
+    "AI Vibe Coding Masterclass · 18 Nov 2026",
+  );
+  assert.equal(r.detail.attribution.firstTouch?.registeredFor, null);
+});

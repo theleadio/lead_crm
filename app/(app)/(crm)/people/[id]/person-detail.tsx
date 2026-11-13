@@ -696,7 +696,9 @@ function TouchLine({
       <span className="text-ink-muted">{title}</span>
       <span>
         {t
-          ? `${t.utmSource ?? label(t.channel)}${t.utmCampaign ? ` · ${t.utmCampaign}` : ""} · ${formatDate(t.occurredAt)}`
+          ? t.registeredFor
+            ? `Registered for ${t.registeredFor} · ${formatDate(t.occurredAt)}`
+            : `${t.utmSource ?? label(t.channel)}${t.utmCampaign ? ` · ${t.utmCampaign}` : ""} · ${formatDate(t.occurredAt)}`
           : "—"}
       </span>
     </p>

@@ -14,11 +14,11 @@ const PUSH_WITHIN_DAYS = 7;
 const PUSH_BELOW_SHARE = 0.5;
 
 // Whole days from today (Malaysian calendar, §4) to a YYYY-MM-DD date.
-function daysUntil(date: string, today: string): number {
+export function daysUntil(date: string, today: string): number {
   return Math.round((Date.parse(date) - Date.parse(today)) / DAY);
 }
 
-function startsLabel(days: number): string {
+export function startsLabel(days: number): string {
   if (days <= 0) return "Starts today";
   if (days === 1) return "Starts tomorrow";
   return `Starts in ${days} days`;
@@ -139,6 +139,21 @@ function SeatCard({ cls: c, days }: { cls: HomeClass; days: number }) {
           />
         </span>
       </span>
+
+      {c.optins && (
+        <span className="text-ink-muted text-xs">
+          {c.optins.linkedCampaigns === 0 ? (
+            "No campaign linked"
+          ) : (
+            <>
+              <span className="text-ink font-semibold tabular-nums">
+                {c.optins.people}
+              </span>{" "}
+              WhatsApp {c.optins.people === 1 ? "opt-in" : "opt-ins"}
+            </>
+          )}
+        </span>
+      )}
 
       <span className="mt-auto flex min-h-6 flex-wrap items-center justify-between gap-2 text-xs">
         <span className="text-ink-muted">
