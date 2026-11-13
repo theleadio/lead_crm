@@ -1,5 +1,5 @@
 // An LMS enrollment's funding_type -> the CRM seat's enrolment.funding_type
-// (migration 023, 12 Nov 2026). Pure: no database. Used by scripts/sync-lms.ts.
+// (migrations 023 and 025, 12-13 Nov 2026). Pure: no database. Used by scripts/sync-lms.ts.
 // The CRM keeps the LMS's own values; Zixuan chose them over the deal's
 // self/company/hrdc/other list, and who pays stays in payer_type.
 
@@ -9,6 +9,7 @@ export const FUNDING_TYPES = [
   "internal",
   "leaders_club",
   "refresher",
+  "guest", // 025: one LMS seat on 13 Nov
 ] as const;
 export type FundingType = (typeof FUNDING_TYPES)[number];
 

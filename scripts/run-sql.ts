@@ -21,7 +21,12 @@ if (!process.env.DATABASE_URL) {
   process.exit(2);
 }
 
-const sql = postgres(process.env.DATABASE_URL, { ssl: "require", max: 1 });
+const url = process.env.DATABASE_URL;
+// A local Postgres (the test DB) opts out of TLS with ?sslmode=disable, as in lib/sql.ts.
+const sql = postgres(url, {
+  ssl: url.includes("sslmode=disable") ? false : "require",
+  max: 1,
+});
 try {
   const result = await sql.unsafe(readFileSync(file, "utf8")).simple();
   const rows = (Array.isArray(result) ? result.flat() : [result]).filter(
