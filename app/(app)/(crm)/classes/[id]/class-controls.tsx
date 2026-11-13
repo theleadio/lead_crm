@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Button } from "@/components/ui/button";
+import { versionHeaders } from "@/lib/api/version-headers";
 
 // §9.10 header controls (§12.1, v1.9): two decisions, two buttons, two
 // routes. Whether a class takes bookings and whether the website lists it are
@@ -51,7 +52,7 @@ export function ClassControls({
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "If-Match": String(version),
+            ...versionHeaders(version),
           },
           body: JSON.stringify(body),
         },

@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { enumLabel } from "@/lib/classes/types";
 import { formatMoneyMyr, sameMoney } from "@/lib/format/money";
 import type { RecordedPayment } from "@/lib/payments/types";
+import { versionHeaders } from "@/lib/api/version-headers";
 
 // §9.12 Record manual payment. Offered on §9.11 to the two roles with payment
 // write (§6). Three steps on save: ask the server for a signed upload URL, PUT
@@ -142,7 +143,7 @@ export function RecordPayment({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "If-Match": String(version),
+          ...versionHeaders(version),
         },
         body: JSON.stringify({
           enrolmentId,

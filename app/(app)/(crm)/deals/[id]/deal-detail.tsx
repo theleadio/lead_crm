@@ -33,6 +33,7 @@ import {
   type Stage,
 } from "@/lib/deals/types";
 import type { OwnerOption } from "@/lib/people/types";
+import { versionHeaders } from "@/lib/api/version-headers";
 
 // Spec §9.6 Deal detail. Stage is moved through POST /api/deals/:id/stage —
 // the same route the board uses — and never through PATCH (§12.5).
@@ -648,7 +649,7 @@ function EditForm({
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          "If-Match": String(deal.version),
+          ...versionHeaders(deal.version),
         },
         body: JSON.stringify(patch),
       });

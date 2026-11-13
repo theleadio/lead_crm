@@ -30,6 +30,7 @@ import type { TaskRow } from "@/lib/tasks/types";
 import { TASKS_PAGE_SIZE } from "@/lib/validation/task";
 import { TaskDialog } from "./task-dialog";
 import { TASK_ICONS } from "./task-icons";
+import { versionHeaders } from "@/lib/api/version-headers";
 
 // Spec §9.14: open tasks, earliest due first, so overdue ones lead. Mine by
 // default (§7 filter[mine]=true); everyone's for the roles that read every
@@ -160,7 +161,7 @@ export function TasksList({
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        "If-Match": String(task.version),
+        ...versionHeaders(task.version),
       },
       body: JSON.stringify({ action }),
     }).catch(() => null);

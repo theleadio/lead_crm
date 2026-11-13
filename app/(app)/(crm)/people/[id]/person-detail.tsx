@@ -31,6 +31,7 @@ import type {
   PersonDetail,
   TimelineItem,
 } from "@/lib/people/types";
+import { versionHeaders } from "@/lib/api/version-headers";
 
 type Person = PersonDetail["person"];
 type Form = {
@@ -435,7 +436,7 @@ function EditForm({
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          "If-Match": String(person.version),
+          ...versionHeaders(person.version),
         },
         body: JSON.stringify(patch),
       });
@@ -891,7 +892,7 @@ function NotADuplicate({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "If-Match": String(version),
+          ...versionHeaders(version),
         },
         body: JSON.stringify({ note: note.trim() || undefined }),
       },
