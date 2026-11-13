@@ -1,5 +1,5 @@
 // Sending through WATI API v3 (docs.wati.io): the pieces the inbox reply
-// (send.ts) and the after-hours auto-reply (auto-reply.ts) share. Host only,
+// (send.ts) uses. Host only,
 // Bearer token. Errors carry the status only: a body can echo the phone
 // number.
 
@@ -69,7 +69,7 @@ export const sendTemplate = (
     ],
   });
 
-// From env, or none (no reply box, no auto-reply).
+// From env, or none (no reply box).
 export function watiFromEnv(): WatiOpts | undefined {
   const host = process.env.WATI_API_HOST;
   const token = process.env.WATI_API_TOKEN;
