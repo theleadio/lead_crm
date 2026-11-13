@@ -1,6 +1,11 @@
 import type { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { apiError, forbidden, validationError } from "@/lib/api/errors";
+import {
+  apiError,
+  forbidden,
+  readIfMatch,
+  validationError,
+} from "@/lib/api/errors";
 import { clearReviewFlag } from "@/lib/people/duplicate-review";
 import { reviewDismissSchema } from "@/lib/validation/person";
 
@@ -16,9 +21,9 @@ export async function POST(
   if (!viewer) return apiError(401, "unauthenticated", "Sign in to continue.");
 
   // §7 (v1.7): If-Match is the integer row version from the GET.
-  const header = request.headers.get("If-Match");
-  const ifMatch = header === null ? NaN : Number(header);
-  if (!Number.isInteger(ifMatch) || ifMatch < 1)
+  // If-Match, or X-Row-Version on the live site (lib/api/version-headers.ts).
+  const ifMatch = readIfMatch(request);
+  if (ifMatch === null)
     return apiError(
       428,
       "precondition_required",

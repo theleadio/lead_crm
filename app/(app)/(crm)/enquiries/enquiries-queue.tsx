@@ -35,6 +35,7 @@ import {
 } from "@/lib/enquiries/types";
 import { formatDateTime } from "@/lib/format/date";
 import type { ListResponse, OwnerOption } from "@/lib/people/types";
+import { versionHeaders } from "@/lib/api/version-headers";
 
 // FilterSelect's look, for the selects it cannot be: the status filter (no
 // value means open or waiting, not all) and the row actions.
@@ -207,7 +208,7 @@ export function EnquiriesQueue({
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        "If-Match": String(row.version),
+        ...versionHeaders(row.version),
       },
       body: JSON.stringify(body),
     }).catch(() => null);

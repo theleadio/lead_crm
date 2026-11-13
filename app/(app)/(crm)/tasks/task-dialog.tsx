@@ -15,6 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { CREATABLE_TYPES, TASK_TYPE_LABELS } from "@/lib/tasks/labels";
 import type { TaskRow } from "@/lib/tasks/types";
+import { versionHeaders } from "@/lib/api/version-headers";
 
 // Spec §9.14: one dialog creates a task from a person, deal or enrolment and
 // edits one from the Tasks list (design 9). Type and links are fixed once the
@@ -140,7 +141,7 @@ function TaskDialogForm({
       method: task ? "PATCH" : "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(task ? { "If-Match": String(task.version) } : {}),
+        ...(task ? versionHeaders(task.version) : {}),
       },
       body: JSON.stringify(body()),
     }).catch(() => null);

@@ -333,7 +333,8 @@ test("convert sends to its route with If-Match, and a converted enquiry links it
   const panel = source("context-panel.tsx");
   assert.match(panel, /shortcut: /);
   assert.match(panel, /`\/api\/enquiries\/\$\{enquiry\.id\}\/convert`/);
-  assert.match(panel, /"If-Match": String\(enquiry\.version\)/);
+  // Both version headers, via the helper (the live site drops If-Match).
+  assert.match(panel, /versionHeaders\(enquiry\.version\)/);
   assert.match(panel, /if \(!canConvert\) return null;/);
   assert.match(panel, /enquiry\.status === "converted" && enquiry\.dealId/);
   assert.match(panel, /href=\{`\/deals\/\$\{enquiry\.dealId\}`\}/);

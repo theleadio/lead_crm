@@ -1,6 +1,7 @@
 import type { ZodError } from "zod";
 import { clientIp, writeAudit } from "../audit.ts";
 import type { Viewer } from "../auth/permissions.ts";
+import { ROW_VERSION_HEADER } from "./version-headers.ts";
 
 // Spec §7: every error returns the same shape so the client has one renderer.
 export function apiError(
@@ -22,9 +23,18 @@ export function apiError(
 // If-Match. Missing, or anything that is not a positive whole number, is a
 // 428 — never a save that skips the check.
 export function readIfMatch(request: Request): number | null {
+  // If-Match first; X-Row-Version when it is missing or unusable, because the
+  // live site drops If-Match (lib/api/version-headers.ts).
+  return (
+    parseVersion(request.headers.get("If-Match")) ??
+    parseVersion(request.headers.get(ROW_VERSION_HEADER))
+  );
+}
+
+function parseVersion(raw: string | null): number | null {
   // Digits only: `Number()` would also take "1e3" and " 0x10", which no
   // client sends and which only hide a malformed header.
-  const header = request.headers.get("If-Match")?.trim();
+  const header = raw?.trim();
   if (!header || !/^\d+$/.test(header)) return null;
   const version = Number(header);
   return version >= 1 ? version : null;

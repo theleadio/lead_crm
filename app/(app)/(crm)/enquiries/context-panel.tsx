@@ -11,6 +11,7 @@ import { stageLabel } from "@/lib/deals/types";
 import type { EnquiryRow } from "@/lib/enquiries/types";
 import type { PersonDetail } from "@/lib/people/types";
 import { DASH, QUEUE_COLUMNS, openDeals, queueCells } from "./queue-view";
+import { versionHeaders } from "@/lib/api/version-headers";
 
 type LoadState =
   | { status: "loading" }
@@ -244,7 +245,7 @@ export function ConvertControl({
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "If-Match": String(enquiry.version),
+            ...versionHeaders(enquiry.version),
           },
           body: JSON.stringify({ pipeline }),
         }).catch(() => null);
