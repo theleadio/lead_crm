@@ -41,11 +41,13 @@ SELECT pg_temp.expect_ok('funding: empty is still allowed',
   $q$UPDATE enrolment SET funding_type = NULL WHERE id = '00000000-0000-0000-0000-0000000025e1'$q$);
 SELECT pg_temp.expect_fail('funding: a value outside the list is still refused',
   $q$UPDATE enrolment SET funding_type = 'company' WHERE id = '00000000-0000-0000-0000-0000000025e1'$q$, 'enrolment_funding_type_check');
-SELECT pg_temp.check('funding: enrolment has exactly one funding check, under the 023 name',
+SELECT pg_temp.check('funding: enrolment has exactly one CHECK on funding_type',
   (SELECT count(*) = 1 FROM pg_constraint
     WHERE conrelid = 'enrolment'::regclass AND contype = 'c'
-      AND pg_get_constraintdef(oid) LIKE '%funding_type%'
-      AND conname = 'enrolment_funding_type_check'));
+      AND pg_get_constraintdef(oid) LIKE '%funding_type%'));
+SELECT pg_temp.check('funding: that CHECK keeps the 023 name',
+  EXISTS (SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'enrolment'::regclass AND conname = 'enrolment_funding_type_check'));
 
 SELECT CASE WHEN ok THEN 'PASS' ELSE 'FAIL' END AS result, name FROM results;
 SELECT count(*) FILTER (WHERE ok) || ' passed, ' || count(*) FILTER (WHERE NOT ok) || ' failed' AS summary FROM results;
