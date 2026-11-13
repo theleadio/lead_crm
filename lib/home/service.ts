@@ -211,8 +211,7 @@ export function canSeeLeadCounts(viewer: Viewer): boolean {
 }
 
 // Per class: how many Meta campaigns are linked (migration 023) and how many
-// live people opted in on WhatsApp through any of them (their first chat
-// came from it), all time. The ad's
+// live people opted in on WhatsApp through any of them, all time. The ad's
 // campaign is resolved the way the ads report does it, so a card and the
 // report agree on which campaign a chat came from.
 async function classOptins(
@@ -226,17 +225,12 @@ async function classOptins(
       SELECT class_id, meta_campaign_id FROM class_meta_campaign
       WHERE class_id = ANY(${classIds}::uuid[])
     ),
-    -- Each person's first WhatsApp chat only, the ads report's Opt-ins rule
-    -- (whatsappOptinRows): a contact who first chatted from another
-    -- campaign is a returning chat there, not an opt-in here.
     ctwa AS (
-      SELECT DISTINCT ON (t.person_id) t.person_id,
-             ${campaignIdSql(sql)} AS campaign_id
+      SELECT DISTINCT t.person_id, ${campaignIdSql(sql)} AS campaign_id
       FROM touchpoint t
       JOIN person p ON p.id = t.person_id
       ${campaignJoinSql(sql)}
       WHERE t.channel = 'ctwa' AND ${livePersonSql(sql)}
-      ORDER BY t.person_id, t.occurred_at, t.id
     )
     SELECT l.class_id,
            count(DISTINCT l.meta_campaign_id)::int AS linked,
