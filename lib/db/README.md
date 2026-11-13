@@ -23,6 +23,7 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/014_meta_ad_insight.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/015_touchpoint_campaign_ids.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/016_salesprocess_payment.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/017_deal_external_ref.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/018_enquiry_resolution.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/019_enquiry_tickets.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/020_message_imported.sql
@@ -43,6 +44,7 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -f lib/db/tests/011_task_source_key_tests.sql
     psql -d <db> -f lib/db/tests/012_rate_limit_tests.sql
     psql -d <db> -f lib/db/tests/013_click_ids_tests.sql
+    psql -d <db> -f lib/db/tests/017_deal_external_ref_tests.sql
     psql -d <db> -f lib/db/tests/018_enquiry_resolution_tests.sql
     psql -d <db> -f lib/db/tests/019_enquiry_tickets_tests.sql
     psql -d <db> -f lib/db/tests/023_campaign_link_funding_tests.sql

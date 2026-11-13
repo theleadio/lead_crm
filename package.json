@@ -16,6 +16,7 @@
     "ghl:forms": "node --env-file=.env.local scripts/import-ghl-forms.ts",
     "ghl:payments": "node --env-file=.env.local scripts/sync-salesprocess-payments.ts",
     "ghl:enrolments": "node --env-file=.env.local scripts/import-salesprocess-enrolments.ts",
+    "ghl:opportunities": "node --env-file=.env.local scripts/import-ghl-opportunities.ts",
     "lms:sync": "node --env-file=.env.local scripts/sync-lms.ts",
     "wati:run": "node --env-file-if-exists=.env.local scripts/wati-run.ts",
     "wati:history": "node --env-file-if-exists=.env.local scripts/import-wati-history.ts",
