@@ -179,9 +179,11 @@ export async function getPersonDetail(
            form_name, external_ref
     FROM touchpoint WHERE person_id = ${p.id} ORDER BY occurred_at`;
   const toTouch = (t: (typeof touches)[number]): Touchpoint => {
-    const workshop = String(t.external_ref ?? "").startsWith("ghl-form:")
-      ? parseWorkshopForm(t.form_name ?? "")
-      : null;
+    const workshop =
+      String(t.external_ref ?? "").startsWith("ghl-form:") ||
+      t.channel === "web_form"
+        ? parseWorkshopForm(t.form_name ?? "")
+        : null;
     return {
       id: t.id,
       occurredAt: t.occurred_at.toISOString(),

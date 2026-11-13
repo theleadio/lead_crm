@@ -5,6 +5,11 @@
 //   ".02 LEAD - AI Vibe Coding Masterclass 18 Nov 2026"
 // An earlier version read "| Lead |" campaign names, but those only reach the
 // CRM for a contact's first or last ad: 31 people against 157 registrations.
+// After the GHL switch-off (14 Dec, Shawn 13 Nov) the ads (Meta, LinkedIn,
+// Google, TikTok) send people to the CRM's own form instead: POST
+// /api/public/leads with formName in the same shape, e.g.
+//   "LEAD - AI Vibe Coding Masterclass 18 Nov 2026"
+// which records a web_form touchpoint. Both kinds count, merged per workshop.
 import { writeAudit } from "../audit.ts";
 import { PermissionError, type Viewer } from "../auth/permissions.ts";
 import { parseWorkshopForm, type WorkshopKey } from "../import/ghl-forms.ts";
@@ -32,7 +37,8 @@ export async function upcomingWorkshops(
     SELECT DISTINCT t.form_name, t.person_id
     FROM touchpoint t
     JOIN person p ON p.id = t.person_id
-    WHERE t.channel = 'import' AND t.external_ref LIKE 'ghl-form:%'
+    WHERE ((t.channel = 'import' AND t.external_ref LIKE 'ghl-form:%')
+           OR (t.channel = 'web_form' AND t.form_name ILIKE '%lead%'))
       AND ${livePersonSql(sql)}`;
 
   const goals = new Map(
