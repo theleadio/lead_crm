@@ -3,10 +3,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   checkMove,
+  keepCorporateFieldsMessage,
   missingCorporateFields,
   moveErrorMessage,
   type DealForMove,
 } from "../lib/deals/stage-rules.ts";
+import { stageLabel } from "../lib/deals/types.ts";
 
 const individual: DealForMove = {
   pipeline: "individual",
@@ -150,10 +152,32 @@ test("reopening won or lost is allowed", () => {
 
 test("messages name the missing fields and the target stage", () => {
   assert.equal(
-    moveErrorMessage("corporate_fields_missing", "proposal_sent", [
+    moveErrorMessage("corporate_fields_missing", "corporate", "proposal_sent", [
       "headcount",
     ]),
-    "Add headcount on the deal before moving it to Proposal sent.",
+    "Add headcount on the deal before moving it to Funding.",
+  );
+});
+
+test("corporate stages use sales' names; individual keeps its own", () => {
+  assert.equal(stageLabel("corporate", "discovery"), "Engaged");
+  assert.equal(stageLabel("corporate", "proposal_sent"), "Funding");
+  assert.equal(stageLabel("corporate", "funding"), "Submitted");
+  assert.equal(stageLabel("corporate", "won"), "Approved");
+  assert.equal(stageLabel("individual", "won"), "Won");
+});
+
+test("a stage outside the pipeline is named as stored", () => {
+  assert.equal(
+    moveErrorMessage("invalid_stage", "corporate", "engaged"),
+    "engaged isn't a stage in this deal's pipeline.",
+  );
+});
+
+test("the keep-fields message uses the corporate names", () => {
+  assert.equal(
+    keepCorporateFieldsMessage("funding", ["headcount"]),
+    "A corporate deal in Submitted needs headcount. Move it back to Engaged first if you need to clear that.",
   );
 });
 

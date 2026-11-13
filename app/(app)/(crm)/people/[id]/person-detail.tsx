@@ -22,6 +22,8 @@ import { formatDate, formatLastActivity, formatTime } from "@/lib/format/date";
 import { formatMoneyMyr } from "@/lib/format/money";
 import { displayName } from "@/lib/people/types";
 import { NewDeal } from "../../deals/new-deal";
+import { AddTask } from "../../tasks/task-dialog";
+import { stageLabel } from "@/lib/deals/types";
 import type {
   ConsentState,
   ListResponse,
@@ -29,6 +31,7 @@ import type {
   PersonDetail,
   TimelineItem,
 } from "@/lib/people/types";
+import { versionHeaders } from "@/lib/api/version-headers";
 
 type Person = PersonDetail["person"];
 type Form = {
@@ -73,6 +76,7 @@ export function PersonDetailView({
   canMerge,
   canReview,
   canCreateDeal,
+  taskAccess,
 }: {
   id: string;
   canWrite: boolean;
@@ -84,6 +88,8 @@ export function PersonDetailView({
   canReview: boolean;
   // §9.2 quick action: the §6 deal row, not the person row.
   canCreateDeal: boolean;
+  // §9.14: who may add a task here, or null for no Add task (§6 task row).
+  taskAccess: { viewerId: string; assignedOnly: boolean } | null;
 }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
@@ -210,6 +216,13 @@ export function PersonDetailView({
                 person={{ id: p.id, fullName: name }}
               />
             )}
+            {taskAccess && (
+              <AddTask
+                link={{ personId: p.id }}
+                viewerId={taskAccess.viewerId}
+                assignedOnly={taskAccess.assignedOnly}
+              />
+            )}
             {p.email && !p.email.includes("•") && (
               <Button variant="outline" asChild>
                 <a href={`mailto:${p.email}`}>Email</a>
@@ -292,7 +305,9 @@ export function PersonDetailView({
               {detail.deals.map((d) => (
                 <Row key={d.id}>
                   <span>{d.courseName}</span>
-                  <span className="capitalize">{label(d.stage)}</span>
+                  <span className="capitalize">
+                    {stageLabel(d.pipeline, d.stage)}
+                  </span>
                   <span>{formatMoneyMyr(d.amountMyr)}</span>
                   <span>{d.owner ?? "Unassigned"}</span>
                 </Row>
@@ -421,7 +436,7 @@ function EditForm({
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          "If-Match": String(person.version),
+          ...versionHeaders(person.version),
         },
         body: JSON.stringify(patch),
       });
@@ -681,7 +696,9 @@ function TouchLine({
       <span className="text-ink-muted">{title}</span>
       <span>
         {t
-          ? `${t.utmSource ?? label(t.channel)}${t.utmCampaign ? ` · ${t.utmCampaign}` : ""} · ${formatDate(t.occurredAt)}`
+          ? t.registeredFor
+            ? `Registered for ${t.registeredFor} · ${formatDate(t.occurredAt)}`
+            : `${t.utmSource ?? label(t.channel)}${t.utmCampaign ? ` · ${t.utmCampaign}` : ""} · ${formatDate(t.occurredAt)}`
           : "—"}
       </span>
     </p>
@@ -877,7 +894,7 @@ function NotADuplicate({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "If-Match": String(version),
+          ...versionHeaders(version),
         },
         body: JSON.stringify({ note: note.trim() || undefined }),
       },

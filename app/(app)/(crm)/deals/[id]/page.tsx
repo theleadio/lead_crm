@@ -22,7 +22,16 @@ export default async function DealPage(props: PageProps<"/deals/[id]">) {
       </div>
     );
 
+  const taskWrite = user ? permissionFor(user, "task", "write") : null;
   return (
-    <DealDetailView id={id} canWrite={user ? canWriteDeal(user) : false} />
+    <DealDetailView
+      id={id}
+      canWrite={user ? canWriteDeal(user) : false}
+      taskAccess={
+        user && taskWrite?.allowed
+          ? { viewerId: user.id, assignedOnly: taskWrite.assignedOnly }
+          : null
+      }
+    />
   );
 }

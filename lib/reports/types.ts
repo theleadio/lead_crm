@@ -30,6 +30,9 @@ export type AdsCampaignRow = AdsSpend & {
   // beside that campaign's spend. Null for leads that carry no campaign.
   campaignId: string | null;
   campaign: string | null;
+  // The screen's label for it, told apart from any other campaign's
+  // (`campaignLabels`). Absent, a panel cuts its own from the name.
+  label?: string;
   leads: number;
   firstTouch: number;
   laterTouch: number;
@@ -92,4 +95,24 @@ export type CampaignSignups = {
   campaign: string | null;
   signups: number;
   hrdcSignups: number;
+};
+
+// WhatsApp opt-ins per click-to-WhatsApp ad (scripts/sync-wati-ctwa.ts). An
+// opt-in is a person who messaged through that ad in range, once per ad.
+// `fresh` (shown as New) are those messaging for the first time with no
+// earlier contact (the SalesProcess import rows don't count as contact);
+// `again` is everyone else, so optins = fresh + again. Spend and Meta's own
+// message count are the ad's, in range, MYR only.
+export type WhatsappOptinRow = {
+  campaignId: string | null;
+  campaign: string | null;
+  adId: string | null;
+  adName: string | null;
+  // The screen's label for the campaign, as on AdsCampaignRow.
+  label?: string;
+  optins: number;
+  fresh: number;
+  again: number;
+  spendMyr: string | null;
+  metaMessages: number | null;
 };

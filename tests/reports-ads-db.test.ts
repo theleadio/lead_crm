@@ -50,6 +50,11 @@ type TouchFields = {
   person: string;
   channel?: string;
   campaign?: string | null;
+  // Left out: derived from `campaign`. Null: a lead that carried no id.
+  campaignId?: string | null;
+  adId?: string | null;
+  content?: string | null;
+  term?: string | null;
   source?: string | null;
   fbclid?: string | null;
   ctwaClid?: string | null;
@@ -58,15 +63,44 @@ type TouchFields = {
   at?: string;
 };
 
+// The report groups on Meta's campaign id (63d96e2), so a fixture campaign
+// carries an id as real attributed leads do; the name is what a test reads.
+const campaignId = (name: string) => `id_${name}`;
+
 async function newTouchpoint(f: TouchFields): Promise<void> {
+  const id =
+    f.campaignId !== undefined
+      ? f.campaignId
+      : f.campaign != null
+        ? campaignId(f.campaign)
+        : null;
   await db()`
     INSERT INTO touchpoint (person_id, channel, occurred_at, utm_campaign,
+                            utm_campaign_id, utm_ad_id, utm_content, utm_term,
                             utm_source, fbclid, ctwa_clid, gclid,
                             is_first_touch)
     VALUES (${f.person}, ${f.channel ?? "web_form"},
-            ${f.at ?? "2031-03-10T04:00:00Z"}, ${f.campaign ?? null},
+            ${f.at ?? "2031-03-10T04:00:00Z"}, ${f.campaign ?? null}, ${id},
+            ${f.adId ?? null}, ${f.content ?? null}, ${f.term ?? null},
             ${f.source ?? null}, ${f.fbclid ?? null}, ${f.ctwaClid ?? null},
             ${f.gclid ?? null}, ${f.firstTouch ?? false})`;
+}
+
+// The account the report reads (`campaignMapSql`). Taken from the same
+// variable, so the fixture is not filtered out when META_AD_ACCOUNT_ID is set.
+const ACCOUNT =
+  process.env.META_AD_ACCOUNT_ID?.trim().replace(/^act_/, "") || "test";
+
+// One Meta ad-day with a numeric campaign id, as Meta's ids are. Returns it.
+async function newMetaAd(name: string, ad: string, adset: string) {
+  const id = `9${String(Math.floor(Math.random() * 1e14)).padStart(14, "0")}`;
+  await db()`
+    INSERT INTO meta_ad_insight
+      (ad_id, day, account_id, campaign_id, campaign_name, adset_id,
+       adset_name, ad_name, currency, spend, impressions, clicks)
+    VALUES (${ad}, '2031-03-10', ${ACCOUNT}, ${id}, ${name}, ${adset},
+            'Test adset', 'Test ad', 'MYR', 10, 100, 5)`;
+  return id;
 }
 
 const campaignOf = (
@@ -202,8 +236,9 @@ it("the source table splits a source by channel", async () => {
     await newTouchpoint({ person, channel, source: "facebook" });
   }
 
+  // Sources fold into their Meta platform (b439564): "facebook" reads "Facebook".
   const row = (await sourceRows(viewer, RANGE)).rows.find(
-    (r) => r.source === "facebook",
+    (r) => r.source === "Facebook",
   );
   assert.equal(row?.leads, 3);
   assert.deepEqual(
@@ -314,6 +349,59 @@ it("a deleted person's touchpoints leave the counts", async () => {
   );
 });
 
+// Older leads carry a campaign name and no id. `campaignIdSql` finds the id
+// from the ad (utm_ad_id, then utm_content) or the ad set (utm_term); a lead
+// none of those resolve stays in the no-campaign row.
+it("a lead with no campaign id is credited through its ad or ad set", async () => {
+  const viewer = await newUser("marketing");
+  const u = crypto.randomUUID().slice(0, 8);
+  const id = await newMetaAd("Resolved campaign", `ad_${u}`, `adset_${u}`);
+  for (const via of [
+    { adId: `ad_${u}` },
+    { content: `ad_${u}` },
+    { term: `adset_${u}` },
+  ]) {
+    const person = await newPerson();
+    await newTouchpoint({
+      person,
+      channel: "ctwa",
+      campaign: "resolved",
+      campaignId: null,
+      ...via,
+    });
+  }
+  const unresolved = await newPerson();
+  await newTouchpoint({
+    person: unresolved,
+    channel: "ctwa",
+    campaign: "unresolved",
+    campaignId: null,
+  });
+
+  const table = await campaignRows(viewer, RANGE);
+  const row = table.rows.find((r) => r.campaignId === id);
+  assert.deepEqual(
+    { leads: row?.leads, campaign: row?.campaign },
+    { leads: 3, campaign: "resolved" },
+  );
+  assert.equal(campaignOf(table, null)?.leads, 1, "unresolved has no row");
+});
+
+// Older SalesProcess rows put the numeric id where the name goes. The row is
+// labelled with Meta's name, never the bare number (`campaignNameSql`).
+it("a campaign named by its id is shown under Meta's name", async () => {
+  const viewer = await newUser("marketing");
+  const u = crypto.randomUUID().slice(0, 8);
+  const id = await newMetaAd(`Meta name ${u}`, `ad_${u}`, `adset_${u}`);
+  const person = await newPerson();
+  await newTouchpoint({ person, channel: "ctwa", campaign: id, campaignId: id });
+
+  const row = (await campaignRows(viewer, RANGE)).rows.find(
+    (r) => r.campaignId === id,
+  );
+  assert.equal(row?.campaign, `Meta name ${u}`);
+});
+
 it("an empty range counts nothing rather than failing", async () => {
   const viewer = await newUser("marketing");
   const empty = adsReportQuerySchema.parse({
@@ -377,7 +465,7 @@ it("over a hundred campaigns: 100 rows, the rest counted as dropped", async () =
     // The 101st campaign gets two touchpoints, so it is the largest and must
     // survive the cap while a one-lead campaign is dropped.
     utm_campaign: `cap_${String(i).padStart(3, "0")}`,
-  }));
+  })).map((r) => ({ ...r, utm_campaign_id: campaignId(r.utm_campaign) }));
   await db()`INSERT INTO touchpoint ${db()(rows)}`;
   await newTouchpoint({
     person,

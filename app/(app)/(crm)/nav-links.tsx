@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSelectedLayoutSegment } from "next/navigation";
 import {
+  BarChart3,
   Building2,
   ClipboardList,
   GraduationCap,
@@ -10,6 +11,7 @@ import {
   Kanban,
   LayoutDashboard,
   LibraryBig,
+  MessagesSquare,
   Settings,
   SquareCheck,
   Users,
@@ -26,8 +28,10 @@ const ICONS: Record<string, LucideIcon> = {
   "/classes": GraduationCap,
   "/courses": LibraryBig,
   "/enrolments": ClipboardList,
+  "/inbox": MessagesSquare,
   "/enquiries": Inbox,
   "/tasks": SquareCheck,
+  "/reports/ads": BarChart3,
   "/settings": Settings,
 };
 
@@ -44,7 +48,9 @@ export function NavLinks({
     <nav className="space-y-0.5">
       {items.map((item) => {
         const Icon = ICONS[item.href] ?? LayoutDashboard;
-        const active = item.href === `/${segment}`;
+        // The segment is only the URL's first part and Reports links to
+        // /reports/ads, so compare the href's first part.
+        const active = item.href.split("/")[1] === segment;
         return (
           <Link
             key={item.href}

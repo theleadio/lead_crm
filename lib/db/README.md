@@ -25,6 +25,12 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/016_salesprocess_payment.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/017_deal_external_ref.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/018_enquiry_resolution.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/019_enquiry_tickets.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/020_message_imported.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/021_after_hours_reply.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/022_message_provider_id.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/023_campaign_link_funding.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/024_revoke_inbox_browser.sql
     psql -d <db> -f lib/db/tests/schema_constraints.sql
     psql -d <db> -f lib/db/tests/002_merge_erase_tests.sql
     psql -d <db> -f lib/db/tests/003_company_from_form_tests.sql
@@ -40,6 +46,8 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -f lib/db/tests/013_click_ids_tests.sql
     psql -d <db> -f lib/db/tests/017_deal_external_ref_tests.sql
     psql -d <db> -f lib/db/tests/018_enquiry_resolution_tests.sql
+    psql -d <db> -f lib/db/tests/019_enquiry_tickets_tests.sql
+    psql -d <db> -f lib/db/tests/023_campaign_link_funding_tests.sql
 
 Current result on PostgreSQL 16 with 001–008 applied: 38 of 38, 42 of 42, 26 of 26, 8 of 8, 9 of 9, 26 of 26, 14 of 14 and 6 of 6. 001–007 were also run with and without Supabase's `anon`/`authenticated` roles present; 008 was run without them (it creates no functions, so privileges don't apply).
 
@@ -199,6 +207,49 @@ Drop the table and function if the host gets an edge rate limiter you trust (ope
 ## Migration 018 — enquiry resolution note (6 Nov)
 
 `enquiry.resolution`, nullable text, no backfill, no index: the outcome note support writes when closing an enquiry (§9.13), kept apart from `summary`. The note is free text about a person, so `erase_person()` now clears it together with `summary` (migration 003's body with one added column). Keep the note's text out of `audit_log`: that table is append-only, so anything written there can never be erased. Tested on PostgreSQL 16 after 001–016 and 018: `018_enquiry_resolution_tests.sql` 9 of 9, and `schema_constraints.sql` 38, 002 42, 003 26, 005 9 still pass. `009_pre_freeze_tests.sql` reports one failure, "24 tables", which is already there without 018: migrations 014 and 016 added tables after that check was written.
+
+## Migration 019 — tickets and the inbox join enquiries (11 Nov)
+
+One support queue. The lead_sales ticket design (its `docs/specs/2026-11-04-inbox-tickets-design.md`) moves into the CRM and becomes part of `enquiry`; lead_sales drops its own `sales.*` copy.
+
+| Change                                 | What it means for the app                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `team`, `team_member`                  | Finance (restricted), Tech, Operations, Sales, Support (the one default). Members are `app_user` rows, added in Settings → Enquiries. A team's members see and work its enquiries whatever their role; a restricted team's enquiries are hidden from everyone else except super_admin and management (`lib/enquiries/access.ts`).                                                 |
+| `enquiry_category`                     | Replaces the §5 CHECK on `enquiry.category` with a foreign key. The ten §5 codes are kept, plus `einvoice`, `receipt`, `voucher`, `api_key`. Each names its team, a Chinese label (to be checked by Marketing) and suggestion keywords. `other` is the fallback and the app refuses to switch it off.                                                                             |
+| `enquiry_rule`                         | Ordered routing rules: match a channel and/or category, set a team, assign round robin / one person / nobody.                                                                                                                                                                                                                                                                     |
+| `holiday`                              | Public holidays, entered in Settings each year. The reply deadline skips them. Not seeded.                                                                                                                                                                                                                                                                                        |
+| `enquiry` new columns                  | `number` (E-000123, from `enquiry_number_seq`, existing rows numbered too), `subject` (free text, erased with the person, never audited), `team_id` (NOT NULL; a BEFORE INSERT trigger fills it from the category, else the default team, so existing writers keep working), `priority`, `sla_due_at`, `conversation_id`, `previous_enquiry_id`. Status gains `waiting_customer`. |
+| `sla_due_at`                           | Written by the app: the same time on the next working day, office hours Mon–Fri 08:30–16:30 Malaysia time (`lib/enquiries/deadline.ts`). Past SLA uses it where set; a row without one falls back to `first_response_sla_minutes`.                                                                                                                                                |
+| `conversation`, `conversation_message` | The inbox. Unlike `message_log` (metadata only, O2) the message keeps its text, because the inbox shows it. `erase_person()` clears the text and attachment paths; `merge_person()` moves both tables.                                                                                                                                                                            |
+| `enquiry_event`                        | Append-only history and internal notes. `before`/`after` hold ids and codes only. The one allowed UPDATE clears `note`, which is what `erase_person()` does.                                                                                                                                                                                                                      |
+| `merge_person()`, `erase_person()`     | Re-created from 002's and 018's bodies with the lines marked `-- 019` added; privileges re-applied.                                                                                                                                                                                                                                                                               |
+
+Tested on PostgreSQL 16 after 001–016, 018 and 019, applied twice: `019_enquiry_tickets_tests.sql` 25 of 25; `schema_constraints.sql` 38, 002 42, 003 26, 005 9 and 018 9 still pass. `009_pre_freeze_tests.sql` still reports its one known failure, "24 tables".
+
+## Migration 020 — imported WhatsApp history (11 Nov)
+
+`conversation_message.imported`, boolean, default false: set by the WhatsApp history import (`npm run wati:history`, `lib/wati/history.ts`), which also stamps `created_at` with the message's own time. lead_sales' automations trigger "customer message received" skips imported rows, so copying old chats in never starts a flow. Moved from lead_sales (its PR #20) with the inbox.
+
+## Migration 021 — WhatsApp after-hours reply (11 Nov)
+
+`conversation.after_hours_reply_until` (timestamptz): the opening time of the after-hours stretch a thread was last auto-answered in, so one stretch (closing to the next 08:30 working-day opening) gets one reply. `conversation_message.automated` (boolean, default false): sent by the system; WATI's echo of it is not counted as staff's first response. Used by `lib/wati/auto-reply.ts`. No backfill.
+
+## Migration 022 — WATI's id on our sends (12 Nov)
+
+`conversation_message.provider_message_id` (text, nullable): WATI's `whatsappMessageId` for a message saved under an id of ours (an inbox template or auto-reply, `app:<uuid>`, or a lead_sales automation, `auto:<run>:<step>`, sent to WATI as `local_message_id`). The webhook stores it when an event finds the row by our id, so delivered / read / failed events carrying only WATI's id still find it; the row keeps our id, which lead_sales looks up so a retry never sends twice. Plus a partial index on outgoing `[template …]` rows for the inbox's template suggestions. No backfill.
+
+## Migration 023 — class ↔ Meta campaign link, seat funding (12 Nov)
+
+Agreed with Shawn on 12 Nov, before the 27 Nov freeze. Additive only; old code keeps working.
+
+- **`class_meta_campaign`** (`class_id`, `meta_campaign_id`, `campaign_name`, `created_at`, `created_by`): which Meta campaigns sell which class. Join on `meta_campaign_id` (Meta's numeric id, the `campaign_id` in `meta_ad_insight`), never on the name: `campaign_name` is a display copy taken when the link is made. A class can have many campaigns; a campaign belongs to one class at most (`class_meta_campaign_one_class`), so its opt-ins never count on two class cards. No foreign key to `meta_ad_insight`, which is per ad per day: a campaign can be linked before its first spend row. Not readable from the browser.
+- **`enrolment.funding_type`**: how this one seat is paid, in the LMS's own values: `self_funded`, `hrdc`, `internal`, `leaders_club`, `refresher`. Who pays stays in `payer_type`; `deal.funding_type` is unchanged. Nullable, no default: old rows are unknown until a sync fills them from the LMS (a separate data step). A value outside the list fails `enrolment_funding_type_check`; the LMS's full list is still owed by its owner, and a new value needs a migration that widens the CHECK.
+
+Tested on an empty PostgreSQL 18 database with 001–023 applied (12 Nov): 023 13 of 13, `schema_constraints.sql` 38, 005 9, 006 26. 009's "24 tables" check fails with or without 023 (34 tables since 013–020), so that test only holds right after 012.
+
+## Migration 024 — browser roles off the inbox tables (12 Nov)
+
+Migration 019 left `conversation`, `conversation_message`, `enquiry_category`, `enquiry_event`, `enquiry_rule`, `holiday`, `team` and `team_member` readable by Supabase's `anon` and `authenticated` roles, so the public anon key could read customer WhatsApp text through the REST API. 024 revokes them, as 014 and 023 do for their tables, and the views `consent_current` and `payment_net` too (owned by `postgres`, not `security_invoker`, so they read past the RLS on `consent` and `payment`); both apps use the direct connection, so nothing reads them that way. Applied to production by hand on 12 Nov, the day it was found.
 
 ## Where this is stricter or more specific than the spec
 

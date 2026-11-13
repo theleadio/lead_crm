@@ -13,8 +13,10 @@ import type {
   AdsCampaignRow,
   AdsSourceRow,
   AdsTable,
+  WhatsappOptinRow,
 } from "@/lib/reports/types";
 import { campaignLabel } from "./panels/campaign-label";
+import { CHANNEL_LABEL } from "./panels/leads-over-time";
 import { PanelCard } from "./panels/panel-card";
 
 // §9.18: the two report tables. Plain counts, no chart — a chart would be the
@@ -62,12 +64,11 @@ export function CampaignTable({
       }
       description={
         <>
-          Every Meta touchpoint in range, grouped on the campaign id the lead
-          carries. First touch is the lead&apos;s first contact with us; a later
-          touch is the same person arriving again. Cost per person divides that
-          campaign&apos;s spend by the people it reached, not by leads: the
-          attribution import can give one person two touchpoints on the same
-          day.
+          Every Meta lead in range, by the campaign it came from. First touch is
+          the person&apos;s first contact with us; a later touch is the same
+          person coming back. Cost per person divides the campaign&apos;s spend
+          by the people it reached, not by leads, because one person can be
+          recorded twice on the same day.
         </>
       }
     >
@@ -108,7 +109,7 @@ export function CampaignTable({
                   <TableRow key={row.campaignId ?? "__none__"}>
                     <TableCell title={row.campaign ?? undefined}>
                       {row.campaign ? (
-                        campaignLabel(row.campaign)
+                        (row.label ?? campaignLabel(row.campaign))
                       ) : (
                         <Missing what="campaign" />
                       )}
@@ -195,11 +196,110 @@ export function SourceTable({ table }: { table: AdsTable<AdsSourceRow> }) {
                   <TableCell>{row.leads}</TableCell>
                   <TableCell className="text-ink-muted">
                     {row.byChannel
-                      .map((c) => `${c.channel} ${c.leads}`)
+                      .map(
+                        (c) =>
+                          `${CHANNEL_LABEL[c.channel] ?? c.channel} ${c.leads}`,
+                      )
                       .join(", ")}
                   </TableCell>
                 </TableRow>
               ))
+            )}
+          </TableBody>
+        </Table>
+      </TableCard>
+      <Dropped table={table} />
+    </PanelCard>
+  );
+}
+
+const OPTIN_COLUMNS = 7;
+
+const dash = <span className="text-ink-muted">—</span>;
+
+// WhatsApp opt-ins per click-to-WhatsApp ad, from WATI (sync-wati-ctwa). An
+// opt-in is a person who messaged through the ad in range (new + again); the
+// header counts each person once across all ads, and cost is per new person
+// (Shawn, 11 Nov). Meta's own message count sits beside it to compare.
+export function WhatsappOptinTable({
+  table,
+}: {
+  table: AdsTable<WhatsappOptinRow>;
+}) {
+  return (
+    <PanelCard
+      eyebrow="WHATSAPP"
+      title={
+        <>
+          WhatsApp opt-ins by ad{" "}
+          <span className="text-ink-muted font-normal">
+            ({table.total} {table.total === 1 ? "person" : "people"})
+          </span>
+        </>
+      }
+      description={
+        <>
+          From WATI: everyone who messaged us through a Meta ad in this range,
+          counted once per ad. New are people messaging us for the first time; a
+          contact we only had from the SalesProcess import still counts as new.
+          Again are people we had heard from before, through another ad, another
+          channel, or this ad before this date range. New plus Again is the
+          opt-ins. The number at the top counts each person once, even if they
+          came through several ads. Cost per new person divides the ad&apos;s
+          spend by its new people only. Meta messages is Meta&apos;s own count
+          of conversations the ad started. Ads that spent on conversations and
+          won no opt-in are listed at zero.
+        </>
+      }
+    >
+      <TableCard>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Ad</TableHead>
+              <TableHead>Opt-ins</TableHead>
+              <TableHead>New</TableHead>
+              <TableHead>Again</TableHead>
+              <TableHead>Meta messages</TableHead>
+              <TableHead>Spend</TableHead>
+              <TableHead>Cost per new person</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {table.rows.length === 0 ? (
+              <EmptyRow columns={OPTIN_COLUMNS}>
+                No WhatsApp opt-ins from ads were recorded in this date range.
+              </EmptyRow>
+            ) : (
+              table.rows.map((row) => {
+                const per = row.spendMyr
+                  ? costPer(row.spendMyr, row.fresh)
+                  : null;
+                return (
+                  <TableRow
+                    key={`${row.campaignId ?? ""}:${row.adId ?? "__none__"}`}
+                  >
+                    <TableCell title={row.campaign ?? undefined}>
+                      <div>
+                        {row.adName ?? row.adId ?? <Missing what="ad" />}
+                      </div>
+                      <div className="text-ink-muted text-xs">
+                        {row.campaign
+                          ? (row.label ?? campaignLabel(row.campaign))
+                          : "No campaign"}
+                      </div>
+                    </TableCell>
+                    <TableCell>{row.optins}</TableCell>
+                    <TableCell>{row.fresh}</TableCell>
+                    <TableCell>{row.again}</TableCell>
+                    <TableCell>{row.metaMessages ?? dash}</TableCell>
+                    <TableCell>
+                      {row.spendMyr ? formatMoneyMyr(row.spendMyr) : dash}
+                    </TableCell>
+                    <TableCell>{per ? formatMoneyMyr(per) : dash}</TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

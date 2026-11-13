@@ -17,17 +17,34 @@ export const ALL_STAGES = [
   ...new Set<Stage>([...STAGES.individual, ...STAGES.corporate]),
 ];
 
-export const STAGE_LABELS: Record<Stage, string> = {
-  new: "New",
-  engaged: "Engaged",
-  qualified: "Qualified",
-  checkout_sent: "Checkout sent",
-  discovery: "Discovery",
-  proposal_sent: "Proposal sent",
-  funding: "Funding",
-  won: "Won",
-  lost: "Lost",
+// Corporate columns use the words sales already uses, so the label no longer
+// matches the stored value: discovery shows as Engaged, proposal_sent as
+// Funding, funding as Submitted and won as Approved. Labels only; the stage
+// values stay as migration 001 has them.
+const STAGE_LABELS: Record<Pipeline, Record<string, string>> = {
+  individual: {
+    new: "New",
+    engaged: "Engaged",
+    qualified: "Qualified",
+    checkout_sent: "Checkout sent",
+    won: "Won",
+    lost: "Lost",
+  },
+  corporate: {
+    new: "New",
+    discovery: "Engaged",
+    proposal_sent: "Funding",
+    funding: "Submitted",
+    won: "Approved",
+    lost: "Lost",
+  },
 };
+
+// A stage outside the pipeline comes back as stored, so an error about it
+// doesn't borrow a name the board uses for another stage.
+export function stageLabel(pipeline: Pipeline, stage: string): string {
+  return STAGE_LABELS[pipeline]?.[stage] ?? stage;
+}
 
 export const FUNDING_TYPES = ["self", "company", "hrdc", "other"] as const;
 export type FundingType = (typeof FUNDING_TYPES)[number];

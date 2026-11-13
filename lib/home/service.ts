@@ -2,14 +2,21 @@ import {
   canReviewFlagged,
   canWriteClass,
   PermissionError,
+  permissionFor,
   requirePermission,
   type Viewer,
 } from "../auth/permissions.ts";
 import { classWhenSql, seatTakenSql } from "../classes/seats.ts";
+import {
+  campaignIdSql,
+  campaignJoinSql,
+  campaignMapSql,
+  livePersonSql,
+} from "../reports/ads.ts";
 import { listDeals } from "../deals/service.ts";
 import { PIPELINES, type Pipeline, type Stage } from "../deals/types.ts";
 import { sumMyr } from "../format/money.ts";
-import { db } from "../sql.ts";
+import { db, withTransaction } from "../sql.ts";
 import { dealListQuerySchema } from "../validation/deal.ts";
 import type {
   HomeClass,
@@ -154,6 +161,14 @@ export async function upcomingClasses(viewer: Viewer): Promise<HomeClass[]> {
       AND c.start_date <= (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date + 14
     ORDER BY c.start_date, c.code`;
 
+  const optins = canSeeLeadCounts(viewer)
+    ? await optinsOrNull(() =>
+        // A savepoint inside an open transaction, so a failed read doesn't
+        // abort the caller's work.
+        withTransaction(() => classOptins(rows.map((r) => r.id as string))),
+      )
+    : null;
+
   return rows.map((r) => ({
     id: r.id,
     code: r.code,
@@ -167,7 +182,74 @@ export async function upcomingClasses(viewer: Viewer): Promise<HomeClass[]> {
     status: r.status,
     capacity: r.capacity,
     sold: r.sold,
+    optins: optins
+      ? (optins.get(r.id) ?? { linkedCampaigns: 0, people: 0 })
+      : null,
   }));
+}
+
+// Opt-ins are an extra on the class cards (review, 12 Nov): when their read
+// fails (a timeout, a database without migration 023) the cards still load,
+// without the number, and the reason is logged rather than swallowed (§13).
+export async function optinsOrNull<T>(
+  load: () => Promise<T>,
+): Promise<T | null> {
+  try {
+    return await load();
+  } catch (err) {
+    console.error("[home] class opt-ins failed", err);
+    return null;
+  }
+}
+
+// Opt-ins and sign-ups are totals over everyone's leads, so they follow the
+// ads report's rule (requireReportReader): person read without the
+// assigned-only limit. Other roles get the classes without the number.
+export function canSeeLeadCounts(viewer: Viewer): boolean {
+  const read = permissionFor(viewer, "person", "read");
+  return read.allowed && !read.assignedOnly;
+}
+
+// Per class: how many Meta campaigns are linked (migration 023) and how many
+// live people opted in on WhatsApp through any of them (their first chat
+// came from it), all time. The ad's
+// campaign is resolved the way the ads report does it, so a card and the
+// report agree on which campaign a chat came from.
+async function classOptins(
+  classIds: string[],
+): Promise<Map<string, { linkedCampaigns: number; people: number }>> {
+  if (classIds.length === 0) return new Map();
+  const sql = db();
+  const rows = await sql`
+    WITH ${campaignMapSql(sql)},
+    links AS (
+      SELECT class_id, meta_campaign_id FROM class_meta_campaign
+      WHERE class_id = ANY(${classIds}::uuid[])
+    ),
+    -- Each person's first WhatsApp chat only, the ads report's Opt-ins rule
+    -- (whatsappOptinRows): a contact who first chatted from another
+    -- campaign is a returning chat there, not an opt-in here.
+    ctwa AS (
+      SELECT DISTINCT ON (t.person_id) t.person_id,
+             ${campaignIdSql(sql)} AS campaign_id
+      FROM touchpoint t
+      JOIN person p ON p.id = t.person_id
+      ${campaignJoinSql(sql)}
+      WHERE t.channel = 'ctwa' AND ${livePersonSql(sql)}
+      ORDER BY t.person_id, t.occurred_at, t.id
+    )
+    SELECT l.class_id,
+           count(DISTINCT l.meta_campaign_id)::int AS linked,
+           count(DISTINCT c.person_id)::int AS people
+    FROM links l
+    LEFT JOIN ctwa c ON c.campaign_id = l.meta_campaign_id
+    GROUP BY l.class_id`;
+  return new Map(
+    rows.map((r) => [
+      r.class_id as string,
+      { linkedCampaigns: r.linked as number, people: r.people as number },
+    ]),
+  );
 }
 
 // Spec §9.0 needs attention: one count per item, each gated on its own

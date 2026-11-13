@@ -1,0 +1,628 @@
+import { createHash, timingSafeEqual } from "node:crypto";
+import { writeAudit } from "../audit.ts";
+import { referralOf, saveCtwaTouch } from "../import/wati-ctwa.ts";
+import { findDuplicate } from "../people/dedupe.ts";
+import { normalizePhoneE164 } from "../format/phone.ts";
+import { createEnquiry, followUpEnquiry } from "../enquiries/create.ts";
+import { afterHoursReply } from "./auto-reply.ts";
+import { watiFromEnv, type WatiOpts } from "./client.ts";
+import { suggestCategory } from "../enquiries/routing.ts";
+import { markFirstResponse } from "../enquiries/service.ts";
+import { raiseDuplicateTask } from "../people/duplicate-review.ts";
+import { dedupeCandidates } from "../people/service.ts";
+import { db, withTransaction } from "../sql.ts";
+
+// WATI webhook, inbound side (cutover plan WP1). Moved from lead_sales (its
+// PR #19) with the inbox, migration 019. Event and field
+// names follow WATI's webhook reference (docs.wati.io, read 6 Nov); verify
+// them against a real delivery before relying on one. What it does:
+//   message                     customer message → person, thread, message
+//   sessionMessageSent(_v2),
+//   templateMessageSent(_v2)    a message sent from the WATI app → ours (out)
+//   sentMessageDELIVERED(_v2),
+//   sentMessageREAD(_v2),
+//   sessionMessageFailed,
+//   templateMessageFailed       moves our message's status on, never back
+// Everything else is recorded and ignored. Sending is lib/wati/send.ts; a
+// customer message after hours gets one auto-reply per evening
+// (lib/wati/auto-reply.ts), sent once the event is saved.
+//
+// A free-text reply staff send from the WATI app (sessionMessageSent) counts
+// as the first response on the conversation's open enquiries, so their reply
+// deadline stops (lib/enquiries/service.ts markFirstResponse). A template
+// does not: automations send those.
+//
+// A customer message on a thread with no enquiry still being worked opens
+// one (§11.2: the WhatsApp intake makes the enquiry):
+//   - the thread's first enquiry: uncategorised unless a keyword suggests a
+//     category, so the default team (or a rule) gets it and staff set one
+//   - after a resolved or closed one: a follow-up linked to it (decided
+//     4 Nov: the old one stays closed)
+//   - none after a converted one: that customer's next step is their deal
+//
+// Attribution (§11.2): a message that came from a click-to-WhatsApp ad
+// carries WATI's `messageReferral`; it becomes the `ctwa` touchpoint the ads
+// report counts (lib/import/wati-ctwa.ts), recorded before anything else so
+// a new contact's first touch is the ad. A person this message created with
+// no ad behind it gets a `whatsapp` first touch instead.
+//
+// WATI documents no signature, so the URL carries a long random secret
+// (WATI_WEBHOOK_SECRET, ?token=…). The webhook records each event in
+// integration_event first (source 'wati'), then processes it; one that
+// fails is tried again by `npm run wati:run`, like Meta leads. Once an event
+// is done its stored payload shrinks to ids: the customer's text lives in
+// conversation_message only, which erase_person() clears (PDPA).
+
+export const SOURCE = "wati";
+export const MAX_ATTEMPTS = 5;
+export const BACKOFF_SECONDS = [60, 300, 1800, 7200];
+const LEASE_SECONDS = 300;
+
+export type WatiEvent = Record<string, unknown>;
+
+const str = (v: unknown): string | null =>
+  typeof v === "string" && v.trim()
+    ? v.trim()
+    : typeof v === "number"
+      ? String(v)
+      : null;
+
+// ---- The secret ------------------------------------------------------------------
+
+export function verifyWatiToken(given: string | null, secret: string): boolean {
+  if (!secret || !given) return false;
+  // Hashed first: timingSafeEqual needs equal lengths, and the length of the
+  // secret shouldn't leak.
+  const h = (s: string) => createHash("sha256").update(s).digest();
+  return timingSafeEqual(h(given), h(secret));
+}
+
+// ---- Events ----------------------------------------------------------------------
+
+const INBOUND = new Set(["message"]);
+const ECHO = new Set([
+  "sessionMessageSent",
+  "sessionMessageSent_v2",
+  "templateMessageSent",
+  "templateMessageSent_v2",
+]);
+const STATUS: Record<string, "delivered" | "read" | "failed"> = {
+  sentMessageDELIVERED: "delivered",
+  sentMessageDELIVERED_v2: "delivered",
+  sentMessageREAD: "read",
+  sentMessageREAD_v2: "read",
+  sessionMessageFailed: "failed",
+  templateMessageFailed: "failed",
+};
+// A status only moves forward: queued < sent < failed < delivered < read.
+const RANK = { queued: 0, sent: 1, failed: 1.5, delivered: 2, read: 3 };
+
+// One key per event type and message: WATI sends several events for one
+// message (sent, delivered, read), and a redelivery has the same key.
+export function eventKey(e: WatiEvent): string | null {
+  const type = str(e.eventType);
+  const id = str(e.whatsappMessageId) ?? str(e.id);
+  return type && id ? `${type}:${id}` : null;
+}
+
+// What stays in integration_event once an event is done.
+function kept(e: WatiEvent): Record<string, unknown> {
+  return {
+    eventType: str(e.eventType),
+    id: str(e.id),
+    whatsappMessageId: str(e.whatsappMessageId),
+    failedCode: str(e.failedCode),
+    failedDetail: str(e.failedDetail),
+    // The ad, for tracing an opt-in back to its event (an id, not text).
+    adId: referralOf(e)?.adId ?? null,
+  };
+}
+
+export async function recordWatiEvent(
+  key: string,
+  e: WatiEvent,
+): Promise<boolean> {
+  const sql = db();
+  const [row] = await sql`
+    INSERT INTO integration_event (source, external_event_id, payload)
+    VALUES (${SOURCE}, ${key}, ${sql.json(e as never)})
+    ON CONFLICT (source, external_event_id) DO NOTHING
+    RETURNING id`;
+  return Boolean(row);
+}
+
+// ---- Saving ----------------------------------------------------------------------
+
+// A payload retrying can't fix (no usable phone number).
+class NotUsable extends Error {}
+
+// A status for a message this app has not saved (yet). Tried again on the
+// usual schedule, in case the message's own event is still on its way; after
+// the last try it is ignored, not failed: most are messages sent before this
+// app was connected.
+class NotYet extends Error {}
+const NOT_KNOWN = "not a message this app knows";
+
+function whenOf(e: WatiEvent): Date {
+  const t = str(e.timestamp);
+  if (t && /^\d+$/.test(t))
+    return new Date(Number(t) * (t.length > 10 ? 1 : 1000));
+  const c = str(e.created);
+  const d = c ? new Date(c) : null;
+  return d && !Number.isNaN(d.getTime()) ? d : new Date();
+}
+
+// §12.2, as the help form does: a hard match on the phone is
+// the person (never renamed); a soft match still creates, flagged, with a
+// review task.
+//
+// No WhatsApp profile name: §11.2 (O24). The name is the
+// number as WATI sent it, flagged `no_name` so staff add a real one; a real
+// name typed in the CRM clears the flag. The CHECK allows one reason, so a
+// soft match keeps its own: it also raises a review task.
+async function findOrCreatePerson(
+  e164: string,
+  name: string | null,
+  numberAsSent: string,
+): Promise<{ id: string; created: boolean }> {
+  const candidate = {
+    fullName: name ?? numberAsSent,
+    emailNorm: null,
+    phoneE164: e164,
+    companyNorm: null,
+  };
+  const dup = findDuplicate(candidate, await dedupeCandidates(candidate, null));
+  if (dup.kind === "hard") return { id: dup.match.id, created: false };
+  const reason =
+    dup.kind === "soft"
+      ? `possible_duplicate_${dup.on}`
+      : name === null
+        ? "no_name"
+        : null;
+  const [p] = await db()`
+    INSERT INTO person (full_name, phone, phone_e164, whatsapp_e164,
+                        needs_review, needs_review_reason)
+    VALUES (${candidate.fullName}, ${e164}, ${e164}, ${e164},
+            ${reason !== null}, ${reason})
+    RETURNING id`;
+  if (dup.kind === "soft")
+    await raiseDuplicateTask(
+      p.id,
+      { id: dup.match.id, fullName: dup.match.fullName },
+      null,
+    );
+  await writeAudit({
+    userId: null,
+    action: "create",
+    entity: "person",
+    entityId: p.id,
+    before: null,
+    after: { source: "wati" },
+  });
+  return { id: p.id as string, created: true };
+}
+
+function e164Of(e: WatiEvent): string {
+  const wa = (str(e.waId) ?? "").replace(/\D/g, "");
+  const e164 = wa ? normalizePhoneE164(`+${wa}`) : null;
+  if (!e164) throw new NotUsable("The event has no usable phone number");
+  return e164;
+}
+
+// The same shape the WhatsApp history import gives a message
+// (lib/wati/history.ts): text as it is; a file as `[type]`, then its caption.
+// A message both of them bring in is then the same text, and the import
+// recognises it instead of saving it twice.
+function bodyOf(e: WatiEvent): string {
+  const text = str(e.text);
+  const type = str(e.type);
+  const template = str(e.templateName) ?? str(e.elementName);
+  if (type && type !== "text" && !template)
+    return text ? `[${type}] ${text}` : `[${type}]`;
+  if (text) return text;
+  if (template) return `[template ${template}]`;
+  return `[${type ?? "message"}]`;
+}
+
+// One WhatsApp thread per customer: their WhatsApp number is the thread id.
+async function saveMessage(
+  e: WatiEvent,
+  direction: "in" | "out",
+): Promise<{ conversationId: string; added: boolean }> {
+  const sql = db();
+  const e164 = e164Of(e);
+  // Messages a second apart from a new number run in two transactions: the
+  // second waits here, then finds the person the first one made, and does
+  // not fail on the unique phone number.
+  await sql`SELECT pg_advisory_xact_lock(hashtext(${`wati:${e164}`}))`;
+  const person = await findOrCreatePerson(
+    e164,
+    str(e.senderName),
+    str(e.waId) ?? e164,
+  );
+  const personId = person.id;
+  const at = whenOf(e);
+  const inboundAt = direction === "in" ? at : null;
+  const [conv] = await sql`
+    INSERT INTO conversation (person_id, channel, external_thread_id,
+                                    last_message_at, last_inbound_at)
+    VALUES (${personId}, 'whatsapp', ${e164.slice(1)}, ${at}, ${inboundAt})
+    ON CONFLICT (channel, external_thread_id) DO UPDATE
+      SET last_message_at = greatest(conversation.last_message_at, ${at}),
+          last_inbound_at = greatest(conversation.last_inbound_at, ${inboundAt})
+    RETURNING id`;
+  const [added] = await sql`
+    INSERT INTO conversation_message (conversation_id, person_id, channel, direction,
+                               external_message_id, body, sent_at, status)
+    VALUES (${conv.id}, ${personId}, 'whatsapp', ${direction},
+            ${str(e.whatsappMessageId) ?? str(e.id)}, ${bodyOf(e)}, ${at},
+            ${direction === "in" ? "received" : "sent"})
+    ON CONFLICT (channel, external_message_id) DO NOTHING
+    RETURNING id`;
+  if (direction === "in") {
+    // From a click-to-WhatsApp ad: the `ctwa` opt-in touch first, so a new
+    // contact's first touch is the ad (lib/import/wati-ctwa.ts, #65; keyed
+    // on the click id, so a referral WATI repeats counts once, and the
+    // nightly sync finds it already there). Otherwise a new contact's first
+    // touch is `whatsapp`.
+    const ad = referralOf(e);
+    if (ad)
+      await asideFromMessage("ad touchpoint", () =>
+        saveCtwaTouch(str(e.waId) ?? "", str(e.senderName), ad, at),
+      );
+    else if (added && person.created)
+      await asideFromMessage("touchpoint", () =>
+        recordWhatsAppTouch(personId, at, e),
+      );
+    if (added)
+      await asideFromMessage("enquiry", () =>
+        openEnquiryIfNone(conv.id, personId, at, ad !== null, bodyOf(e)),
+      );
+  }
+  return { conversationId: conv.id as string, added: Boolean(added) };
+}
+
+// Each in its own savepoint: saving the customer's message never depends on
+// attribution or enquiry routing. A failure is logged (no message text, no
+// number) and the message still reaches the inbox.
+async function asideFromMessage(what: string, fn: () => Promise<unknown>) {
+  try {
+    await withTransaction(fn);
+  } catch (err) {
+    console.error(
+      `wati: ${what} not made: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
+// ---- Attribution -----------------------------------------------------------------
+
+// A person this message created, with no ad behind it: `whatsapp` as their
+// first touch. (An ad's `ctwa` touch is saveCtwaTouch's, recorded first.)
+async function recordWhatsAppTouch(personId: string, at: Date, e: WatiEvent) {
+  const sql = db();
+  const [{ n }] = await sql`
+    SELECT count(*)::int AS n FROM touchpoint WHERE person_id = ${personId}`;
+  if (n > 0) return;
+  const [tp] = await sql`
+    INSERT INTO touchpoint (person_id, channel, occurred_at, is_first_touch,
+                            external_ref)
+    VALUES (${personId}, 'whatsapp', ${at}, true,
+            ${`wati:${str(e.whatsappMessageId) ?? str(e.id)}`})
+    RETURNING id`;
+  // §12.9: a touchpoint counts as activity.
+  await sql`
+    UPDATE person
+    SET last_activity_at = greatest(last_activity_at, ${at}),
+        first_touchpoint_id = coalesce(first_touchpoint_id, ${tp.id})
+    WHERE id = ${personId}`;
+}
+
+// ---- Enquiries -------------------------------------------------------------------
+
+async function openEnquiryIfNone(
+  conversationId: string,
+  personId: string,
+  at: Date,
+  fromAd: boolean,
+  text: string,
+) {
+  const sql = db();
+  const [open] = await sql`
+    SELECT 1 FROM enquiry
+    WHERE conversation_id = ${conversationId}
+      AND status IN ('open', 'waiting_customer')
+    LIMIT 1`;
+  if (open) return;
+  const [latest] = await sql`
+    SELECT id, status, closed_at FROM enquiry
+    WHERE conversation_id = ${conversationId}
+    ORDER BY created_at DESC, id DESC
+    LIMIT 1`;
+  if (latest) {
+    // A follow-up only for a message sent after the close: a retried or
+    // late event from before it is not the customer writing again.
+    if (
+      ["human_resolved", "ai_resolved", "closed"].includes(latest.status) &&
+      latest.closed_at < at
+    ) {
+      const r = await followUpEnquiry(
+        latest.id as string,
+        at,
+        undefined,
+        "whatsapp",
+      );
+      if (r.kind !== "ok") console.error(`wati: follow-up not made: ${r.kind}`);
+    }
+    return;
+  }
+  const firstLine = text.split(/\r?\n/)[0].trim();
+  const r = await createEnquiry(
+    {
+      personId,
+      conversationId,
+      channel: fromAd ? "ctwa" : "whatsapp",
+      category: await suggestCategory(text),
+      subject:
+        firstLine.length > 3
+          ? firstLine.length > 80
+            ? `${firstLine.slice(0, 77)}…`
+            : firstLine
+          : "WhatsApp message",
+      receivedAt: at,
+    },
+    null,
+  );
+  if (r.kind !== "ok") console.error(`wati: enquiry not made: ${r.kind}`);
+}
+
+// Staff answered on this thread: the first reply on each open enquiry of
+// the conversation stops its deadline. Later replies change nothing.
+export async function markReplied(conversationId: string) {
+  const open = await db()`
+    SELECT id FROM enquiry
+    WHERE conversation_id = ${conversationId}
+      AND status IN ('open','waiting_customer') AND first_response_at IS NULL`;
+  for (const e of open) await markFirstResponse(e.id as string, null);
+}
+
+const isSession = (type: string) => type.startsWith("sessionMessageSent");
+
+async function threadOf(e: WatiEvent): Promise<string | null> {
+  const [c] = await db()`
+    SELECT id FROM conversation
+    WHERE channel = 'whatsapp' AND external_thread_id = ${e164Of(e).slice(1)}`;
+  return (c?.id as string | undefined) ?? null;
+}
+
+// Our message, by any id WATI might use for it.
+const idsOf = (e: WatiEvent) =>
+  [str(e.whatsappMessageId), str(e.localMessageId), str(e.id)].filter(
+    (x): x is string => x !== null,
+  );
+
+async function moveStatus(
+  e: WatiEvent,
+  to: keyof typeof RANK,
+): Promise<boolean> {
+  const sql = db();
+  const ids = idsOf(e);
+  const wamid = str(e.whatsappMessageId);
+  // Found by our own id (local_message_id): keep WATI's id beside it
+  // (migration 022), so events that carry only WATI's id find it later.
+  const found = await sql`
+    UPDATE conversation_message
+    SET provider_message_id = coalesce(provider_message_id,
+      CASE WHEN external_message_id <> ${wamid} THEN ${wamid} END)
+    WHERE channel = 'whatsapp' AND direction = 'out'
+      AND (external_message_id = ANY(${ids})
+           OR provider_message_id = ANY(${ids}))
+    RETURNING id`;
+  if (found.length === 0) return false;
+  await sql`
+    UPDATE conversation_message SET status = ${to}
+    WHERE id = ANY(${found.map((r) => r.id as string)})
+      AND (CASE status WHEN 'queued' THEN 0 WHEN 'sent' THEN 1
+                       WHEN 'failed' THEN 1.5 WHEN 'delivered' THEN 2
+                       WHEN 'read' THEN 3 ELSE 0 END) < ${RANK[to]}`;
+  return true;
+}
+
+// A reply typed in this app's inbox (lib/wati/send.ts) is saved before WATI
+// has an id for it, under one of ours: "app:<uuid>". WATI's echo of it
+// carries WATI's ids only, so it is matched by thread, text and time, and the
+// row takes WATI's id. Delivery and read events then find it, and the echo
+// does not save the reply a second time. Oldest first, so two identical
+// replies are matched one each. An echo sent means WATI sent it, so a row
+// marked queued or failed (WATI's answer was lost) becomes sent.
+const OUR_ID_PREFIX = "app:";
+const ADOPT_WINDOW = "10 minutes";
+
+async function adoptOurReply(e: WatiEvent): Promise<boolean> {
+  const ext = str(e.whatsappMessageId) ?? str(e.id);
+  if (!ext) return false;
+  const thread = e164Of(e).slice(1);
+  const at = whenOf(e);
+  const [row] = await db()`
+    UPDATE conversation_message
+    SET external_message_id = ${ext},
+        status = CASE WHEN status IN ('queued','failed') THEN 'sent' ELSE status END
+    WHERE id = (
+      SELECT m.id FROM conversation_message m
+      JOIN conversation c ON c.id = m.conversation_id
+      WHERE c.channel = 'whatsapp' AND c.external_thread_id = ${thread}
+        AND m.channel = 'whatsapp' AND m.direction = 'out'
+        AND m.external_message_id LIKE ${`${OUR_ID_PREFIX}%`}
+        AND m.body = ${bodyOf(e)}
+        AND m.created_at BETWEEN ${at}::timestamptz - ${ADOPT_WINDOW}::interval
+                             AND ${at}::timestamptz + ${ADOPT_WINDOW}::interval
+      ORDER BY m.created_at, m.id
+      LIMIT 1
+      FOR UPDATE OF m)
+    RETURNING id`;
+  return Boolean(row);
+}
+
+type Done =
+  // `inbound`: a new customer message, for the after-hours reply.
+  | { kind: "saved"; inbound?: { conversationId: string; at: Date } }
+  | { kind: "ignored"; reason: string };
+
+// Whether the message an echo matched is one the system sent (the
+// after-hours reply): its echo is not staff answering.
+async function isAutomated(ids: string[]): Promise<boolean> {
+  const [m] = await db()`
+    SELECT 1 FROM conversation_message
+    WHERE channel = 'whatsapp' AND automated
+      AND (external_message_id = ANY(${ids})
+           OR provider_message_id = ANY(${ids}))
+    LIMIT 1`;
+  return Boolean(m);
+}
+
+async function dispatch(e: WatiEvent): Promise<Done> {
+  const type = str(e.eventType) ?? "";
+  if (INBOUND.has(type)) {
+    const m = await saveMessage(e, "in");
+    return {
+      kind: "saved",
+      inbound: m.added
+        ? { conversationId: m.conversationId, at: whenOf(e) }
+        : undefined,
+    };
+  }
+  if (ECHO.has(type)) {
+    if (!(await moveStatus(e, "sent")) && !(await adoptOurReply(e))) {
+      const m = await saveMessage(e, "out");
+      if (isSession(type)) await markReplied(m.conversationId);
+    } else if (isSession(type) && !(await isAutomated(idsOf(e)))) {
+      const conv = await threadOf(e);
+      if (conv) await markReplied(conv);
+    }
+    return { kind: "saved" };
+  }
+  const to = STATUS[type];
+  if (to) {
+    // WATI does not promise order: "delivered" can arrive before "sent".
+    if (!(await moveStatus(e, to))) throw new NotYet();
+    return { kind: "saved" };
+  }
+  return { kind: "ignored", reason: `event ${type || "(none)"} is not used` };
+}
+
+// ---- Queue -----------------------------------------------------------------------
+
+export type ProcessResult =
+  | Done
+  | { kind: "duplicate" }
+  | { kind: "busy" }
+  | { kind: "waiting" }
+  | { kind: "failed"; final: boolean; error: string };
+
+// Takes the row for a few minutes, so the webhook and wati:run never work
+// the same event at once.
+async function lease(key: string) {
+  const [row] = await db()`
+    UPDATE integration_event
+    SET next_attempt_at = now() + make_interval(secs => ${LEASE_SECONDS}),
+        updated_at = now()
+    WHERE source = ${SOURCE} AND external_event_id = ${key}
+      AND status IN ('received','failed') AND attempts < ${MAX_ATTEMPTS}
+      AND next_attempt_at <= now()
+    RETURNING id, attempts, payload`;
+  return row as
+    { id: string; attempts: number; payload: WatiEvent } | undefined;
+}
+
+// `wati`: how to send the after-hours reply; from env by default, none
+// when WATI_API_HOST / WATI_API_TOKEN are not set.
+export async function processWatiEvent(
+  key: string,
+  opts: { wati?: WatiOpts; now?: Date } = {},
+): Promise<ProcessResult> {
+  const row = await lease(key);
+  if (!row) {
+    const [e] = await db()`
+      SELECT status FROM integration_event
+      WHERE source = ${SOURCE} AND external_event_id = ${key}`;
+    return e?.status === "processed" || e?.status === "ignored"
+      ? { kind: "duplicate" }
+      : { kind: "busy" };
+  }
+  const sql = db();
+  try {
+    const done = await withTransaction(() => dispatch(row.payload));
+    await sql`
+      UPDATE integration_event
+      SET status = ${done.kind === "saved" ? "processed" : "ignored"},
+          processed_at = now(), error = ${done.kind === "ignored" ? done.reason : null},
+          attempts = attempts + 1, payload = ${sql.json(kept(row.payload) as never)},
+          updated_at = now()
+      WHERE id = ${row.id}`;
+    // After the event is saved, outside its transaction (auto-reply.ts).
+    if (done.kind === "saved" && done.inbound)
+      await afterHoursReply(
+        "wati" in opts ? opts.wati : watiFromEnv(),
+        done.inbound.conversationId,
+        done.inbound.at,
+        opts.now,
+      );
+    return done;
+  } catch (err) {
+    const attempts = row.attempts + 1;
+    const final = err instanceof NotUsable || attempts >= MAX_ATTEMPTS;
+    // After the last try nothing reads the payload again, so it shrinks to
+    // ids like a finished one: erase_person() does not reach this table.
+    const payload = sql.json(
+      (final ? kept(row.payload) : row.payload) as never,
+    );
+    const wait = final ? 0 : BACKOFF_SECONDS[attempts - 1];
+    if (err instanceof NotYet) {
+      // Stays `received` while waiting, so the health page shows no failure.
+      await sql`
+        UPDATE integration_event
+        SET status = ${final ? "ignored" : "received"}, error = ${NOT_KNOWN},
+            processed_at = ${final ? sql`now()` : null}, attempts = ${attempts},
+            next_attempt_at = now() + make_interval(secs => ${wait}),
+            payload = ${payload}, updated_at = now()
+        WHERE id = ${row.id}`;
+      return final
+        ? { kind: "ignored", reason: NOT_KNOWN }
+        : { kind: "waiting" };
+    }
+    // The message only: a database error's detail can hold a phone number.
+    const error = (err instanceof Error ? err.message : String(err)).slice(
+      0,
+      500,
+    );
+    await sql`
+      UPDATE integration_event
+      SET status = 'failed', processed_at = now(), error = ${error},
+          attempts = ${final ? MAX_ATTEMPTS : attempts},
+          next_attempt_at = now() + make_interval(secs => ${wait}),
+          payload = ${payload}, updated_at = now()
+      WHERE id = ${row.id}`;
+    return { kind: "failed", final, error };
+  }
+}
+
+// Every event due a try: new ones the webhook couldn't finish, and failures
+// whose wait is over. One that ran out of tries stays `failed` for people
+// to look at on the integration-health page.
+export async function runWatiQueue(
+  batch = 50,
+): Promise<{ saved: number; failed: number; lost: number }> {
+  const due = await db()`
+    SELECT external_event_id FROM integration_event
+    WHERE source = ${SOURCE} AND status IN ('received','failed')
+      AND attempts < ${MAX_ATTEMPTS} AND next_attempt_at <= now()
+    ORDER BY next_attempt_at
+    LIMIT ${batch}`;
+  const out = { saved: 0, failed: 0, lost: 0 };
+  for (const d of due) {
+    const r = await processWatiEvent(d.external_event_id as string);
+    if (r.kind === "saved") out.saved++;
+    else if (r.kind === "failed") out[r.final ? "lost" : "failed"]++;
+  }
+  return out;
+}

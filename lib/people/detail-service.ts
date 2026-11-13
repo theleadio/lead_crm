@@ -6,9 +6,12 @@ import {
   type Viewer,
 } from "../auth/permissions.ts";
 import { writeAudit } from "../audit.ts";
+import { stageLabel } from "../deals/types.ts";
 import { normalizeEmail } from "../format/email.ts";
 import { maskEmail, maskPhone } from "../format/mask.ts";
+import { formatDate } from "../format/date.ts";
 import { formatMoneyMyr } from "../format/money.ts";
+import { parseWorkshopForm } from "../import/ghl-forms.ts";
 import { normalizePhoneE164 } from "../format/phone.ts";
 import { db, withTransaction } from "../sql.ts";
 import type { PersonUpdate } from "../validation/person.ts";
@@ -172,22 +175,31 @@ export async function getPersonDetail(
   const duplicateOf = await pairIfFlagged(p);
 
   const touches = await sql`
-    SELECT id, occurred_at, channel, utm_source, utm_campaign, is_first_touch
+    SELECT id, occurred_at, channel, utm_source, utm_campaign, is_first_touch,
+           form_name, external_ref
     FROM touchpoint WHERE person_id = ${p.id} ORDER BY occurred_at`;
-  const toTouch = (t: (typeof touches)[number]): Touchpoint => ({
-    id: t.id,
-    occurredAt: t.occurred_at.toISOString(),
-    channel: t.channel,
-    utmSource: t.utm_source,
-    utmCampaign: t.utm_campaign,
-  });
+  const toTouch = (t: (typeof touches)[number]): Touchpoint => {
+    const workshop = String(t.external_ref ?? "").startsWith("ghl-form:")
+      ? parseWorkshopForm(t.form_name ?? "")
+      : null;
+    return {
+      id: t.id,
+      occurredAt: t.occurred_at.toISOString(),
+      channel: t.channel,
+      utmSource: t.utm_source,
+      utmCampaign: t.utm_campaign,
+      registeredFor: workshop
+        ? `${workshop.title} · ${formatDate(`${workshop.date}T00:00:00Z`)}`
+        : null,
+    };
+  };
   const first = touches.find((t) => t.is_first_touch) ?? touches[0];
   const latest = touches.at(-1);
 
   const deals = can(viewer, "deal").allowed
     ? (
         await sql`
-          SELECT d.id, d.stage, d.amount_myr, c.name_en AS course_name, u.full_name AS owner_name
+          SELECT d.id, d.pipeline, d.stage, d.amount_myr, c.name_en AS course_name, u.full_name AS owner_name
           FROM deal d
           LEFT JOIN course c ON c.id = d.course_id
           LEFT JOIN app_user u ON u.id = d.owner_user_id
@@ -195,6 +207,7 @@ export async function getPersonDetail(
           ORDER BY d.created_at DESC`
       ).map((d) => ({
         id: d.id,
+        pipeline: d.pipeline,
         stage: d.stage,
         courseName: d.course_name ?? "No course",
         amountMyr: d.amount_myr ?? "0.00",
@@ -284,14 +297,14 @@ export async function getPersonTimeline(
   const task = can(viewer, "task");
   const branches = [
     sql`SELECT occurred_at AS at, 'touchpoint' AS kind, channel AS a, utm_source AS b,
-               NULL::numeric AS amount, NULL::uuid AS record_id
+               NULL::numeric AS amount, NULL::uuid AS record_id, NULL::text AS pipeline
         FROM touchpoint WHERE person_id = ${pid}`,
-    sql`SELECT coalesce(sent_at, created_at), 'message', channel, direction, NULL, id
+    sql`SELECT coalesce(sent_at, created_at), 'message', channel, direction, NULL, id, NULL
         FROM message_log WHERE person_id = ${pid}`,
   ];
   if (can(viewer, "deal").allowed)
     branches.push(sql`
-      SELECT h.changed_at, 'stage_change', coalesce(c.name_en, 'a deal'), h.to_stage, NULL, d.id
+      SELECT h.changed_at, 'stage_change', coalesce(c.name_en, 'a deal'), h.to_stage, NULL, d.id, d.pipeline
       FROM deal_stage_history h JOIN deal d ON d.id = h.deal_id
       LEFT JOIN course c ON c.id = d.course_id
       WHERE d.person_id = ${pid} AND d.deleted_at IS NULL`);
@@ -301,16 +314,16 @@ export async function getPersonTimeline(
              CASE WHEN done_at IS NULL THEN 'created'
                   WHEN is_cancelled AND type = 'hrdc_deadline' THEN 'hrdc_withdrawn'
                   WHEN is_cancelled THEN 'withdrawn'
-                  ELSE 'done' END, NULL, id
+                  ELSE 'done' END, NULL, id, NULL
       FROM task WHERE person_id = ${pid}
         ${task.assignedOnly ? sql`AND assigned_user_id = ${viewer.id}` : sql``}`);
   if (can(viewer, "enrolment").allowed)
     branches.push(sql`
-      SELECT e.updated_at, 'enrolment_change', cl.code, e.status, NULL, e.id
+      SELECT e.updated_at, 'enrolment_change', cl.code, e.status, NULL, e.id, NULL
       FROM enrolment e JOIN class cl ON cl.id = e.class_id WHERE e.person_id = ${pid}`);
   if (can(viewer, "payment").allowed)
     branches.push(sql`
-      SELECT coalesce(x.paid_at, x.created_at), 'payment', x.method, x.status, x.amount_myr, x.id
+      SELECT coalesce(x.paid_at, x.created_at), 'payment', x.method, x.status, x.amount_myr, x.id, NULL
       FROM (${paymentsSql(sql, pid, viewer)}) x`);
 
   const union = branches.reduce((acc, b) => sql`${acc} UNION ALL ${b}`);
@@ -333,7 +346,7 @@ export async function getPersonTimeline(
       case "message":
         return `${r.a === "whatsapp" ? "WhatsApp message" : "Email"} ${r.b === "in" ? "received" : "sent"}`;
       case "stage_change":
-        return `Deal for ${r.a} moved to ${words(r.b)}`;
+        return `Deal for ${r.a} moved to ${stageLabel(r.pipeline, r.b)}`;
       case "task":
         // A withdrawn task is closed but was never done (migration 009, S-10).
         return r.b === "hrdc_withdrawn"

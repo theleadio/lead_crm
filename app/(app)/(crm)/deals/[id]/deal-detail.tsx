@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { LostReasonDialog } from "../lost-reason-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CompanySelect } from "./company-select";
+import { AddTask } from "../../tasks/task-dialog";
 import { CreateEnrolment } from "./create-enrolment";
 import {
   BackLink,
@@ -25,13 +26,14 @@ import { agingTone, daysInStage, suggestDealValue } from "@/lib/deals/format";
 import {
   FUNDING_TYPES,
   STAGES,
-  STAGE_LABELS,
+  stageLabel,
   type DealDetail,
   type FundingType,
   type Ref,
   type Stage,
 } from "@/lib/deals/types";
 import type { OwnerOption } from "@/lib/people/types";
+import { versionHeaders } from "@/lib/api/version-headers";
 
 // Spec §9.6 Deal detail. Stage is moved through POST /api/deals/:id/stage —
 // the same route the board uses — and never through PATCH (§12.5).
@@ -81,9 +83,12 @@ type LoadState =
 export function DealDetailView({
   id,
   canWrite,
+  taskAccess,
 }: {
   id: string;
   canWrite: boolean;
+  // §9.14: who may add a task here, or null for no Add task (§6 task row).
+  taskAccess: { viewerId: string; assignedOnly: boolean } | null;
 }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
@@ -183,7 +188,7 @@ export function DealDetailView({
                     : "secondary"
               }
             >
-              {STAGE_LABELS[d.stage]}
+              {stageLabel(d.pipeline, d.stage)}
             </Badge>
             <span>
               {d.amountMyr ? formatMoneyMyr(d.amountMyr) : "No value"}
@@ -215,6 +220,19 @@ export function DealDetailView({
               onNotice={setToast}
               onReload={reload}
             />
+            {/* Task write, not deal write: marketing reads deals and may
+                still add a task about one (§6). */}
+            {taskAccess && (
+              <AddTask
+                link={{ dealId: d.id }}
+                viewerId={taskAccess.viewerId}
+                assignedOnly={taskAccess.assignedOnly}
+                onAdded={(message) => {
+                  setToast(message);
+                  reload();
+                }}
+              />
+            )}
           </>
         }
       />
@@ -257,8 +275,10 @@ export function DealDetailView({
             {d.stageHistory.map((h) => (
               <Row key={h.id}>
                 <span className="capitalize">
-                  {h.fromStage ? label(h.fromStage) : "Created"} →{" "}
-                  {label(h.toStage)}
+                  {h.fromStage
+                    ? stageLabel(d.pipeline, h.fromStage)
+                    : "Created"}{" "}
+                  → {stageLabel(d.pipeline, h.toStage)}
                 </span>
                 <span>{formatDate(h.changedAt)}</span>
                 <span>{h.changedBy ?? "—"}</span>
@@ -322,10 +342,11 @@ export function DealDetailView({
   );
 }
 
-// Send checkout link and Add task still wait on routes that aren't built
-// (Shawn's checkout, 9.14). Disabled and labelled, so the screen says
-// "coming" rather than "not in the product". Create enrolment is live: §9.11
-// landed, and this is the only screen that knows the deal (§9.6).
+// Send checkout link still waits on Shawn's checkout route. Disabled and
+// labelled, so the screen says "coming" rather than "not in the product".
+// Create enrolment is live: §9.11 landed, and this is the only screen that
+// knows the deal (§9.6). Add task (§9.14) sits beside these, gated on task
+// write rather than deal write.
 function DealActions({
   deal,
   canWrite,
@@ -350,9 +371,6 @@ function DealActions({
         courseId={deal.course?.id ?? null}
         onCreated={onReload}
       />
-      <Button variant="outline" disabled title="Not available yet">
-        Add task
-      </Button>
       {deal.checkoutUrl && (
         <Button
           variant="outline"
@@ -407,7 +425,7 @@ function StageControl({
         });
         return;
       }
-      onNotice(`Moved to ${STAGE_LABELS[toStage]}.`);
+      onNotice(`Moved to ${stageLabel(deal.pipeline, toStage)}.`);
       onMoved();
     } catch {
       setError({
@@ -439,7 +457,7 @@ function StageControl({
         >
           {STAGES[deal.pipeline].map((s) => (
             <option key={s} value={s}>
-              {STAGE_LABELS[s]}
+              {stageLabel(deal.pipeline, s)}
             </option>
           ))}
         </select>
@@ -631,7 +649,7 @@ function EditForm({
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          "If-Match": String(deal.version),
+          ...versionHeaders(deal.version),
         },
         body: JSON.stringify(patch),
       });
@@ -788,7 +806,8 @@ function EditForm({
       {isHrdc && (
         <fieldset className="border-line space-y-3 rounded-md border p-3">
           <legend className="text-ink-muted px-1 text-xs">
-            HRDC — needed before this deal can be Won
+            HRDC — needed before this deal can be{" "}
+            {stageLabel(deal.pipeline, "won")}
           </legend>
           <Field
             id="hrdcGrantRef"

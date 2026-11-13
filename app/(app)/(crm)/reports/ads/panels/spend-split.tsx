@@ -73,14 +73,18 @@ function Facet({
             const amount = row.byObjective[objective];
             return (
               <div
-                key={`${objective}-${row.campaign}`}
-                className="flex items-center gap-3 text-sm"
+                key={`${objective}-${row.campaignId ?? row.campaign}`}
+                className="flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:gap-3"
               >
+                {/* Wide enough on a laptop for the whole label, so the
+                    month or id that tells two campaigns apart is never cut
+                    off. On a phone the label takes its own line above the bar, which
+                    would otherwise have no room. */}
                 <span
-                  className="text-ink-muted w-52 shrink-0 truncate"
+                  className="text-ink-muted leading-snug break-words sm:w-80 sm:shrink-0"
                   title={row.campaign}
                 >
-                  {campaignLabel(row.campaign)}
+                  {row.label ?? campaignLabel(row.campaign)}
                 </span>
                 <span className="flex min-w-0 flex-1 items-center gap-2">
                   <span
@@ -166,7 +170,7 @@ export function SpendSplitPanel({ rows }: { rows: ObjectiveSplit[] }) {
                 </TableHeader>
                 <TableBody>
                   {rows.map((row) => (
-                    <TableRow key={`t-${row.campaign}`}>
+                    <TableRow key={`t-${row.campaignId ?? row.campaign}`}>
                       <TableCell>{row.campaign}</TableCell>
                       {AD_OBJECTIVES.map((objective) => (
                         <TableCell key={objective}>

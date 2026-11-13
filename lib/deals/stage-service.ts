@@ -7,7 +7,12 @@ import type { DealStageBody } from "../validation/deal.ts";
 import { raiseHrdcDeadlineTask } from "./hrdc-task.ts";
 import { cardSql, toCard } from "./service.ts";
 import { checkMove, type MoveCode } from "./stage-rules.ts";
-import { STAGES, type DealCard, type LostReasonOption } from "./types.ts";
+import {
+  STAGES,
+  type DealCard,
+  type LostReasonOption,
+  type Pipeline,
+} from "./types.ts";
 
 export type MovedDeal = DealCard & { lostReason: LostReasonOption | null };
 
@@ -16,7 +21,7 @@ export type MoveResult =
   | { kind: "not_found" }
   | { kind: "forbidden" }
   | { kind: "deal_has_payment" }
-  | { kind: "rule"; code: MoveCode; missing?: string[] };
+  | { kind: "rule"; code: MoveCode; missing?: string[]; pipeline: Pipeline };
 
 // POST /api/deals/:id/stage — spec §12.5 (+ §12.6 won guard and
 // hrdc_deadline task). The only writer of deal.stage: the board, deal
@@ -77,7 +82,12 @@ export async function moveDealStage(
       reason ? { isActive: reason.is_active } : null,
     );
     if (!check.ok)
-      return { kind: "rule", code: check.code, missing: check.missing };
+      return {
+        kind: "rule",
+        code: check.code,
+        missing: check.missing,
+        pipeline: deal.pipeline as Pipeline,
+      };
 
     if (!check.noop) {
       // Server-set timestamps (§12.5); leaving won/lost clears them.

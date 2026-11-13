@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import type { CompanyListItem } from "@/lib/companies/types";
+import { versionHeaders } from "@/lib/api/version-headers";
 
 export type CompanyFormValues = {
   legalName: string;
@@ -149,7 +150,7 @@ function CompanyForm({
             "Content-Type": "application/json",
             // §7 (v1.7): only an edit carries a version; a create has none.
             ...(companyId && version !== undefined
-              ? { "If-Match": String(version) }
+              ? versionHeaders(version)
               : {}),
           },
           body: JSON.stringify({ ...form, ownerId: form.ownerId || null }),

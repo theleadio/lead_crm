@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { CompanyDetail } from "@/lib/companies/types";
+import { stageLabel } from "@/lib/deals/types";
 import { formatDate } from "@/lib/format/date";
 import { formatMoneyMyr } from "@/lib/format/money";
 import { displayName } from "@/lib/people/types";
@@ -229,7 +230,9 @@ export function CompanyDetailView({
               {deals.map((d) => (
                 <Row key={d.id}>
                   <span>{d.courseName ?? "—"}</span>
-                  <span className="capitalize">{label(d.stage)}</span>
+                  <span className="capitalize">
+                    {stageLabel(d.pipeline, d.stage)}
+                  </span>
                   <span>{formatMoneyMyr(d.amountMyr)}</span>
                   <span>{d.owner ?? "Unassigned"}</span>
                 </Row>

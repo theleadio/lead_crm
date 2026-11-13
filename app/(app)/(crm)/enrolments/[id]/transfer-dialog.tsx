@@ -7,6 +7,7 @@ import { Toast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import type { TransferTarget } from "@/lib/enrolments/types";
 import { formatDateRange } from "@/lib/format/date";
+import { versionHeaders } from "@/lib/api/version-headers";
 
 // §9.11 transfer: offered on a confirmed enrolment only (§12.4). The targets
 // are the §9.8 list read — upcoming classes of the same course, with the §12.1
@@ -66,7 +67,7 @@ export function TransferDialog({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "If-Match": String(version),
+          ...versionHeaders(version),
         },
         body: JSON.stringify({ toClassId: chosen }),
       },

@@ -9,6 +9,8 @@ import {
   needsAttention,
   upcomingClasses,
 } from "../lib/home/service.ts";
+import { setWorkshopGoal, upcomingWorkshops } from "../lib/home/workshops.ts";
+import { parseWorkshopForm } from "../lib/import/ghl-forms.ts";
 import { listClasses } from "../lib/classes/service.ts";
 import { classListQuerySchema } from "../lib/validation/class-query.ts";
 import { closeDb, db, rollbackAfter } from "../lib/sql.ts";
@@ -316,5 +318,269 @@ it("the pending-notice count matches the list its link opens", async () => {
   assert.equal(
     listed.some((c) => c.id === ran),
     false,
+  );
+});
+
+// Opt-ins on the class cards (Home, 12 Nov): people whose click-to-WhatsApp
+// chat came from a Meta campaign linked to the class (migration 023).
+const numericId = () => String(Math.floor(Math.random() * 1e15));
+
+async function linkCampaign(classId: string): Promise<string> {
+  const campaign = numericId();
+  await db()`
+    INSERT INTO class_meta_campaign (class_id, meta_campaign_id, campaign_name)
+    VALUES (${classId}, ${campaign}, 'LEAD | Nov2026 | WhatsApp | Test')`;
+  return campaign;
+}
+
+// One ad in the campaign, as the daily Meta sync stores it, and one ctwa
+// touch through that ad for the person.
+async function optIn(
+  campaign: string,
+  person: string,
+  at: Date = new Date(),
+): Promise<void> {
+  const ad = numericId();
+  await db()`
+    INSERT INTO meta_ad_insight (ad_id, day, account_id, campaign_id, campaign_name,
+                                 adset_id, adset_name, ad_name, currency, spend,
+                                 impressions, clicks)
+    VALUES (${ad}, (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date, 'act_test',
+            ${campaign}, 'LEAD | Nov2026 | WhatsApp | Test', 'set1', 'Set 1',
+            'Ad', 'MYR', '1.00', 10, 1)`;
+  await db()`
+    INSERT INTO touchpoint (person_id, channel, utm_ad_id, occurred_at)
+    VALUES (${person}, 'ctwa', ${ad}, ${at})`;
+}
+
+it("opt-ins count people on the class's linked campaigns", async () => {
+  const user = await newUser("operations");
+  const classId = await newClass(await newCourse(), 3);
+  const campaign = await linkCampaign(classId);
+  await optIn(campaign, await newPerson());
+  await optIn(campaign, await newPerson());
+
+  const found = (await upcomingClasses(user)).find((c) => c.id === classId);
+  assert.deepEqual(found?.optins, { linkedCampaigns: 1, people: 2 });
+});
+
+it("counts a returning chatter once", async () => {
+  const user = await newUser("operations");
+  const classId = await newClass(await newCourse(), 3);
+  const first = await linkCampaign(classId);
+  const second = await linkCampaign(classId);
+  const person = await newPerson();
+  await optIn(first, person);
+  await optIn(first, person);
+  await optIn(second, person);
+
+  const found = (await upcomingClasses(user)).find((c) => c.id === classId);
+  assert.deepEqual(found?.optins, { linkedCampaigns: 2, people: 1 });
+});
+
+it("counts a person only where their first WhatsApp chat came from", async () => {
+  // Same rule as the ads report's Opt-ins: a contact who first chatted from
+  // another campaign is a returning chat here, not an opt-in.
+  const user = await newUser("operations");
+  const classId = await newClass(await newCourse(), 3);
+  const linked = await linkCampaign(classId);
+  const elsewhere = numericId();
+  const person = await newPerson();
+  await optIn(elsewhere, person, new Date(Date.now() - 864e5));
+  await optIn(linked, person);
+
+  const found = (await upcomingClasses(user)).find((c) => c.id === classId);
+  assert.deepEqual(found?.optins, { linkedCampaigns: 1, people: 0 });
+});
+
+it("ignores another class's campaign and deleted people", async () => {
+  const user = await newUser("operations");
+  const course = await newCourse();
+  const classA = await newClass(course, 3);
+  const classB = await newClass(course, 4);
+  const campaignA = await linkCampaign(classA);
+  const campaignB = await linkCampaign(classB);
+  await optIn(campaignB, await newPerson());
+  await optIn(campaignA, await newPerson({ deleted: true }));
+
+  const found = (await upcomingClasses(user)).find((c) => c.id === classA);
+  assert.deepEqual(found?.optins, { linkedCampaigns: 1, people: 0 });
+});
+
+it("a class with no campaign linked", async () => {
+  const user = await newUser("operations");
+  const classId = await newClass(await newCourse(), 3);
+
+  const found = (await upcomingClasses(user)).find((c) => c.id === classId);
+  assert.deepEqual(found?.optins, { linkedCampaigns: 0, people: 0 });
+});
+
+it("part_time sees no opt-ins", async () => {
+  const user = await newUser("part_time");
+  const classId = await newClass(await newCourse(), 3);
+  await optIn(await linkCampaign(classId), await newPerson());
+
+  const found = (await upcomingClasses(user)).find((c) => c.id === classId);
+  assert.ok(found, "part_time still sees the class");
+  assert.equal(found.optins, null);
+});
+
+// Free workshops (Home, 12 Nov): registrations are GHL form submissions,
+// imported by ghl:forms as touchpoints named after the form.
+const MON = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ");
+
+// A registration form name for a workshop `days` from today in Kuala Lumpur.
+function workshopForm(
+  title: string,
+  days: number,
+  spelling: { prefix?: string; dash?: boolean } = {},
+): string {
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Asia/Kuala_Lumpur",
+  });
+  const at = new Date(Date.parse(`${today}T00:00:00Z`) + days * 864e5);
+  return `${spelling.prefix ?? ".02"} LEAD - ${title}${spelling.dash ? " -" : ""} ${at.getUTCDate()} ${MON[at.getUTCMonth()]} ${at.getUTCFullYear()}`;
+}
+
+async function signUp(form: string, person: string): Promise<void> {
+  await db()`
+    INSERT INTO touchpoint (person_id, channel, form_name, external_ref)
+    VALUES (${person}, 'import', ${form}, ${`ghl-form:${crypto.randomUUID()}`})`;
+}
+
+const uniqueTitle = () => `Test Workshop ${crypto.randomUUID().slice(0, 8)}`;
+
+it("two forms for one workshop make one card; a person on both counts once", async () => {
+  const user = await newUser("marketing");
+  const title = uniqueTitle();
+  const first = workshopForm(title, 5);
+  const second = workshopForm(title.toLowerCase(), 5, {
+    prefix: ".05",
+    dash: true,
+  });
+  const [a, b, c] = [await newPerson(), await newPerson(), await newPerson()];
+  await signUp(first, a);
+  await signUp(first, b);
+  await signUp(second, b);
+  await signUp(second, c);
+
+  const found = (await upcomingWorkshops(user)).filter(
+    (w) => w.title.toLowerCase() === title.toLowerCase(),
+  );
+  assert.equal(found.length, 1);
+  assert.equal(found[0].signups, 3);
+  assert.equal(found[0].forms, 2);
+  assert.equal(found[0].language, "en");
+});
+
+it("a lead campaign without a registration no longer counts", async () => {
+  const user = await newUser("marketing");
+  const title = uniqueTitle();
+  await db()`
+    INSERT INTO touchpoint (person_id, channel, utm_campaign, form_name)
+    VALUES (${await newPerson()}, 'import',
+            ${`LEAD | Nov2026 | Lead | ${title} EN 20 Nov`}, 'ghl-attribution')`;
+  const titles = (await upcomingWorkshops(user)).map((w) => w.title);
+  assert.equal(titles.includes(title), false);
+});
+
+it("skips interest forms, deleted people and workshops past 14 days", async () => {
+  const user = await newUser("marketing");
+  const paid = uniqueTitle();
+  const far = uniqueTitle();
+  const near = uniqueTitle();
+  await signUp(`.03 LEAD - EN - ${paid} Interest Form`, await newPerson());
+  await signUp(workshopForm(far, 15), await newPerson());
+  await signUp(workshopForm(near, 14), await newPerson({ deleted: true }));
+  await signUp(workshopForm(near, 14), await newPerson());
+
+  const titles = (await upcomingWorkshops(user)).map((w) => w.title);
+  assert.equal(titles.includes(paid), false);
+  assert.equal(titles.includes(far), false);
+  const shown = (await upcomingWorkshops(user)).find((w) => w.title === near);
+  assert.equal(shown?.signups, 1);
+});
+
+it("part_time is refused the free workshops", async () => {
+  const user = await newUser("part_time");
+  await assert.rejects(upcomingWorkshops(user), PermissionError);
+});
+
+// Sign-up goals on the Free workshops cards (Zixuan, 12 Nov): app_setting
+// rows, set by super_admin, management, marketing and operations.
+async function upcomingOne(user: Viewer, title: string) {
+  return (await upcomingWorkshops(user)).find(
+    (w) => w.title.toLowerCase() === title.toLowerCase(),
+  );
+}
+
+async function workshopKey(title: string, days: number) {
+  const name = workshopForm(title, days);
+  await signUp(name, await newPerson());
+  const parsed = parseWorkshopForm(name);
+  assert.ok(parsed);
+  return parsed;
+}
+
+it("a workshop has no goal until someone sets one", async () => {
+  const user = await newUser("marketing");
+  const title = uniqueTitle();
+  await workshopKey(title, 4);
+  const w = await upcomingOne(user, title);
+  assert.equal(w?.goal, null);
+  assert.equal(w?.goalVersion, null);
+});
+
+it("marketing sets a goal and Home shows it, whatever the title's case", async () => {
+  const user = await newUser("marketing");
+  const title = uniqueTitle();
+  const key = await workshopKey(title, 4);
+  const saved = await setWorkshopGoal(user, {
+    ...key,
+    title: key.title.toUpperCase(),
+    goal: 120,
+    version: null,
+  });
+  assert.deepEqual(saved, { ok: true, goal: 120, version: 1 });
+  const w = await upcomingOne(user, title);
+  assert.equal(w?.goal, 120);
+  assert.equal(w?.goalVersion, 1);
+});
+
+it("a stale goal edit is refused, a current one moves the version", async () => {
+  const user = await newUser("operations");
+  const key = await workshopKey(uniqueTitle(), 4);
+  await setWorkshopGoal(user, { ...key, goal: 50, version: null });
+  assert.deepEqual(
+    await setWorkshopGoal(user, { ...key, goal: 60, version: null }),
+    { ok: false, reason: "conflict" },
+  );
+  assert.deepEqual(
+    await setWorkshopGoal(user, { ...key, goal: 60, version: 1 }),
+    {
+      ok: true,
+      goal: 60,
+      version: 2,
+    },
+  );
+});
+
+it("every goal change is audited", async () => {
+  const user = await newUser("management");
+  const key = await workshopKey(uniqueTitle(), 4);
+  await setWorkshopGoal(user, { ...key, goal: 80, version: null });
+  const [row] = await db()`
+    SELECT action, before, after FROM audit_log
+    WHERE user_id = ${user.id} AND entity = 'workshop_goal'`;
+  assert.equal(row?.action, "create");
+  assert.equal(row?.after.goal, 80);
+});
+
+it("sales may not set a goal", async () => {
+  const user = await newUser("sales");
+  const key = await workshopKey(uniqueTitle(), 4);
+  await assert.rejects(
+    setWorkshopGoal(user, { ...key, goal: 10, version: null }),
+    PermissionError,
   );
 });

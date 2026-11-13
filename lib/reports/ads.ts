@@ -18,6 +18,7 @@ import {
   type AdsWeeks,
   type CampaignPaid,
   type CampaignSignups,
+  type WhatsappOptinRow,
 } from "./types.ts";
 
 // Service layer for the §9.18 ads report. Independent reads over
@@ -196,7 +197,7 @@ function rangeSql(sql: postgres.Sql, q: AdsReportQuery, alias = "t") {
 
 // §12.10: a deleted or merged-away person's touchpoints are gone from every
 // count, so a merge never changes a campaign's total.
-function livePersonSql(sql: postgres.Sql) {
+export function livePersonSql(sql: postgres.Sql) {
   return sql`p.deleted_at IS NULL AND p.merged_into_id IS NULL`;
 }
 
@@ -447,6 +448,21 @@ export function fillWeeks(
   return out;
 }
 
+// How many of a Monday-start week's seven days the report range covers, so
+// a week the range cuts short can say so: three days of leads beside a full
+// week reads as a drop that never happened (browser check, 11 Nov). Dates
+// are YYYY-MM-DD Kuala Lumpur days, compared as UTC midnights.
+export function daysInRange(
+  weekStart: string,
+  from: string,
+  to: string,
+): number {
+  const day = (d: string) => Date.parse(`${d}T00:00:00Z`) / 86_400_000;
+  const start = Math.max(day(weekStart), day(from));
+  const end = Math.min(day(weekStart) + 6, day(to));
+  return Math.max(0, end - start + 1);
+}
+
 // §9.18 efficiency map, the half that needs no ad tables: seat-holding
 // enrolments (§12.1) credited to the campaign of the buyer's first touch.
 //
@@ -473,34 +489,21 @@ function firstCampaignSql(sql: postgres.Sql) {
     )`;
 }
 
-// §9.18 ROAS revenue: SalesProcess payments (migration 016, Shawn's PR #34)
-// plus CRM `payment` rows, credited to the buyer's first campaign, the same
-// model as signups.
-//
-// Revenue is `amount_myr - refunded_myr` on live, succeeded or partially
-// refunded payments, ranged on `paid_at` in Kuala Lumpur days. A payment
-// reaches its buyer through the bare import touchpoint
-// (`external_ref = 'ghl:' || ghl_contact_id`), which follows merges.
-//
-// Not split by class size: a payment names a SalesProcess product, not a CRM
-// course, so there is no price band to filter on.
-export async function revenuePerCampaign(
-  viewer: Viewer,
-  q: AdsReportQuery,
-): Promise<CampaignPaid[]> {
-  requireReportReader(viewer);
-  const sql = db();
-
-  const rows = await sql`
-    WITH ${campaignMapSql(sql)},
-    ${firstCampaignSql(sql)},
+// The payments ROAS counts, one row per payment with its buyer: SalesProcess
+// payments plus CRM `payment` rows, net of refunds, paid in the range. Shared
+// by `revenuePerCampaign` and `paidInRange`, so the panel's "of RM Y paid"
+// is the same money its bars are cut from.
+function paidSql(sql: postgres.Sql, q: AdsReportQuery) {
+  return sql`
     paid AS (
       SELECT DISTINCT b.person_id, sp.id, coalesce(sp.order_id, sp.id) AS order_key,
              sp.paid_at, sp.amount_myr - sp.refunded_myr AS net
       FROM salesprocess_payment sp
       -- The bare import row only: it carries the contact id, uses the
-      -- (channel, external_ref) index, and is one per person.
-      JOIN touchpoint b ON b.channel = 'import'
+      -- (channel, external_ref) index, and is one per person. A left join:
+      -- a payment whose buyer was never imported still counts as paid in
+      -- the range (its person is null, so no campaign is credited with it).
+      LEFT JOIN touchpoint b ON b.channel = 'import'
                        AND b.external_ref = 'ghl:' || sp.ghl_contact_id
       WHERE sp.live_mode
         AND sp.status IN ('succeeded', 'partially_refunded')
@@ -524,7 +527,31 @@ export async function revenuePerCampaign(
       WHERE pn.status IN ('succeeded', 'partially_refunded')
         AND pn.paid_at >= (${q.from}::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
         AND pn.paid_at < ((${q.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
-    )
+    )`;
+}
+
+// §9.18 ROAS revenue: SalesProcess payments (migration 016, Shawn's PR #34)
+// plus CRM `payment` rows, credited to the buyer's first campaign, the same
+// model as signups.
+//
+// Revenue is `amount_myr - refunded_myr` on live, succeeded or partially
+// refunded payments, ranged on `paid_at` in Kuala Lumpur days. A payment
+// reaches its buyer through the bare import touchpoint
+// (`external_ref = 'ghl:' || ghl_contact_id`), which follows merges.
+//
+// Not split by class size: a payment names a SalesProcess product, not a CRM
+// course, so there is no price band to filter on.
+export async function revenuePerCampaign(
+  viewer: Viewer,
+  q: AdsReportQuery,
+): Promise<CampaignPaid[]> {
+  requireReportReader(viewer);
+  const sql = db();
+
+  const rows = await sql`
+    WITH ${campaignMapSql(sql)},
+    ${firstCampaignSql(sql)},
+    ${paidSql(sql, q)}
     -- An ad cannot have sold what was paid before it was seen. An order
     -- paid in instalments counts once.
     SELECT f.campaign_id, sum(p.net)::text AS revenue,
@@ -539,6 +566,22 @@ export async function revenuePerCampaign(
     revenue: r.revenue,
     orders: r.orders,
   }));
+}
+
+// Everything paid in the range, attributed or not, for the ROAS panel's note:
+// the bars only cover buyers a Meta campaign first found, and only campaigns
+// that also spent in the range, so their ratio alone undercounts what was
+// paid (browser check, 11 Nov: RM12.7k of RM109.5k).
+export async function paidInRange(
+  viewer: Viewer,
+  q: AdsReportQuery,
+): Promise<string> {
+  requireReportReader(viewer);
+  const sql = db();
+  const [row] = await sql`
+    WITH ${paidSql(sql, q)}
+    SELECT coalesce(sum(net), 0)::numeric(14, 2)::text AS total FROM paid`;
+  return row.total;
 }
 
 export async function signupsPerCampaign(
@@ -626,4 +669,101 @@ export async function signupsPerCampaign(
     signups: r.signups,
     hrdcSignups: r.hrdc_signups,
   }));
+}
+
+// WhatsApp opt-ins per click-to-WhatsApp ad, from the `ctwa` touchpoints
+// scripts/sync-wati-ctwa.ts writes. An opt-in is a person who messaged
+// through that ad in range, counted once per ad: opt-ins = new + again
+// (Zixuan, 11 Nov). New is their first CTWA touchpoint ever, with no earlier
+// contact (a SalesProcess import row doesn't count as contact); again is
+// everyone else, so the two always add up. A person who opted in and came
+// back through the same ad is one opt-in, not two. The total is distinct
+// people across every ad, not the rows added up, so a person on two ads is
+// one (Shawn, 11 Nov).
+// Ads that spent in range on conversations but won no opt-in are listed too,
+// with zero, because an ad that costs and brings nobody is the finding.
+export async function whatsappOptinRows(
+  viewer: Viewer,
+  q: AdsReportQuery,
+): Promise<AdsTable<WhatsappOptinRow>> {
+  requireReportReader(viewer);
+  const sql = db();
+  const from = sql`(${q.from}::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')`;
+  const to = sql`((${q.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')`;
+
+  const rows = await sql`
+    WITH ${campaignMapSql(sql)},
+    ctwa AS (
+      SELECT t.id, t.person_id, t.occurred_at, t.utm_ad_id AS ad_id,
+             ${campaignIdSql(sql)} AS campaign_id,
+             row_number() OVER (PARTITION BY t.person_id
+                                ORDER BY t.occurred_at, t.id) AS nth
+      FROM touchpoint t
+      JOIN person p ON p.id = t.person_id
+      ${campaignJoinSql(sql)}
+      WHERE t.channel = 'ctwa' AND ${livePersonSql(sql)}
+    ),
+    in_range AS (
+      SELECT c.*,
+             NOT EXISTS (SELECT 1 FROM touchpoint e
+                         WHERE e.person_id = c.person_id
+                           AND e.channel <> 'import'
+                           AND e.occurred_at < c.occurred_at) AS fresh
+      FROM ctwa c
+      WHERE c.occurred_at >= ${from} AND c.occurred_at < ${to}
+    ),
+    -- One row per ad. Grouping on the campaign id too split an ad in two when
+    -- its touches resolved to different campaigns (utm_campaign_id on some,
+    -- the Meta map on others), and the join below then put its spend on both.
+    -- nth = 1 is one row per person already, so a plain count is distinct.
+    optins AS (
+      SELECT ad_id, min(campaign_id) AS campaign_id,
+             count(DISTINCT person_id)::int AS optins,
+             count(*) FILTER (WHERE nth = 1 AND fresh)::int AS fresh
+      FROM in_range
+      GROUP BY ad_id
+    ),
+    spend AS (
+      SELECT ad_id, min(campaign_id) AS campaign_id, max(ad_name) AS ad_name,
+             sum(spend) AS spend, sum(messages)::int AS messages
+      FROM meta_ad_insight
+      WHERE day >= ${q.from}::date AND day <= ${q.to}::date AND currency = 'MYR'
+      GROUP BY ad_id
+    ),
+    joined AS (
+      -- Meta knows which campaign an ad is in: its spend in range, else its
+      -- campaign on any day; the touchpoint's own id only as a last resort.
+      SELECT coalesce(s.campaign_id, am.campaign_id, o.campaign_id)
+               AS campaign_id,
+             coalesce(o.ad_id, s.ad_id) AS ad_id, s.ad_name,
+             coalesce(o.optins, 0) AS optins, coalesce(o.fresh, 0) AS fresh,
+             coalesce(o.optins - o.fresh, 0) AS again, s.spend, s.messages
+      FROM optins o
+      FULL JOIN spend s ON s.ad_id = o.ad_id
+      LEFT JOIN ad_campaign am ON am.ad_id = coalesce(o.ad_id, s.ad_id)
+      WHERE o.ad_id IS NOT NULL OR o.optins IS NOT NULL OR s.messages > 0
+    )
+    SELECT j.*, cn.campaign_name AS campaign, j.spend::text AS spend_myr,
+           (count(*) OVER ())::int AS group_count,
+           (SELECT count(DISTINCT person_id) FROM in_range)::int AS total_people
+    FROM joined j
+    LEFT JOIN campaign_name cn ON cn.campaign_id = j.campaign_id
+    ORDER BY j.optins DESC, j.spend DESC NULLS LAST, j.ad_id
+    LIMIT ${ROWS_SHOWN}`;
+
+  return {
+    rows: rows.map((r) => ({
+      campaignId: r.campaign_id,
+      campaign: r.campaign,
+      adId: r.ad_id,
+      adName: r.ad_name,
+      optins: r.optins,
+      fresh: r.fresh,
+      again: r.again,
+      spendMyr: r.spend_myr,
+      metaMessages: r.messages,
+    })),
+    total: rows[0]?.total_people ?? 0,
+    dropped: Math.max(0, (rows[0]?.group_count ?? 0) - rows.length),
+  };
 }

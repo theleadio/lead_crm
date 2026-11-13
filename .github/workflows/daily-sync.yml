@@ -8,7 +8,8 @@
 #
 # Secrets (repo Settings > Secrets and variables > Actions): DATABASE_URL,
 # LMS_DATABASE_URL, META_ACCESS_TOKEN, META_AD_ACCOUNT_ID,
-# SALESPROCESS_API_TOKEN, SALESPROCESS_LOCATION_ID.
+# SALESPROCESS_API_TOKEN, SALESPROCESS_LOCATION_ID, WATI_API_HOST,
+# WATI_API_TOKEN.
 #
 # Logs are public: scripts print counts only, and scripts/ci-errors.mjs keeps
 # an uncaught error to its message.
@@ -39,6 +40,21 @@ jobs:
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
           META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
 
+  # Click-to-WhatsApp opt-ins from WATI. --since 3 days overlaps the last
+  # runs, so a missed night is caught up; re-runs add nothing twice.
+  wati-ctwa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - run: npm ci --ignore-scripts
+      - run: node --import=./scripts/ci-errors.mjs scripts/sync-wati-ctwa.ts --apply
+        env:
+          WATI_API_HOST: ${{ secrets.WATI_API_HOST }}
+          WATI_API_TOKEN: ${{ secrets.WATI_API_TOKEN }}
+
   lms:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -67,3 +83,6 @@ jobs:
       - run: node --import=./scripts/ci-errors.mjs scripts/import-ghl-attribution.ts --apply --accept-approx-dates
       - run: node --import=./scripts/ci-errors.mjs scripts/sync-salesprocess-payments.ts --apply
       - run: node --import=./scripts/ci-errors.mjs scripts/import-salesprocess-enrolments.ts --apply
+      # Workshop registrations for Home's Free workshops (12 Nov). Last in the
+      # job, so a failure here never stops payments or enrolments.
+      - run: node --import=./scripts/ci-errors.mjs scripts/import-ghl-forms.ts --apply

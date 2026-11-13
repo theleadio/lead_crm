@@ -219,6 +219,9 @@ export type EfficiencyPoint = {
   // nothing.
   campaign: string;
   displayName?: string;
+  // The screen's label for it, told apart from any other campaign's
+  // (`campaignLabels`). Absent, a panel cuts its own from the name.
+  label?: string;
   spend: string;
   signups: number;
   hrdcSignups: number;
@@ -256,6 +259,9 @@ export type RoasRow = {
   // Meta's id, kept when `campaign` is swapped for a display name: two
   // campaigns can share a name.
   campaignId?: string;
+  // The screen's label for it, told apart from any other campaign's
+  // (`campaignLabels`). Absent, a panel cuts its own from the name.
+  label?: string;
   spend: string;
   stripeRevenue: string;
   hrdcRevenue: string | null;
@@ -319,6 +325,12 @@ export function roasRows(
 export type AdRankRow = {
   ad: string;
   campaign: string;
+  // Meta's id, kept when `campaign` is swapped for a display name: two
+  // campaigns can share a name.
+  campaignId?: string;
+  // The screen's label for it, told apart from any other campaign's
+  // (`campaignLabels`). Absent, a panel cuts its own from the name.
+  label?: string;
   count: number;
   costPer: string | null;
   ctr: number | null;
@@ -372,6 +384,12 @@ export function rankAds(
 
 export type ObjectiveSplit = {
   campaign: string;
+  // Meta's id, kept when `campaign` is swapped for a display name: two
+  // campaigns can share a name.
+  campaignId?: string;
+  // The screen's label for it, told apart from any other campaign's
+  // (`campaignLabels`). Absent, a panel cuts its own from the name.
+  label?: string;
   total: string;
   byObjective: Record<AdObjective, string>;
 };
