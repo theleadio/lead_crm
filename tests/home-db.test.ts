@@ -378,9 +378,10 @@ it("counts a returning chatter once", async () => {
   assert.deepEqual(found?.optins, { linkedCampaigns: 2, people: 1 });
 });
 
-it("counts a person only where their first WhatsApp chat came from", async () => {
-  // Same rule as the ads report's Opt-ins: a contact who first chatted from
-  // another campaign is a returning chat here, not an opt-in.
+it("a person who first chatted through another campaign still counts", async () => {
+  // The ads report's Opt-ins are New + Again since #70 (Zixuan, 11 Nov): a
+  // contact who first chatted from another campaign is an "Again" opt-in here.
+  // 92eba55 briefly counted first chats only (Shawn, 13 Nov: reverted).
   const user = await newUser("operations");
   const classId = await newClass(await newCourse(), 3);
   const linked = await linkCampaign(classId);
@@ -390,7 +391,7 @@ it("counts a person only where their first WhatsApp chat came from", async () =>
   await optIn(linked, person);
 
   const found = (await upcomingClasses(user)).find((c) => c.id === classId);
-  assert.deepEqual(found?.optins, { linkedCampaigns: 1, people: 0 });
+  assert.deepEqual(found?.optins, { linkedCampaigns: 1, people: 1 });
 });
 
 it("ignores another class's campaign and deleted people", async () => {
