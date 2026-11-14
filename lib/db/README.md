@@ -243,13 +243,17 @@ Tested on PostgreSQL 16 after 001–016, 018 and 019, applied twice: `019_enquir
 Agreed with Shawn on 12 Nov, before the 27 Nov freeze. Additive only; old code keeps working.
 
 - **`class_meta_campaign`** (`class_id`, `meta_campaign_id`, `campaign_name`, `created_at`, `created_by`): which Meta campaigns sell which class. Join on `meta_campaign_id` (Meta's numeric id, the `campaign_id` in `meta_ad_insight`), never on the name: `campaign_name` is a display copy taken when the link is made. A class can have many campaigns; a campaign belongs to one class at most (`class_meta_campaign_one_class`), so its opt-ins never count on two class cards. No foreign key to `meta_ad_insight`, which is per ad per day: a campaign can be linked before its first spend row. Not readable from the browser.
-- **`enrolment.funding_type`**: how this one seat is paid, in the LMS's own values: `self_funded`, `hrdc`, `internal`, `leaders_club`, `refresher`. Who pays stays in `payer_type`; `deal.funding_type` is unchanged. Nullable, no default: old rows are unknown until a sync fills them from the LMS (a separate data step). A value outside the list fails `enrolment_funding_type_check`; the LMS's full list is still owed by its owner, and a new value needs a migration that widens the CHECK.
+- **`enrolment.funding_type`**: how this one seat is paid, in the LMS's own values: `self_funded`, `hrdc`, `internal`, `leaders_club`, `refresher`. Who pays stays in `payer_type`; `deal.funding_type` is unchanged. Nullable, no default: old rows are unknown until a sync fills them from the LMS (a separate data step). A value outside the list fails `enrolment_funding_type_check`; the LMS's full list is still owed by its owner, and a new value needs a migration that widens the CHECK (025 added `guest`).
 
 Tested on an empty PostgreSQL 18 database with 001–023 applied (12 Nov): 023 13 of 13, `schema_constraints.sql` 38, 005 9, 006 26. 009's "24 tables" check fails with or without 023 (34 tables since 013–020), so that test only holds right after 012.
 
 ## Migration 024 — browser roles off the inbox tables (12 Nov)
 
 Migration 019 left `conversation`, `conversation_message`, `enquiry_category`, `enquiry_event`, `enquiry_rule`, `holiday`, `team` and `team_member` readable by Supabase's `anon` and `authenticated` roles, so the public anon key could read customer WhatsApp text through the REST API. 024 revokes them, as 014 and 023 do for their tables, and the views `consent_current` and `payment_net` too (owned by `postgres`, not `security_invoker`, so they read past the RLS on `consent` and `payment`); both apps use the direct connection, so nothing reads them that way. Applied to production by hand on 12 Nov, the day it was found.
+
+## Migration 025 — `guest` seat funding (13 Nov)
+
+Adds `guest` to `enrolment_funding_type_check` (023). The LMS records it on one seat; before 025 the sync left that seat empty with a warning. Shawn's call on #76: widen the CHECK rather than store it as `internal`. Widens only, same constraint name; every 023 value still passes. Rollback is in the file header (clear `guest` seats first).
 
 ## Where this is stricter or more specific than the spec
 

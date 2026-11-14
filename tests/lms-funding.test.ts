@@ -11,6 +11,7 @@ test("every LMS funding value the CRM knows is kept as it is", () => {
     "internal",
     "leaders_club",
     "refresher",
+    "guest",
   ])
     assert.deepEqual(lmsFundingType(v), { funding: v, unknown: null });
 });
