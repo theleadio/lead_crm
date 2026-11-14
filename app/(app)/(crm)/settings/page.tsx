@@ -25,7 +25,8 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
   const tab = pickSettingsTab(tabs, (await props.searchParams).tab);
 
   return (
-    <div className="max-w-5xl space-y-6">
+    // Full width like the other list pages: the Users table needs the room.
+    <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">Settings</h1>
         {/* Courses keeps its own page (§9.7); every Settings viewer reads it. */}
@@ -37,7 +38,11 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
         </Link>
       </div>
       <TabStrip tabs={tabs} active={tab} label="Settings sections" />
-      <section role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
+      <section
+        role="tabpanel"
+        id={`panel-${tab}`}
+        aria-labelledby={`tab-${tab}`}
+      >
         {tab === "users" && (
           <UsersTab users={await listUsers()} viewerId={user.id} />
         )}
@@ -47,10 +52,13 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
         {tab === "tags" && <TagsTab tags={await listAllTags()} />}
         {tab === "templates" && <TemplatesTab />}
         {tab === "enquiries" && (
-          <EnquirySettings
-            view={await settingsView()}
-            channels={[...ENQUIRY_CHANNELS]}
-          />
+          // The width it had on its own page.
+          <div className="max-w-4xl">
+            <EnquirySettings
+              view={await settingsView()}
+              channels={[...ENQUIRY_CHANNELS]}
+            />
+          </div>
         )}
       </section>
     </div>
