@@ -36,6 +36,8 @@ const attributionSchema = z.object({
   utmCampaign: text(200),
   utmContent: text(200),
   utmTerm: text(200),
+  utmId: text(200),
+  utmAdId: text(200),
   gclid: text(200),
   fbclid: text(500),
   gbraid: text(200),
@@ -92,6 +94,11 @@ export const leadSchema = z
       .boolean()
       .nullish()
       .transform((v) => v === true),
+    // false = capture the person and touchpoint only; no deal made or attached.
+    createDeal: z
+      .boolean()
+      .nullish()
+      .transform((v) => v !== false),
     attribution: attributionSchema.nullish(),
     captchaToken: z.string().max(4096).nullish(),
   })
@@ -123,5 +130,8 @@ export const registerSchema = leadSchema.safeExtend({
     .enum(["en", "zh"])
     .nullish()
     .transform((v) => v ?? "en"),
+  // Where Stripe sends the payer back (lead_sales pages). Anything off
+  // https://ai.thelead.io/ is ignored in returnUrls, not rejected.
+  returnUrl: text(2000),
 });
 export type RegisterInput = z.output<typeof registerSchema>;
