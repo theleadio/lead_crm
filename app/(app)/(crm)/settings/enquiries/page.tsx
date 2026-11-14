@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { BackLink } from "@/components/detail-kit";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import { permissionFor } from "@/lib/auth/permissions";
 import { canEditEnquirySettings, settingsView } from "@/lib/enquiries/settings";
 import { ENQUIRY_CHANNELS } from "@/lib/enquiries/types";
 import { EnquirySettings } from "./enquiry-settings";
@@ -14,7 +15,13 @@ export default async function EnquirySettingsPage() {
   const view = await settingsView();
   return (
     <div className="max-w-4xl space-y-6">
-      <BackLink href="/enquiries" label="Enquiries" />
+      {/* Settings is in the sidebar for super_admin only (§6); management
+          comes here from the Enquiries queue. */}
+      {permissionFor(user, "settings", "read").allowed ? (
+        <BackLink href="/settings" label="Settings" />
+      ) : (
+        <BackLink href="/enquiries" label="Enquiries" />
+      )}
       <h1 className="text-xl font-semibold">Enquiry settings</h1>
       <EnquirySettings view={view} channels={[...ENQUIRY_CHANNELS]} />
     </div>
