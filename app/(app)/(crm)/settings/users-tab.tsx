@@ -15,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -27,8 +28,8 @@ import { formatDateTime } from "@/lib/format/date";
 import type { UserRow } from "@/lib/users/service";
 import { save } from "./save";
 
-// Spec §9.15 Users (phase 1): the list, change role and employment type,
-// deactivate and reactivate. Add user arrives with Google sign-in (phase 2).
+// Spec §9.15 Users: the list, add a user, change role and employment type,
+// deactivate and reactivate. Staff sign in with AI365; this list is who may.
 
 const ROLE_LABELS: Record<UserRow["roleCode"], string> = {
   super_admin: "Super admin",
@@ -63,6 +64,7 @@ export function UsersTab({
   viewerId: string;
 }) {
   const router = useRouter();
+  const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<UserRow | null>(null);
   const [deactivating, setDeactivating] = useState<UserRow | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -84,10 +86,13 @@ export function UsersTab({
 
   return (
     <div className="space-y-4">
-      <p className="text-ink-muted text-sm">
-        Everyone who can sign in to the CRM. A deactivated user loses access
-        straight away and keeps their records.
-      </p>
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-ink-muted text-sm">
+          Everyone who can sign in to the CRM with their AI365 account. A
+          deactivated user loses access straight away and keeps their records.
+        </p>
+        <Button onClick={() => setAdding(true)}>Add user</Button>
+      </div>
       <TableCard>
         <Table>
           <TableHeader>
@@ -156,6 +161,21 @@ export function UsersTab({
           </TableBody>
         </Table>
       </TableCard>
+
+      <Dialog open={adding} onOpenChange={setAdding}>
+        <DialogContent className="sm:max-w-md">
+          {adding && (
+            <AddUser
+              onDone={(name) => {
+                setAdding(false);
+                setToast(`${name} added. They can sign in with AI365 now.`);
+                router.refresh();
+              }}
+              onCancel={() => setAdding(false)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={editing !== null}
@@ -295,6 +315,143 @@ function EditUser({
         </Button>
         <Button type="submit" disabled={saving}>
           {saving ? "Saving…" : "Save"}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+// Mounted per open, so values reset each time; a failed save keeps them.
+function AddUser({
+  onDone,
+  onCancel,
+}: {
+  onDone: (name: string) => void;
+  onCancel: () => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [fullName, setFullName] = useState("");
+  // No default role: picking one is a deliberate choice of access.
+  const [roleCode, setRoleCode] = useState("");
+  const [employmentType, setEmploymentType] =
+    useState<UserRow["employmentType"]>("full_time");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fields, setFields] = useState<Record<string, string>>({});
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    setFields({});
+    const r = await save("/api/users", "POST", {
+      email,
+      fullName,
+      roleCode,
+      employmentType,
+    });
+    setSaving(false);
+    if (r.ok) return onDone(fullName.trim());
+    setError(r.message);
+    setFields((r.error?.fields as Record<string, string>) ?? {});
+  }
+
+  const fieldError = (key: string) =>
+    fields[key] && (
+      <p id={`add-user-${key}-error`} className="text-danger text-xs">
+        {fields[key]}
+      </p>
+    );
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <DialogHeader>
+        <DialogTitle>Add user</DialogTitle>
+        <DialogDescription>
+          Use the email they sign in to AI365 with.
+        </DialogDescription>
+      </DialogHeader>
+      {error && (
+        <p
+          role="alert"
+          className="bg-danger-soft text-danger rounded-md p-3 text-sm"
+        >
+          {error}
+        </p>
+      )}
+      <div className="space-y-1 text-sm">
+        <label htmlFor="add-user-email" className="font-medium">
+          Email
+        </label>
+        <Input
+          id="add-user-email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          aria-invalid={!!fields.email}
+          aria-describedby={fields.email ? "add-user-email-error" : undefined}
+          autoFocus
+          required
+        />
+        {fieldError("email")}
+      </div>
+      <div className="space-y-1 text-sm">
+        <label htmlFor="add-user-fullName" className="font-medium">
+          Full name
+        </label>
+        <Input
+          id="add-user-fullName"
+          value={fullName}
+          onChange={(e) => setFullName(e.target.value)}
+          aria-invalid={!!fields.fullName}
+          aria-describedby={
+            fields.fullName ? "add-user-fullName-error" : undefined
+          }
+          required
+        />
+        {fieldError("fullName")}
+      </div>
+      <label className="block space-y-1 text-sm">
+        <span className="font-medium">Role</span>
+        <select
+          className={SELECT}
+          value={roleCode}
+          onChange={(e) => setRoleCode(e.target.value)}
+          required
+        >
+          <option value="" disabled>
+            Pick a role
+          </option>
+          {Object.entries(ROLE_LABELS).map(([code, label]) => (
+            <option key={code} value={code}>
+              {label}
+            </option>
+          ))}
+        </select>
+        {fieldError("roleCode")}
+      </label>
+      <label className="block space-y-1 text-sm">
+        <span className="font-medium">Employment</span>
+        <select
+          className={SELECT}
+          value={employmentType}
+          onChange={(e) =>
+            setEmploymentType(e.target.value as UserRow["employmentType"])
+          }
+        >
+          {Object.entries(EMPLOYMENT_LABELS).map(([code, label]) => (
+            <option key={code} value={code}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Go back
+        </Button>
+        <Button type="submit" disabled={saving}>
+          {saving ? "Adding…" : "Add user"}
         </Button>
       </DialogFooter>
     </form>
