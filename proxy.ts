@@ -14,6 +14,10 @@ const CRM_ROUTES = [
   "/enquiries",
   "/settings",
   "/dashboard",
+  "/courses",
+  "/tasks",
+  "/inbox",
+  "/reports",
 ];
 
 // Gates the CRM screens on a validly signed, unexpired session cookie

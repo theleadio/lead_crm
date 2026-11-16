@@ -115,7 +115,12 @@ test("start: state + next cookies, then off to AI365's handoff", () => {
 });
 
 test("start: an unsafe next is replaced with the default", () => {
-  for (const bad of ["//evil.com", "/\\evil.com", "https://evil.com"]) {
+  for (const bad of [
+    "//evil.com",
+    "/\\evil.com",
+    "https://evil.com",
+    "/\t/evil.com",
+  ]) {
     const res = startSignIn(
       new Request(
         `https://crm.test/auth/ai365/start?next=${encodeURIComponent(bad)}`,

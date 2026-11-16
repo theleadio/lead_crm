@@ -128,6 +128,8 @@ it("sign-out: writes sign_out for the session user", async () => {
 
 test("safeNext: only same-site paths", () => {
   assert.equal(safeNext("/deals?x=1"), "/deals?x=1");
-  for (const bad of ["//evil.com", "/\\evil.com", "https://evil.com", "", null])
-    assert.equal(safeNext(bad), "/people");
+  const bads = ["//evil.com", "/\\evil.com", "https://evil.com", "", null];
+  // Browsers drop tab, CR and LF from a URL, which turns these into //evil.com.
+  bads.push("/\t/evil.com", "/\n/evil.com", "/\r\\evil.com", "/\t\\evil.com");
+  for (const bad of bads) assert.equal(safeNext(bad), "/people", String(bad));
 });

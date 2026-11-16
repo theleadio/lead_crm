@@ -7,11 +7,17 @@ import { db } from "../sql.ts";
 // may use the CRM: an active row with that email, case-insensitive. The CRM
 // stores no passwords.
 
-// A same-site path only: blocks https://evil.com, //evil.com and /\evil.com.
+// A same-site path only. Resolved like a browser would (which drops tab, CR and
+// LF, so "/\t/evil.com" means //evil.com), then the origin must still be ours.
 export function safeNext(next: unknown): string {
-  return typeof next === "string" && /^\/(?![/\\])/.test(next)
-    ? next
-    : "/people";
+  if (typeof next !== "string" || !next.startsWith("/")) return "/people";
+  const base = "https://crm.invalid";
+  try {
+    const u = new URL(next, base);
+    return u.origin === base ? u.pathname + u.search + u.hash : "/people";
+  } catch {
+    return "/people";
+  }
 }
 
 // The app_user id when that person is active staff, else null. Either way the
