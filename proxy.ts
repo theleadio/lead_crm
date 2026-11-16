@@ -1,68 +1,42 @@
-import { createServerClient } from "@supabase/ssr";
-import { NextResponse, type NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
+import {
+  SESSION_COOKIE,
+  readCookie,
+  verifySession,
+} from "./lib/auth/session.ts";
 
-// Refreshes the Supabase session cookie on every request and gates the
-// authenticated CRM routes. Permission checks (role, record ownership) are
-// per-route in the API layer (spec Section 6) — this only checks "signed in".
+const CRM_ROUTES = [
+  "/people",
+  "/companies",
+  "/deals",
+  "/classes",
+  "/enrolments",
+  "/enquiries",
+  "/settings",
+  "/dashboard",
+];
+
+// Gates the CRM screens on a validly signed, unexpired session cookie
+// (lib/auth/session.ts). No database call here: a deactivated user with a
+// live cookie passes, and the CRM layout's getCurrentUser() turns them away.
+// Permission checks (role, record ownership) are per-route in the API layer
+// (spec Section 6), and every API route authenticates itself. Returning
+// nothing lets the request through.
 export async function proxy(request: NextRequest) {
-  let response = NextResponse.next({ request });
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value),
-          );
-          response = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options),
-          );
-        },
-      },
-    },
-  );
-
-  // API routes authenticate themselves (every handler calls getCurrentUser),
-  // so this only has to keep the session cookie fresh for them. getSession()
-  // reads the cookie locally and refreshes only when the token has expired —
-  // getUser() is a round trip to Supabase on every single list fetch.
-  if (request.nextUrl.pathname.startsWith("/api")) {
-    await supabase.auth.getSession();
-    return response;
-  }
-
-  const { data } = await supabase.auth.getUser();
+  const { pathname } = new URL(request.url);
   const isCrmRoute =
-    request.nextUrl.pathname.startsWith("/(crm)") ||
-    [
-      "/people",
-      "/companies",
-      "/deals",
-      "/classes",
-      "/enrolments",
-      "/enquiries",
-      "/settings",
-      "/dashboard",
-    ].some((path) => request.nextUrl.pathname.startsWith(path));
+    pathname.startsWith("/(crm)") ||
+    CRM_ROUTES.some((path) => pathname.startsWith(path));
+  if (!isCrmRoute) return;
+  if (await verifySession(readCookie(request, SESSION_COOKIE))) return;
 
-  if (isCrmRoute && !data.user) {
-    const signInUrl = new URL("/sign-in", request.url);
-    signInUrl.searchParams.set("next", request.nextUrl.pathname);
-    return NextResponse.redirect(signInUrl);
-  }
-
-  return response;
+  const signInUrl = new URL("/sign-in", request.url);
+  signInUrl.searchParams.set("next", pathname);
+  return Response.redirect(signInUrl);
 }
 
 // The public website (§10) and the public API (§8) need no session, so they
-// skip this proxy entirely: a marketing page should not cost a getUser() round
-// trip, nor depend on the sign-in provider being reachable. Each new public
+// skip this proxy entirely: a marketing page should not cost a session check. Each new public
 // page adds itself here — /register landed with 10.4, /help with migration
 // 019, the landing pages are still to come — and so does each locale of it:
 // the whole /zh tree is public by construction, and a path under it that we

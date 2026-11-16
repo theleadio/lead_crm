@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth/server";
+import { getCurrentUser } from "@/lib/auth/current-user";
 
 export default async function Home() {
-  const user = await getSession();
-  redirect(user ? "/people" : "/sign-in");
+  redirect((await getCurrentUser()) ? "/people" : "/sign-in");
 }
