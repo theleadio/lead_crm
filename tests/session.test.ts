@@ -115,6 +115,13 @@ test("proxy: a bad signature → sign-in", async () => {
   assert.match(res?.headers.get("location") ?? "", /\/sign-in\?next=/);
 });
 
+test("proxy: without SESSION_SECRET in its runtime, any cookie passes (the layout verifies)", async () => {
+  delete process.env.SESSION_SECRET;
+  assert.equal(await visit("/people", `${SESSION_COOKIE}=whatever`), undefined);
+  const res = await visit("/people");
+  assert.equal(res?.status, 302);
+});
+
 test("proxy: a valid cookie passes; public paths need none", async () => {
   const token = await signSession(UID);
   assert.equal(

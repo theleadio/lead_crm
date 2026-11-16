@@ -28,7 +28,12 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/(crm)") ||
     CRM_ROUTES.some((path) => pathname.startsWith(path));
   if (!isCrmRoute) return;
-  if (await verifySession(readCookie(request, SESSION_COOKIE))) return;
+  const token = readCookie(request, SESSION_COOKIE);
+  // A host that runs the proxy without the server's env (an edge runtime)
+  // can't see SESSION_SECRET; then any cookie passes here instead of locking
+  // everyone out. The layout and every API route verify it fully anyway.
+  if (token && (!process.env.SESSION_SECRET || (await verifySession(token))))
+    return;
 
   const signInUrl = new URL("/sign-in", request.url);
   signInUrl.searchParams.set("next", pathname);
