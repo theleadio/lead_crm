@@ -27,6 +27,16 @@ test("a seat still in the LMS stays", () => {
   assert.deepEqual(r, { cancel: [], held: null, heldIds: [] });
 });
 
+test("a seat this run matched again or cut over is not cancelled or counted", () => {
+  // Ops unenrolled and re-enrolled the student: lms1 is gone, but the seat was
+  // matched to the new LMS seat this run (review of #88). crm2..crm7 were cut
+  // over this run; they must not trip the cap either.
+  const many = [seat(1), ...Array.from({ length: 6 }, (_, i) => seat(i + 2))];
+  const settled = new Set(["crm1", "crm2", "crm3", "crm4", "crm5", "crm6", "crm7"]);
+  const r = goneSeatCancels(many, new Set(["other"]), classes, settled);
+  assert.deepEqual(r, { cancel: [], held: null, heldIds: [] });
+});
+
 test("attended, completed or already cancelled seats are never cancelled", () => {
   const seats = [
     "attended",

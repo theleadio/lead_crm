@@ -194,12 +194,16 @@ export function goneSeatCancels(
   marked: MarkedSeat[],
   lmsSeatIds: ReadonlySet<string>,
   lmsClassIds: ReadonlySet<string>,
+  // Seats this run already settled: matched to an LMS seat (perhaps a new one,
+  // after Ops re-enrolled the student) or cancelled by the cut-over.
+  settled: ReadonlySet<string> = new Set(),
 ): { cancel: string[]; held: string | null; heldIds: string[] } {
   if (!lmsSeatIds.size)
     return { cancel: [], held: "the LMS read returned no seats: no seat cancelled", heldIds: [] };
   const cancel = marked
     .filter(
       (s) =>
+        !settled.has(s.id) &&
         CANCELLABLE_STATUSES.includes(s.status) &&
         lmsClassIds.has(s.class_id) &&
         !lmsSeatIds.has(s.lms_enrollment_id),
