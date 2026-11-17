@@ -26,9 +26,13 @@ import {
   cohortsOnCancelledClass,
   cancelCutOver,
   cutOverCancels,
+  goneSeatCancels,
+  GONE_REASON,
+  GONE_TASK_REASON,
   importSeatsByKey,
   seatsToAdopt,
   type Cohort,
+  type MarkedSeat,
   type ImportClass,
   type ImportSeat,
 } from "../lib/import/lms-adopt.ts";
@@ -360,9 +364,15 @@ async function once() {
         await tx`SELECT DISTINCT order_id FROM salesprocess_payment WHERE order_id IS NOT NULL`
       ).map((r) => enrolmentIdFor(r.order_id))})`;
     // Seats an LMS enrollment adopts: the import's, plus ones staff added by hand.
-    const importOf = importSeatsByKey(
-      await seatsToAdopt(tx, importEnrols.map((e) => e.id), src.enrols.map((e) => e.id)),
-    );
+    const adoptable = await seatsToAdopt(tx, importEnrols.map((e) => e.id), src.enrols.map((e) => e.id));
+    const importOf = importSeatsByKey(adoptable);
+    const adoptById = new Map(adoptable.map((s) => [s.id, s]));
+    // CRM seats that carry the LMS's seat id (028): matched on it before
+    // person+class, so a seat the CRM made is never made a second time.
+    const marked = await tx<MarkedSeat[]>`
+      SELECT id, lms_enrollment_id, class_id, status FROM enrolment WHERE lms_enrollment_id IS NOT NULL`;
+    const crmIdOf = new Map(marked.map((s) => [s.lms_enrollment_id, s.id]));
+    const marks: [crm: string, lms: string][] = [];
     const matched = new Set<string>();
     const adopt: { id: string; status: string; completed_at: Date }[] = [];
     // Funding for seats the LMS adopts (import and hand-added seats keep their
@@ -385,7 +395,12 @@ async function once() {
       const classId = classOf.get(e.cohort_id) ?? e.cohort_id;
       const key = `${personId}|${classId}`;
       const finished = done.has(e.cohort_id);
-      const mine = haveEnrol.has(e.id) ? undefined : importOf.get(key);
+      const markedId = crmIdOf.get(e.id);
+      const mine = haveEnrol.has(e.id)
+        ? undefined
+        : markedId
+          ? adoptById.get(markedId)
+          : importOf.get(key);
       if (mine) {
         const d = adoptEnrolment(
           mine,
@@ -396,6 +411,7 @@ async function once() {
           bump("enrolment: refunded in SalesProcess", "same");
           continue;
         }
+        if (!matched.has(d.id)) marks.push([d.id, e.id]);
         matched.add(d.id);
         if (d.action === "update") adopt.push(d);
         // An empty LMS value never clears what staff set on the seat.
@@ -403,21 +419,25 @@ async function once() {
         bump("enrolment: adopted", d.action);
         continue;
       }
+      const id = markedId ?? e.id;
       const holder = active.get(key);
-      if (holder && holder !== e.id) {
+      if (holder && holder !== id) {
         warnings.push(
           `enrollment ${e.id}: person already enrolled in class (enrolment ${holder})`,
         );
         continue;
       }
-      active.set(key, e.id);
-      const seen = haveEnrol.get(e.id);
+      active.set(key, id);
+      marks.push([id, e.id]);
+      // Matched to the LMS this run, so the cut-over below never cancels it.
+      matched.add(id);
+      const seen = haveEnrol.get(id);
       if (seen === seatSyncKey(funding)) {
         bump("enrolment", "same");
         continue;
       }
       enrols.push({
-        id: e.id,
+        id,
         person_id: personId,
         class_id: classId,
         status: finished ? "completed" : "confirmed",
@@ -460,6 +480,27 @@ async function once() {
         RETURNING id`;
       bump("enrolment: adopted funding", changed.length ? "update" : "same");
     }
+    // Save the LMS seat id on every seat matched this run (a no-op once saved).
+    // A clash with another seat's id is a warning, not a failed sync.
+    if (marks.length)
+      try {
+        const saved = await tx.savepoint(
+          (s) => s`
+            UPDATE enrolment e SET lms_enrollment_id = m.lms
+            FROM unnest(${marks.map((m) => m[0])}::uuid[], ${marks.map((m) => m[1])}::uuid[]) AS m(crm, lms)
+            WHERE e.id = m.crm AND e.lms_enrollment_id IS DISTINCT FROM m.lms
+            RETURNING e.id`,
+        );
+        saved.forEach(() => bump("enrolment: LMS id saved", "update"));
+      } catch (err) {
+        if ((err as { code?: string }).code !== "23505") throw err;
+        warnings.push(`LMS seat ids not saved, two CRM seats claim one LMS seat: ${(err as Error).message}`);
+      }
+    // Seats the LMS removed, judged on the seats marked before this run.
+    const gone = goneSeatCancels(marked, new Set(src.enrols.map((e) => e.id as string)), ownedClassIds);
+    if (gone.held) warnings.push(gone.held);
+    const goneDone = await cancelCutOver(tx, gone.cancel, GONE_REASON, GONE_TASK_REASON);
+    goneDone.forEach(() => bump("enrolment: gone from LMS", "update"));
     for (const [value, n] of unknownFunding)
       warnings.push(
         `funding_type "${value}" is not a CRM value, left empty on ${n} seat(s); widen enrolment_funding_type_check to keep it`,
