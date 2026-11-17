@@ -41,13 +41,15 @@ export function classIdForCohort(
   const twins = cohorts.filter(
     (k) => k.id !== cohort.id && k.course_id === cohort.course_id && k.start_date === cohort.start_date,
   );
-  // Two cohorts must never adopt one class: skip classes another cohort holds by code, and
-  // with a twin cohort on the date, only the same language adopts.
+  // Two cohorts must never adopt one class: skip classes another cohort holds by code
+  // or by a saved LMS id, and with a twin cohort on the date, only the same language adopts.
   const held = new Set(cohorts.map((k) => k.slug));
+  const linkedElsewhere = new Set([...linked].filter(([k]) => k !== cohort.id).map(([, id]) => id));
   const onDate = sameCourse.filter(
     (c) =>
       c.start_date === cohort.start_date &&
       !held.has(c.code) &&
+      !linkedElsewhere.has(c.id) &&
       (c.guessed_language !== false || c.language === cohort.language),
   );
   const candidates = twins.length ? onDate.filter((c) => c.language === cohort.language) : onDate;

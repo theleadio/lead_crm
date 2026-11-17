@@ -38,6 +38,13 @@ test("classIdForCohort: a class that saved the cohort's LMS id wins over everyth
   assert.equal(id, "hand-made");
 });
 
+test("classIdForCohort: a class linked to another cohort is never adopted again", () => {
+  // The CRM-made class keeps its own code now, so the saved LMS id is what holds it.
+  const linked = new Map([["k-other", "i-en"]]);
+  const id = classIdForCohort(cohort(), new Set(), [imp()], [cohort()], [], linked);
+  assert.equal(id, "k1");
+});
+
 test("classIdForCohort: a class made by hand is adopted like an import class", () => {
   // The sync now passes every CRM-made class, not only SalesProcess ones.
   const hand = imp({ id: "hand", code: "ai-agents-2026-11-28", language: "zh", guessed_language: false });

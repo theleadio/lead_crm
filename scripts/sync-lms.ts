@@ -270,11 +270,14 @@ async function once() {
       const was = seen ? (JSON.parse(seen) as string[]) : null;
       const status = syncClassStatus(was?.[4] ?? null, completed);
       if (was && status) toComplete.push(classId);
+      // A class the CRM made keeps its code: lead_sales pages and /register
+      // find a class by code (review of #89). It is linked by lms_cohort_id.
+      const code = classId !== k.id && was ? was[0] : k.slug;
       if (
         was &&
         !status &&
         JSON.stringify(was.slice(0, 4)) ===
-          JSON.stringify([k.slug, day(k.start_date), day(k.end_date), lang])
+          JSON.stringify([code, day(k.start_date), day(k.end_date), lang])
       ) {
         bump("class", "same");
         continue;
@@ -283,7 +286,7 @@ async function once() {
       classes.push({
         id: classId,
         course_id: k.course_id,
-        code: k.slug,
+        code,
         start_date: day(k.start_date),
         end_date: day(k.end_date),
         language: lang,
@@ -311,13 +314,15 @@ async function once() {
       await tx`UPDATE class SET status = 'completed'
         WHERE id = ANY(${toComplete}) AND status IN ('open','few_seats','full')`;
     // Save the LMS cohort id on every class linked this run (a no-op once saved),
-    // for the CRM → LMS sender. A clash is a warning, not a failed sync.
-    if (classOf.size)
+    // for the CRM → LMS sender. A clash is a warning, not a failed sync. Not on
+    // a class staff cancelled: saved, it would hold that cohort for good.
+    const links = [...classOf].filter(([k]) => !onCancelled.has(k));
+    if (links.length)
       try {
         const saved = await tx.savepoint(
           (s) => s`
             UPDATE class c SET lms_cohort_id = m.lms
-            FROM unnest(${[...classOf.values()]}::uuid[], ${[...classOf.keys()]}::uuid[]) AS m(crm, lms)
+            FROM unnest(${links.map(([, c]) => c)}::uuid[], ${links.map(([k]) => k)}::uuid[]) AS m(crm, lms)
             WHERE c.id = m.crm AND c.lms_cohort_id IS DISTINCT FROM m.lms
             RETURNING c.id`,
         );
