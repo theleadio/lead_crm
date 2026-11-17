@@ -14,16 +14,21 @@ export type ImportClass = {
 
 const INACTIVE = ["cancelled", "refunded", "transferred"];
 
-// cohort → CRM class id: its own id if the CRM has it, else the import class it
-// adopted on an earlier run (code = slug), else the one import class of that
-// course and start date, else its own id (a new class).
+// cohort → CRM class id: the class that saved this cohort's LMS id (029), else
+// its own id if the CRM has it, else the CRM-made class it adopted on an
+// earlier run (code = slug), else the one CRM-made class of that course and
+// start date, else its own id (a new class). "importClasses" is every class the
+// CRM made, by the SalesProcess import or by hand (Shawn, 17 Nov 2026).
 export function classIdForCohort(
   cohort: Cohort,
   crmIds: Set<string>,
   importClasses: ImportClass[],
   cohorts: Cohort[],
   warnings: string[],
+  linked: ReadonlyMap<string, string> = new Map(), // LMS cohort id → CRM class id
 ): string {
+  const saved = linked.get(cohort.id);
+  if (saved) return saved;
   if (crmIds.has(cohort.id)) return cohort.id;
   const sameCourse = importClasses.filter((c) => c.course_id === cohort.course_id);
   // The upsert writes code = slug, so this still finds the class after the LMS moves the date.

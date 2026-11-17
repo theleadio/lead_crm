@@ -39,7 +39,6 @@ import {
   type ImportSeat,
 } from "../lib/import/lms-adopt.ts";
 import {
-  IMPORT_CLASS_NOTE,
   SYNC_LOCK_KEY,
   enrolmentIdFor,
   isNoSeats,
@@ -205,9 +204,19 @@ async function once() {
     const haveClass = await existing(
       tx`SELECT id, code, start_date::text, end_date::text, language, status FROM class`,
     );
+    // Classes the CRM made (SalesProcess import or by hand): any of them may be
+    // the class an LMS cohort stands for. Not ones that are an LMS cohort
+    // themselves, nor ones already linked to a cohort that is gone.
+    const cohortIds = src.cohorts.map((k) => k.id as string);
     const importClasses = await tx<ImportClass[]>`
       SELECT id, code, course_id, start_date::text AS start_date, language, status FROM class
-      WHERE notes LIKE ${IMPORT_CLASS_NOTE + "%"}`;
+      WHERE id <> ALL(${cohortIds})
+        AND (lms_cohort_id IS NULL OR lms_cohort_id = ANY(${cohortIds}))`;
+    const linked = new Map(
+      (
+        await tx`SELECT id, lms_cohort_id FROM class WHERE lms_cohort_id IS NOT NULL`
+      ).map((r) => [r.lms_cohort_id as string, r.id as string]),
+    );
     const cohorts: Cohort[] = src.cohorts.map((k) => ({
       id: k.id,
       slug: k.slug,
@@ -219,7 +228,7 @@ async function once() {
     const classOf = new Map(
       cohorts.map((k) => [
         k.id,
-        classIdForCohort(k, crmClassIds, importClasses, cohorts, warnings),
+        classIdForCohort(k, crmClassIds, importClasses, cohorts, warnings, linked),
       ]),
     );
     const lmsClassIds = new Set(classOf.values());
@@ -227,7 +236,7 @@ async function once() {
     const ownedClassIds = new Set(
       [...classOf].filter(([k]) => !onCancelled.has(k)).map(([, id]) => id),
     );
-    // A wrongly parsed SalesProcess date leaves an import class beside the real cohort.
+    // A wrongly parsed SalesProcess date (or a typo by hand) leaves a CRM class beside the real cohort.
     for (const c of importClasses) {
       if (lmsClassIds.has(c.id) || c.status === "cancelled") continue;
       for (const k of cohorts) {
@@ -236,7 +245,7 @@ async function once() {
           86400000;
         if (k.course_id === c.course_id && gap >= 1 && gap <= 7)
           warnings.push(
-            `SalesProcess class ${c.code} starts ${c.start_date}, LMS cohort ${k.slug} of the same course starts ${k.start_date}: check the date`,
+            `CRM class ${c.code} starts ${c.start_date}, LMS cohort ${k.slug} of the same course starts ${k.start_date}: check the date`,
           );
       }
     }
@@ -299,6 +308,22 @@ async function once() {
     if (toComplete.length)
       await tx`UPDATE class SET status = 'completed'
         WHERE id = ANY(${toComplete}) AND status IN ('open','few_seats','full')`;
+    // Save the LMS cohort id on every class linked this run (a no-op once saved),
+    // for the CRM → LMS sender. A clash is a warning, not a failed sync.
+    if (classOf.size)
+      try {
+        const saved = await tx.savepoint(
+          (s) => s`
+            UPDATE class c SET lms_cohort_id = m.lms
+            FROM unnest(${[...classOf.values()]}::uuid[], ${[...classOf.keys()]}::uuid[]) AS m(crm, lms)
+            WHERE c.id = m.crm AND c.lms_cohort_id IS DISTINCT FROM m.lms
+            RETURNING c.id`,
+        );
+        saved.forEach(() => bump("class: LMS id saved", "update"));
+      } catch (err) {
+        if ((err as { code?: string }).code !== "23505") throw err;
+        warnings.push(`LMS class ids not saved, two CRM classes claim one LMS cohort: ${(err as Error).message}`);
+      }
 
     // person: match by email first (never overwrite an existing CRM person).
     const byId = ids(await tx`SELECT id FROM person`);

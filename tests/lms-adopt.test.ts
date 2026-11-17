@@ -32,6 +32,18 @@ const pick = (k: Cohort, crm: string[], classes: ImportClass[], cohorts = [k]) =
   return { id: classIdForCohort(k, new Set(crm), classes, cohorts, warnings), warnings };
 };
 
+test("classIdForCohort: a class that saved the cohort's LMS id wins over everything", () => {
+  const linked = new Map([["k1", "hand-made"]]);
+  const id = classIdForCohort(cohort(), new Set(["k1"]), [imp()], [cohort()], [], linked);
+  assert.equal(id, "hand-made");
+});
+
+test("classIdForCohort: a class made by hand is adopted like an import class", () => {
+  // The sync now passes every CRM-made class, not only SalesProcess ones.
+  const hand = imp({ id: "hand", code: "ai-agents-2026-11-28" });
+  assert.deepEqual(pick(cohort(), [], [hand]), { id: "hand", warnings: [] });
+});
+
 test("classIdForCohort: a cohort already in the CRM keeps its own id", () => {
   assert.equal(pick(cohort(), ["k1"], [imp()]).id, "k1");
 });
