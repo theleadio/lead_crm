@@ -77,6 +77,7 @@ export function PersonDetailView({
   canReview,
   canCreateDeal,
   taskAccess,
+  whatsappThreadId,
 }: {
   id: string;
   canWrite: boolean;
@@ -90,6 +91,8 @@ export function PersonDetailView({
   canCreateDeal: boolean;
   // §9.14: who may add a task here, or null for no Add task (§6 task row).
   taskAccess: { viewerId: string; assignedOnly: boolean } | null;
+  // §9.2 quick action: their WhatsApp thread in the inbox, or null to hide it.
+  whatsappThreadId: string | null;
 }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
@@ -222,6 +225,11 @@ export function PersonDetailView({
                 viewerId={taskAccess.viewerId}
                 assignedOnly={taskAccess.assignedOnly}
               />
+            )}
+            {whatsappThreadId && (
+              <Button variant="outline" asChild>
+                <Link href={`/inbox?c=${whatsappThreadId}`}>WhatsApp</Link>
+              </Button>
             )}
             {p.email && !p.email.includes("•") && (
               <Button variant="outline" asChild>

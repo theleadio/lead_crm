@@ -76,6 +76,23 @@ export async function mayUseInbox(viewer: Viewer): Promise<boolean> {
   return Boolean(m);
 }
 
+// §9.2 "WhatsApp via WATI" (agreed with Shawn, 17 Nov 2026): the person page
+// opens their latest WhatsApp thread in the inbox, which already sends
+// templates and replies. Null when they have none the viewer may open, so the
+// button is hidden rather than leading to an empty or refused page.
+export async function personWhatsappThread(
+  viewer: Viewer,
+  personId: string,
+): Promise<string | null> {
+  if (!isUuid(personId)) return null;
+  const [c] = await db()`
+    SELECT c.id FROM conversation c
+    WHERE c.person_id = ${personId} AND c.channel = 'whatsapp' AND ${visible(viewer)}
+    ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
+    LIMIT 1`;
+  return (c?.id as string | undefined) ?? null;
+}
+
 // ---- List ---------------------------------------------------------------------
 
 export type InboxFilter = {

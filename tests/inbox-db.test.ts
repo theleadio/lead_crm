@@ -10,6 +10,7 @@ import {
   listConversations,
   replyWindow,
   enquiryFromConversation,
+  personWhatsappThread,
   setConversationStatus,
 } from "../lib/inbox/service.ts";
 import { replyDueAt } from "../lib/enquiries/deadline.ts";
@@ -169,4 +170,39 @@ it("make enquiry: linked to the conversation, deadline from the customer's messa
   assert.equal(d!.enquiries[0].canOpen, false);
   assert.equal(d!.enquiries[0].subject, null);
   assert.equal(d!.enquiries[0].teamName, "Finance");
+});
+
+// §9.2 quick action (agreed with Shawn, 17 Nov): the person page's WhatsApp
+// button opens their WhatsApp thread in the inbox, and is hidden without one.
+it("person WhatsApp thread: the latest one the viewer may open, else none", async () => {
+  const agent = await newUser("support");
+  const older = await conversation(
+    "Hi",
+    "whatsapp",
+    new Date("2026-11-01T00:00:00Z"),
+  );
+  const [newer] = await db()`
+    INSERT INTO conversation (person_id, channel, external_thread_id, last_message_at)
+    VALUES (${older.personId}, 'whatsapp', ${crypto.randomUUID()}, now()) RETURNING id`;
+  assert.equal(await personWhatsappThread(agent, older.personId), newer.id);
+
+  const emailOnly = await conversation("Hello", "email");
+  assert.equal(
+    await personWhatsappThread(agent, emailOnly.personId),
+    null,
+    "email thread is not WhatsApp",
+  );
+  assert.equal(
+    await personWhatsappThread(agent, await newPerson("Never wrote")),
+    null,
+  );
+
+  await db()`DELETE FROM team_member`;
+  const ops = await newUser("operations"); // no team, no enquiry on it
+  assert.equal(
+    await personWhatsappThread(ops, older.personId),
+    null,
+    "not a thread they may open",
+  );
+  assert.equal(await personWhatsappThread(agent, "not-a-uuid"), null);
 });
