@@ -19,12 +19,12 @@ const classes = new Set(["k1"]);
 
 test("a confirmed seat the LMS no longer has is cancelled", () => {
   const r = goneSeatCancels([seat(1), seat(2)], new Set(["lms2"]), classes);
-  assert.deepEqual(r, { cancel: ["crm1"], held: null });
+  assert.deepEqual(r, { cancel: ["crm1"], held: null, heldIds: [] });
 });
 
 test("a seat still in the LMS stays", () => {
   const r = goneSeatCancels([seat(1)], new Set(["lms1"]), classes);
-  assert.deepEqual(r, { cancel: [], held: null });
+  assert.deepEqual(r, { cancel: [], held: null, heldIds: [] });
 });
 
 test("attended, completed or already cancelled seats are never cancelled", () => {
@@ -61,6 +61,8 @@ test(`more than ${MAX_GONE_CANCELS} at once cancels nothing and says so`, () => 
   const r = goneSeatCancels(many, new Set(["other"]), classes);
   assert.deepEqual(r.cancel, []);
   assert.match(r.held!, new RegExp(`${MAX_GONE_CANCELS + 1} seats`));
+  // Every held seat is named, for the one Ops task; none is picked to cancel.
+  assert.equal(r.heldIds.length, MAX_GONE_CANCELS + 1);
   const ok = goneSeatCancels(many.slice(1), new Set(["other"]), classes);
   assert.equal(ok.cancel.length, MAX_GONE_CANCELS);
 });

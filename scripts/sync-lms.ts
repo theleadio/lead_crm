@@ -15,6 +15,7 @@
 //
 // ponytail: polls and diffs the whole LMS every cycle (hundreds of rows).
 // Switch to a Supabase Realtime / LISTEN trigger on the LMS if it grows.
+import { createHash } from "node:crypto";
 import postgres from "postgres";
 import { normalizePhoneE164 } from "../lib/format/phone.ts";
 import { lmsFundingType, seatSyncKey } from "../lib/import/lms-funding.ts";
@@ -27,6 +28,7 @@ import {
   cancelCutOver,
   cutOverCancels,
   goneSeatCancels,
+  MAX_GONE_CANCELS,
   GONE_REASON,
   GONE_TASK_REASON,
   importSeatsByKey,
@@ -498,7 +500,36 @@ async function once() {
       }
     // Seats the LMS removed, judged on the seats marked before this run.
     const gone = goneSeatCancels(marked, new Set(src.enrols.map((e) => e.id as string)), ownedClassIds);
-    if (gone.held) warnings.push(gone.held);
+    if (gone.held) {
+      warnings.push(gone.held);
+      // One Ops task, not just a line in the Actions log (Shawn, #88). Keyed on
+      // the held seats, so the same set raises one task however many nights it
+      // stays; an empty LMS read raises one a day.
+      const heldIds = [...gone.heldIds].sort();
+      const key = heldIds.length
+        ? `lms-gone:${createHash("sha1").update(heldIds.join(",")).digest("hex").slice(0, 16)}`
+        : `lms-gone:empty:${kl_today}`;
+      const where = [
+        ...new Set(
+          marked
+            .filter((s) => heldIds.includes(s.id))
+            .map((s) => codeOf.get(s.class_id) ?? s.class_id),
+        ),
+      ].join(", ");
+      const notes = heldIds.length
+        ? `${heldIds.length} seats (${where}) are no longer in the LMS. The sync cancels at most ${MAX_GONE_CANCELS} at once, so it cancelled none. Check each one in the LMS and cancel the seats that were really removed.`
+        : "The LMS returned no seats at all, so the sync cancelled none. Check the LMS is up.";
+      // Assignee: the duty super_admin, same rule as dutySuperAdmin().
+      const raised = await tx`
+        INSERT INTO task (type, title, assigned_user_id, due_at, notes, source_key)
+        VALUES ('other', 'Check seats removed from the LMS',
+                (SELECT id FROM app_user WHERE role_code = 'super_admin' AND is_active
+                 ORDER BY created_at, id LIMIT 1),
+                now(), ${notes}, ${key})
+        ON CONFLICT (source_key) WHERE source_key IS NOT NULL DO NOTHING
+        RETURNING id`;
+      bump("task: check LMS removals", raised.length ? "insert" : "same");
+    }
     const goneDone = await cancelCutOver(tx, gone.cancel, GONE_REASON, GONE_TASK_REASON);
     goneDone.forEach(() => bump("enrolment: gone from LMS", "update"));
     for (const [value, n] of unknownFunding)

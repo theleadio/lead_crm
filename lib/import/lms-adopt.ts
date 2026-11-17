@@ -180,8 +180,9 @@ export function goneSeatCancels(
   marked: MarkedSeat[],
   lmsSeatIds: ReadonlySet<string>,
   lmsClassIds: ReadonlySet<string>,
-): { cancel: string[]; held: string | null } {
-  if (!lmsSeatIds.size) return { cancel: [], held: "the LMS read returned no seats: no seat cancelled" };
+): { cancel: string[]; held: string | null; heldIds: string[] } {
+  if (!lmsSeatIds.size)
+    return { cancel: [], held: "the LMS read returned no seats: no seat cancelled", heldIds: [] };
   const cancel = marked
     .filter(
       (s) =>
@@ -194,8 +195,9 @@ export function goneSeatCancels(
     return {
       cancel: [],
       held: `${cancel.length} seats are gone from the LMS, more than ${MAX_GONE_CANCELS} at once: none cancelled, check by hand`,
+      heldIds: cancel,
     };
-  return { cancel, held: null };
+  return { cancel, held: null, heldIds: [] };
 }
 
 // The status the LMS sync writes on a class, or null to leave it. The CRM owns
