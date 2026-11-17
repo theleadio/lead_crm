@@ -12,10 +12,9 @@ test("user update: one of the seven roles, and nothing else", () => {
   assert.deepEqual(bad.error?.issues[0].path, ["roleCode"]);
 });
 
-test("user update: employment type and active flag", () => {
-  assert.ok(userUpdateSchema.safeParse({ employmentType: "part_time" }).success);
+test("user update: active flag; employment type is no longer accepted", () => {
   assert.equal(
-    userUpdateSchema.safeParse({ employmentType: "contract" }).success,
+    userUpdateSchema.safeParse({ employmentType: "part_time" }).success,
     false,
   );
   assert.ok(userUpdateSchema.safeParse({ isActive: false }).success);

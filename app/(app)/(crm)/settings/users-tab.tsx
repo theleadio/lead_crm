@@ -28,8 +28,10 @@ import { formatDateTime } from "@/lib/format/date";
 import type { UserRow } from "@/lib/users/service";
 import { save } from "./save";
 
-// Spec §9.15 Users: the list, add a user, change role and employment type,
-// deactivate and reactivate. Staff sign in with AI365; this list is who may.
+// Spec §9.15 Users: the list, add a user, change role, deactivate and
+// reactivate. Staff sign in with AI365; this list is who may. No employment
+// field: the spec only lists the column, nothing uses it, and the Part-timer
+// role already says who sees assigned records only.
 
 const ROLE_LABELS: Record<UserRow["roleCode"], string> = {
   super_admin: "Super admin",
@@ -39,10 +41,6 @@ const ROLE_LABELS: Record<UserRow["roleCode"], string> = {
   support: "Support",
   operations: "Operations",
   part_time: "Part-timer",
-};
-const EMPLOYMENT_LABELS: Record<UserRow["employmentType"], string> = {
-  full_time: "Full time",
-  part_time: "Part time",
 };
 const STATUS: Record<
   UserRow["status"],
@@ -100,7 +98,6 @@ export function UsersTab({
               <TableHead>Name</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Role</TableHead>
-              <TableHead>Employment</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Last sign-in</TableHead>
               <TableHead>
@@ -114,7 +111,6 @@ export function UsersTab({
                 <TableCell className="font-medium">{u.fullName}</TableCell>
                 <TableCell>{u.email}</TableCell>
                 <TableCell>{ROLE_LABELS[u.roleCode]}</TableCell>
-                <TableCell>{EMPLOYMENT_LABELS[u.employmentType]}</TableCell>
                 <TableCell>
                   <Badge variant={STATUS[u.status].variant}>
                     {STATUS[u.status].label}
@@ -230,7 +226,6 @@ function EditUser({
 }) {
   const router = useRouter();
   const [roleCode, setRoleCode] = useState(user.roleCode);
-  const [employmentType, setEmploymentType] = useState(user.employmentType);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<{ text: string; stale: boolean } | null>(
     null,
@@ -242,8 +237,6 @@ function EditUser({
     setError(null);
     const body: Record<string, string> = {};
     if (roleCode !== user.roleCode) body.roleCode = roleCode;
-    if (employmentType !== user.employmentType)
-      body.employmentType = employmentType;
     if (!Object.keys(body).length) return onCancel();
     const r = await save(`/api/users/${user.id}`, "PATCH", body, user.version);
     setSaving(false);
@@ -293,22 +286,6 @@ function EditUser({
           ))}
         </select>
       </label>
-      <label className="block space-y-1 text-sm">
-        <span className="font-medium">Employment</span>
-        <select
-          className={SELECT}
-          value={employmentType}
-          onChange={(e) =>
-            setEmploymentType(e.target.value as UserRow["employmentType"])
-          }
-        >
-          {Object.entries(EMPLOYMENT_LABELS).map(([code, label]) => (
-            <option key={code} value={code}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </label>
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onCancel}>
           Go back
@@ -333,8 +310,6 @@ function AddUser({
   const [fullName, setFullName] = useState("");
   // No default role: picking one is a deliberate choice of access.
   const [roleCode, setRoleCode] = useState("");
-  const [employmentType, setEmploymentType] =
-    useState<UserRow["employmentType"]>("full_time");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fields, setFields] = useState<Record<string, string>>({});
@@ -348,7 +323,6 @@ function AddUser({
       email,
       fullName,
       roleCode,
-      employmentType,
     });
     setSaving(false);
     if (r.ok) return onDone(fullName.trim());
@@ -429,22 +403,6 @@ function AddUser({
           ))}
         </select>
         {fieldError("roleCode")}
-      </label>
-      <label className="block space-y-1 text-sm">
-        <span className="font-medium">Employment</span>
-        <select
-          className={SELECT}
-          value={employmentType}
-          onChange={(e) =>
-            setEmploymentType(e.target.value as UserRow["employmentType"])
-          }
-        >
-          {Object.entries(EMPLOYMENT_LABELS).map(([code, label]) => (
-            <option key={code} value={code}>
-              {label}
-            </option>
-          ))}
-        </select>
       </label>
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onCancel}>

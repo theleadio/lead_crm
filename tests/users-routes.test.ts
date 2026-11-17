@@ -91,7 +91,6 @@ const addBody = (email: string) => ({
   email: `  ${email} `,
   fullName: " New Person ",
   roleCode: "sales",
-  employmentType: "part_time",
 });
 
 it("POST: super_admin adds a user, trimmed, audited as create", async () => {
@@ -106,7 +105,6 @@ it("POST: super_admin adds a user, trimmed, audited as create", async () => {
   assert.equal(json.email, email);
   assert.equal(json.fullName, "New Person");
   assert.equal(json.roleCode, "sales");
-  assert.equal(json.employmentType, "part_time");
   assert.equal(json.status, "not_signed_in");
   const [row] = await db()`
     SELECT user_id, after FROM audit_log
@@ -156,10 +154,8 @@ test("POST: a bad body is a 422 with the fields", async () => {
     [{ ...addBody("x@lead.test"), email: "not-an-email" }, "email"],
     [{ ...addBody("x@lead.test"), fullName: "  " }, "fullName"],
     [{ ...addBody("x@lead.test"), roleCode: "" }, "roleCode"],
-    [
-      { ...addBody("x@lead.test"), employmentType: "contract" },
-      "employmentType",
-    ],
+    // No longer part of the body (17 Nov): refused as an unknown field.
+    [{ ...addBody("x@lead.test"), employmentType: "part_time" }, ""],
     [{ ...addBody("x@lead.test"), isActive: false }, ""],
   ] as const) {
     const parsed = userCreateSchema.safeParse(body);

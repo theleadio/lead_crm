@@ -16,7 +16,6 @@ export type UserRow = {
   email: string;
   fullName: string;
   roleCode: Role;
-  employmentType: "full_time" | "part_time";
   status: UserStatus;
   lastLoginAt: string | null;
 };
@@ -39,7 +38,6 @@ function toUserRow(r: postgres.Row): UserRow {
     email: r.email,
     fullName: r.full_name,
     roleCode: r.role_code,
-    employmentType: r.employment_type,
     status: !r.is_active
       ? "deactivated"
       : r.last_login_at
@@ -70,9 +68,8 @@ export async function createUser(
       // Own savepoint, so the unique violation doesn't abort the caller.
       [row] = await withTransaction(
         () => db()`
-          INSERT INTO app_user (email, full_name, role_code, employment_type, created_by)
-          VALUES (${input.email}, ${input.fullName}, ${input.roleCode},
-                  ${input.employmentType}, ${viewer.id})
+          INSERT INTO app_user (email, full_name, role_code, created_by)
+          VALUES (${input.email}, ${input.fullName}, ${input.roleCode}, ${viewer.id})
           RETURNING *`,
       );
     } catch (err) {
@@ -96,7 +93,6 @@ export async function createUser(
 // Body field → column, for the SET and the audit row.
 const COLUMNS = {
   roleCode: "role_code",
-  employmentType: "employment_type",
   isActive: "is_active",
 } as const;
 

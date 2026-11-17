@@ -2,19 +2,15 @@ import { z } from "zod";
 import { ROLES } from "../auth/permissions.ts";
 import { isValidEmail } from "../format/email.ts";
 
-// Bodies of /api/users (§7, §9.15 Users).
+// Bodies of /api/users (§7, §9.15 Users). No employment type: the column is
+// unused, and the Part-timer role is what limits access (17 Nov 2026).
 
 const roleCode = z.enum(ROLES, "Pick one of the roles");
-const employmentType = z.enum(
-  ["full_time", "part_time"],
-  "Pick full time or part time",
-);
 
 // PATCH /api/users/:id. Email and name are not editable (design Non-Goals).
 export const userUpdateSchema = z
   .strictObject({
     roleCode: roleCode.optional(),
-    employmentType: employmentType.optional(),
     isActive: z.boolean("Say whether the account is on").optional(),
   })
   .refine((v) => Object.keys(v).length > 0, {
@@ -38,6 +34,5 @@ export const userCreateSchema = z.strictObject({
     .min(1, "Enter their name")
     .max(200, "Keep the name under 200 characters"),
   roleCode,
-  employmentType,
 });
 export type UserCreate = z.output<typeof userCreateSchema>;
