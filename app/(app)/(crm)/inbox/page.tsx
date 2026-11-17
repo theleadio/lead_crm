@@ -329,6 +329,7 @@ async function Thread({ c }: { c: ConversationDetail }) {
               /\p{L}/u.test(c.person.fullName) ? c.person.fullName : "there"
             }
             windowOpen={c.replyWindow === "open"}
+            consentWarning={c.consentWarning}
           />
         )}
 

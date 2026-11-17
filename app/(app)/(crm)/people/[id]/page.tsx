@@ -5,7 +5,7 @@ import {
   canWriteDeal,
   permissionFor,
 } from "@/lib/auth/permissions";
-import { personWhatsappThread } from "@/lib/inbox/service";
+import { personWhatsapp } from "@/lib/inbox/service";
 import { PersonDetailView } from "./person-detail";
 
 // Spec §9.2. Hiding the edit form is UX only — PATCH re-checks (spec §6).
@@ -20,15 +20,15 @@ export default async function PersonPage(props: PageProps<"/people/[id]">) {
 
   const canExportData = user?.role === "super_admin";
 
-  // Hidden unless they have a WhatsApp thread this viewer may open.
-  const whatsappThreadId = user ? await personWhatsappThread(user, id) : null;
+  // Their WhatsApp thread, or one this viewer may start; null hides the button.
+  const whatsapp = user ? await personWhatsapp(user, id) : null;
 
   return (
     <PersonDetailView
       id={id}
       canWrite={canWrite}
       canExportData={canExportData}
-      whatsappThreadId={whatsappThreadId}
+      whatsapp={whatsapp}
       canEditCompany={user ? canWriteCompany(user) : false}
       canMerge={user?.role === "super_admin"}
       canReview={user ? canReviewFlagged(user) : false}

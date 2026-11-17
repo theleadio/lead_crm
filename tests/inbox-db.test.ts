@@ -10,7 +10,8 @@ import {
   listConversations,
   replyWindow,
   enquiryFromConversation,
-  personWhatsappThread,
+  openPersonWhatsapp,
+  personWhatsapp,
   setConversationStatus,
 } from "../lib/inbox/service.ts";
 import { replyDueAt } from "../lib/enquiries/deadline.ts";
@@ -173,8 +174,23 @@ it("make enquiry: linked to the conversation, deadline from the customer's messa
 });
 
 // §9.2 quick action (agreed with Shawn, 17 Nov): the person page's WhatsApp
-// button opens their WhatsApp thread in the inbox, and is hidden without one.
-it("person WhatsApp thread: the latest one the viewer may open, else none", async () => {
+// button opens their thread in the inbox, or starts one for someone who never
+// wrote to us. Empty threads stay out of the list; a first contact without
+// WhatsApp marketing consent gets a warning (warn, don't block).
+
+// A person with a normalised phone, as intake writes it.
+async function personWithPhone(
+  name: string,
+  e164: string | null,
+): Promise<string> {
+  const id = await newPerson(name);
+  await db()`UPDATE person SET phone = ${e164}, phone_e164 = ${e164} WHERE id = ${id}`;
+  return id;
+}
+const unique = () =>
+  `+601${String(Math.floor(Math.random() * 1e8)).padStart(8, "0")}`;
+
+it("person WhatsApp: their latest thread the viewer may open", async () => {
   const agent = await newUser("support");
   const older = await conversation(
     "Hi",
@@ -184,25 +200,117 @@ it("person WhatsApp thread: the latest one the viewer may open, else none", asyn
   const [newer] = await db()`
     INSERT INTO conversation (person_id, channel, external_thread_id, last_message_at)
     VALUES (${older.personId}, 'whatsapp', ${crypto.randomUUID()}, now()) RETURNING id`;
-  assert.equal(await personWhatsappThread(agent, older.personId), newer.id);
+  assert.deepEqual(await personWhatsapp(agent, older.personId), {
+    threadId: newer.id,
+  });
+  assert.equal(await personWhatsapp(agent, "not-a-uuid"), null);
+});
 
+it("person WhatsApp: no thread → whole-inbox roles may start one, if there is a usable phone", async () => {
+  await db()`DELETE FROM team_member`;
+  const sales = await newUser("sales");
+  const ops = await newUser("operations");
+  const withPhone = await personWithPhone("Lead With Phone", unique());
+  assert.deepEqual(await personWhatsapp(sales, withPhone), { threadId: null });
+  assert.equal(
+    await personWhatsapp(ops, withPhone),
+    null,
+    "operations can't start a chat",
+  );
+  // A possible duplicate phone has phone_e164 empty (§12.2): no button.
+  const flagged = await personWithPhone("Flagged Phone", null);
+  assert.equal(await personWhatsapp(sales, flagged), null);
+  // An email thread is not a WhatsApp one.
   const emailOnly = await conversation("Hello", "email");
   assert.equal(
-    await personWhatsappThread(agent, emailOnly.personId),
+    await personWhatsapp(sales, emailOnly.personId),
     null,
-    "email thread is not WhatsApp",
+    "no phone either",
   );
-  assert.equal(
-    await personWhatsappThread(agent, await newPerson("Never wrote")),
-    null,
-  );
+});
 
-  await db()`DELETE FROM team_member`;
-  const ops = await newUser("operations"); // no team, no enquiry on it
-  assert.equal(
-    await personWhatsappThread(ops, older.personId),
-    null,
-    "not a thread they may open",
+it("start WhatsApp: creates the thread keyed by the number, once, and audits it", async () => {
+  const sales = await newUser("sales");
+  const e164 = unique();
+  const id = await personWithPhone("New Lead", e164);
+  const first = await openPersonWhatsapp(sales, id);
+  assert.equal(first.kind, "ok");
+  const conversationId = first.kind === "ok" ? first.conversationId : "";
+  const [c] =
+    await db()`SELECT person_id, channel, external_thread_id FROM conversation WHERE id = ${conversationId}`;
+  assert.deepEqual(
+    { ...c },
+    { person_id: id, channel: "whatsapp", external_thread_id: e164.slice(1) },
+    "same key as the WATI webhook and import",
   );
-  assert.equal(await personWhatsappThread(agent, "not-a-uuid"), null);
+  const again = await openPersonWhatsapp(sales, id);
+  assert.deepEqual(again, first, "a second click opens the same thread");
+  const audits =
+    await db()`SELECT 1 FROM audit_log WHERE entity = 'conversation' AND entity_id = ${conversationId} AND action = 'create'`;
+  assert.equal(audits.length, 1);
+});
+
+it("start WhatsApp: refusals", async () => {
+  await db()`DELETE FROM team_member`;
+  const sales = await newUser("sales");
+  const ops = await newUser("operations");
+  const e164 = unique();
+  const owner = await personWithPhone("Number Owner", e164);
+  // The number's chat already sits under another record (their old number):
+  // it is never taken over.
+  const oldRecord = await newPerson("Old Record");
+  await db()`
+    INSERT INTO conversation (person_id, channel, external_thread_id)
+    VALUES (${oldRecord}, 'whatsapp', ${e164.slice(1)})`;
+  assert.deepEqual(await openPersonWhatsapp(sales, owner), {
+    kind: "number_taken",
+    otherPersonId: oldRecord,
+  });
+  assert.equal((await openPersonWhatsapp(ops, owner)).kind, "forbidden");
+  assert.equal(
+    (await openPersonWhatsapp(sales, await personWithPhone("No Phone", null)))
+      .kind,
+    "no_phone",
+  );
+  assert.equal(
+    (await openPersonWhatsapp(sales, crypto.randomUUID())).kind,
+    "not_found",
+  );
+});
+
+it("inbox list: a thread with no messages is left out; it appears once a message exists", async () => {
+  const agent = await newUser("support");
+  const id = await personWithPhone("Quiet Lead", unique());
+  const r = await openPersonWhatsapp(agent, id);
+  const cid = r.kind === "ok" ? r.conversationId : "";
+  const ids = async () =>
+    (await listConversations(agent, { status: "all", limit: 300 })).map(
+      (i) => i.id,
+    );
+  assert.ok(!(await ids()).includes(cid));
+  await db()`
+    INSERT INTO conversation_message (conversation_id, person_id, channel, direction,
+                                      external_message_id, body, sent_at)
+    VALUES (${cid}, ${id}, 'whatsapp', 'out', ${crypto.randomUUID()}, '[template follow_up]', now())`;
+  await db()`UPDATE conversation SET last_message_at = now() WHERE id = ${cid}`;
+  assert.ok((await ids()).includes(cid));
+});
+
+it("consent warning: first contact without a WhatsApp grant warns; a grant or an inbound message clears it", async () => {
+  const agent = await newUser("support");
+  const id = await personWithPhone("Cold Lead", unique());
+  const r = await openPersonWhatsapp(agent, id);
+  const cid = r.kind === "ok" ? r.conversationId : "";
+  assert.equal((await conversationDetail(agent, cid))!.consentWarning, true);
+  await db()`
+    INSERT INTO consent (person_id, purpose, is_granted, source)
+    VALUES (${id}, 'marketing_whatsapp', true, 'form')`;
+  assert.equal((await conversationDetail(agent, cid))!.consentWarning, false);
+
+  const wrote = await conversation("Hi, I have a question", "whatsapp");
+  assert.equal(
+    (await conversationDetail(agent, wrote.id))!.consentWarning,
+    false,
+    "they wrote to us first",
+  );
 });
