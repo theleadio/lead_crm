@@ -283,7 +283,6 @@ async function once() {
         capacity: Math.max(seats.get(k.id) ?? 1, completed ? 1 : ROOM_SEATS),
         price_myr: k.price_cents != null ? k.price_cents / 100 : null,
         status: status ?? "open", // used on insert only; never in the update list
-
         notes: online
           ? "Imported from LMS."
           : "Imported from LMS. Venue address and city still TBC.",
