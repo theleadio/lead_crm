@@ -497,8 +497,14 @@ async function once() {
         if ((err as { code?: string }).code !== "23505") throw err;
         warnings.push(`LMS seat ids not saved, two CRM seats claim one LMS seat: ${(err as Error).message}`);
       }
-    // Seats the LMS removed, judged on the seats marked before this run.
-    const gone = goneSeatCancels(marked, new Set(src.enrols.map((e) => e.id as string)), ownedClassIds);
+    // Seats the LMS removed, judged on the seats marked before this run, less
+    // the ones this run matched (a re-enrolled student keeps the seat) or cut over.
+    const gone = goneSeatCancels(
+      marked,
+      new Set(src.enrols.map((e) => e.id as string)),
+      ownedClassIds,
+      new Set([...matched, ...cutDone]),
+    );
     if (gone.held) {
       warnings.push(gone.held);
       // One Ops task, not just a line in the Actions log (Shawn, #88). Keyed on
