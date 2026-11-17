@@ -30,11 +30,9 @@ export function lmsFundingType(value: unknown): {
 }
 
 // What the sync compares to decide a synced seat is unchanged. It must match
-// the order of `SELECT id, price_paid_myr::float8, funding_type FROM enrolment`
-// read back through existing() in sync-lms.ts (every column after the id).
-export function seatSyncKey(
-  pricePaidMyr: number,
-  funding: FundingType | null,
-): string {
-  return JSON.stringify([pricePaidMyr, funding]);
+// the order of `SELECT id, funding_type FROM enrolment` read back through
+// existing() in sync-lms.ts (every column after the id). Price is not in it:
+// the sync no longer updates price on an existing seat (Shawn, 16 Nov 2026).
+export function seatSyncKey(funding: FundingType | null): string {
+  return JSON.stringify([funding]);
 }

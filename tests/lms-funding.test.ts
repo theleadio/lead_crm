@@ -28,7 +28,14 @@ test("an unknown or missing value becomes empty, and an unknown one is named", (
 test("a funding change on an existing seat counts as a change", () => {
   // The sync skips a seat whose key is unchanged; before 023 the key was the
   // amount alone, so a funding change was never written.
-  assert.notEqual(seatSyncKey(1500, "hrdc"), seatSyncKey(1500, "self_funded"));
-  assert.notEqual(seatSyncKey(1500, "hrdc"), seatSyncKey(1500, null));
-  assert.equal(seatSyncKey(1500, "hrdc"), seatSyncKey(1500, "hrdc"));
+  assert.notEqual(seatSyncKey("hrdc"), seatSyncKey("self_funded"));
+  assert.notEqual(seatSyncKey("hrdc"), seatSyncKey(null));
+  assert.equal(seatSyncKey("hrdc"), seatSyncKey("hrdc"));
+});
+
+test("the seat key matches the CRM row read back without its id", () => {
+  // existing() in sync-lms.ts keys a row on JSON.stringify(values after id) of
+  // `SELECT id, funding_type FROM enrolment`; price is no longer part of it.
+  const row = { id: "e1", funding_type: "hrdc" };
+  assert.equal(JSON.stringify(Object.values(row).slice(1)), seatSyncKey("hrdc"));
 });

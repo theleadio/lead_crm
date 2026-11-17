@@ -159,3 +159,14 @@ export async function cancelCutOver(tx: Sql | TransactionSql, cut: string[]): Pr
     FROM done RETURNING entity_id`;
   return rows.map((r) => r.entity_id as string);
 }
+
+// The status the LMS sync writes on a class, or null to leave it. The CRM owns
+// class status (Shawn, 16 Nov 2026): a new class gets open or completed; an
+// existing one only moves to completed once it has ended, and only from a
+// published status. Draft and cancelled are staff's, and the seat trigger
+// (006) keeps open/few_seats/full in step with the seats.
+const PUBLISHED = ["open", "few_seats", "full"];
+export function syncClassStatus(current: string | null, ended: boolean): string | null {
+  if (current === null) return ended ? "completed" : "open";
+  return ended && PUBLISHED.includes(current) ? "completed" : null;
+}
