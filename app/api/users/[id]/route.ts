@@ -11,7 +11,7 @@ import { userWriteResponse } from "@/lib/users/responses";
 import { updateUser } from "@/lib/users/service";
 import { userUpdateSchema } from "@/lib/validation/user";
 
-// PATCH /api/users/:id — §7, §9.15 Users: role, employment type, deactivate
+// PATCH /api/users/:id — §7, §9.15 Users: role, deactivate
 // and reactivate. super_admin only; If-Match contract (record-concurrency).
 export async function PATCH(
   request: NextRequest,

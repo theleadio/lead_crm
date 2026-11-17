@@ -58,7 +58,6 @@ it("list: Active, Not signed in yet and Deactivated, with the version", async ()
   assert.equal(row(gone.id).status, "deactivated");
   assert.equal(row(fresh.id).version, 1);
   assert.equal(row(fresh.id).roleCode, "support");
-  assert.equal(row(fresh.id).employmentType, "full_time");
 });
 
 it("list: sorted by name, deactivated users last", async () => {
@@ -93,10 +92,10 @@ it("update: a role change saves and writes permission_change", async () => {
 
 it("update: other changes write update with only the changed fields", async () => {
   const admin = await addUser("Admin", "super_admin");
-  const target = await addUser("Lim Wei", "sales");
+  const target = await addUser("Lim Wei", "sales", { active: false });
   const r = await updateUser(
     target.id,
-    { employmentType: "part_time", isActive: true },
+    { roleCode: "sales", isActive: true },
     1,
     admin,
   );
@@ -104,9 +103,9 @@ it("update: other changes write update with only the changed fields", async () =
   const rows = await auditFor(target.id);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].action, "update");
-  // isActive was already true, so it is not a change.
-  assert.deepEqual(rows[0].before, { employmentType: "full_time" });
-  assert.deepEqual(rows[0].after, { employmentType: "part_time" });
+  // roleCode was already sales, so it is not a change.
+  assert.deepEqual(rows[0].before, { isActive: false });
+  assert.deepEqual(rows[0].after, { isActive: true });
 });
 
 it("update: deactivate then reactivate", async () => {
@@ -130,7 +129,7 @@ it("update: deactivate then reactivate", async () => {
 it("update: a stale version is refused and changes nothing", async () => {
   const admin = await addUser("Admin", "super_admin");
   const target = await addUser("Lim Wei", "sales");
-  await updateUser(target.id, { employmentType: "part_time" }, 1, admin);
+  await updateUser(target.id, { isActive: false }, 1, admin);
   const r = await updateUser(target.id, { roleCode: "support" }, 1, admin);
   assert.equal(r.kind, "stale");
   const [row] = await db()`SELECT role_code FROM app_user WHERE id = ${target.id}`;
@@ -162,13 +161,7 @@ it("update: nobody changes their own role or deactivates themselves", async () =
     (await updateUser(admin.id, { isActive: false }, v, admin)).kind,
     "self_change",
   );
-  // Their own employment type is fine.
-  assert.equal(
-    (await updateUser(admin.id, { employmentType: "part_time" }, v, admin))
-      .kind,
-    "ok",
-  );
-  assert.equal((await auditFor(admin.id)).length, 1);
+  assert.equal((await auditFor(admin.id)).length, 0);
 });
 
 it("update: the last active super_admin can't be demoted or deactivated", async () => {
