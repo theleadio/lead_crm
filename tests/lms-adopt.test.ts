@@ -40,8 +40,16 @@ test("classIdForCohort: a class that saved the cohort's LMS id wins over everyth
 
 test("classIdForCohort: a class made by hand is adopted like an import class", () => {
   // The sync now passes every CRM-made class, not only SalesProcess ones.
-  const hand = imp({ id: "hand", code: "ai-agents-2026-11-28" });
+  const hand = imp({ id: "hand", code: "ai-agents-2026-11-28", language: "zh", guessed_language: false });
   assert.deepEqual(pick(cohort(), [], [hand]), { id: "hand", warnings: [] });
+});
+
+test("classIdForCohort: a class made by hand must match the language; a SalesProcess one need not", () => {
+  // cohort() is zh. Staff chose "en" on purpose, so a zh cohort makes its own class.
+  const hand = imp({ id: "hand", code: "ai-agents-2026-11-28", guessed_language: false });
+  assert.equal(pick(cohort(), [], [hand]).id, "k1");
+  // The import may have guessed "en", so it is still adopted.
+  assert.equal(pick(cohort(), [], [imp({ guessed_language: true })]).id, "i-en");
 });
 
 test("classIdForCohort: a cohort already in the CRM keeps its own id", () => {

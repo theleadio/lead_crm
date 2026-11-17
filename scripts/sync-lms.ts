@@ -39,6 +39,7 @@ import {
   type ImportSeat,
 } from "../lib/import/lms-adopt.ts";
 import {
+  IMPORT_CLASS_NOTE,
   SYNC_LOCK_KEY,
   enrolmentIdFor,
   isNoSeats,
@@ -209,7 +210,9 @@ async function once() {
     // themselves, nor ones already linked to a cohort that is gone.
     const cohortIds = src.cohorts.map((k) => k.id as string);
     const importClasses = await tx<ImportClass[]>`
-      SELECT id, code, course_id, start_date::text AS start_date, language, status FROM class
+      SELECT id, code, course_id, start_date::text AS start_date, language, status,
+             coalesce(notes LIKE ${IMPORT_CLASS_NOTE + "%"}, false) AS guessed_language
+      FROM class
       WHERE id <> ALL(${cohortIds})
         AND (lms_cohort_id IS NULL OR lms_cohort_id = ANY(${cohortIds}))`;
     const linked = new Map(

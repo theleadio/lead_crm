@@ -10,6 +10,10 @@ export type ImportClass = {
   start_date: string;
   language: "en" | "zh";
   status: string;
+  // The SalesProcess import guesses "en" when an order names no language, so
+  // its classes match a cohort of either language; a class made by hand
+  // (false) must match the language. Unset counts as a guess.
+  guessed_language?: boolean;
 };
 
 const INACTIVE = ["cancelled", "refunded", "transferred"];
@@ -40,14 +44,19 @@ export function classIdForCohort(
   // Two cohorts must never adopt one class: skip classes another cohort holds by code, and
   // with a twin cohort on the date, only the same language adopts.
   const held = new Set(cohorts.map((k) => k.slug));
-  const onDate = sameCourse.filter((c) => c.start_date === cohort.start_date && !held.has(c.code));
+  const onDate = sameCourse.filter(
+    (c) =>
+      c.start_date === cohort.start_date &&
+      !held.has(c.code) &&
+      (c.guessed_language !== false || c.language === cohort.language),
+  );
   const candidates = twins.length ? onDate.filter((c) => c.language === cohort.language) : onDate;
   const found = twins.some((k) => k.language === cohort.language) && candidates.length
     ? "ambiguous"
     : pickClass(candidates, cohort.language);
   if (found === "ambiguous") {
     warnings.push(
-      `cohort ${cohort.slug}: SalesProcess classes ${candidates.map((c) => c.code).join(", ")} all match, none adopted`,
+      `cohort ${cohort.slug}: CRM classes ${candidates.map((c) => c.code).join(", ")} all match, none adopted`,
     );
     return cohort.id;
   }
