@@ -336,13 +336,15 @@ async function Thread({ c }: { c: ConversationDetail }) {
         <p className="text-ink-muted text-xs">
           {c.channel === "web_form"
             ? "Help-form messages can't be answered here yet: reply by email or phone until email replies are connected."
-            : c.replyWindow === "closed"
-              ? wati
-                ? "The free-reply window has closed: reply with an approved WATI template."
-                : "The free-reply window has closed: WhatsApp needs an approved template to reply."
-              : c.channel === "whatsapp" && watiFromEnv()
-                ? "Replies go out on WhatsApp from here."
-                : "Replies are sent from here once this channel is connected."}
+            : c.channel === "whatsapp" && c.messages.length === 0
+              ? "No messages yet: WhatsApp needs an approved template to start the chat."
+              : c.replyWindow === "closed"
+                ? wati
+                  ? "The free-reply window has closed: reply with an approved WATI template."
+                  : "The free-reply window has closed: WhatsApp needs an approved template to reply."
+                : c.channel === "whatsapp" && watiFromEnv()
+                  ? "Replies go out on WhatsApp from here."
+                  : "Replies are sent from here once this channel is connected."}
         </p>
       </div>
     </div>
