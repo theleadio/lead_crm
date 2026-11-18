@@ -295,10 +295,44 @@ export async function unlinkCampaign(
 // A link someone removed (an audited unlink of that class and campaign) is
 // never added back. Auto links have no created_by, which the class page shows
 // as "Linked automatically"; the audit row names the script in `after.by`.
-export async function autoLinkCampaigns(opts: { apply: boolean }): Promise<{
+//
+// Backfill (18 Nov): includePastDays = N also considers classes that started
+// in the last N days, and campaigns that spent up to N days earlier than the
+// usual window, so classes that already ran get their ads. Every rule above
+// is unchanged. The nightly job leaves it at 0.
+export type ClassFacts = {
+  id: string;
+  start_date: string;
+  course_name: string;
+  code: string;
+};
+
+// The class a campaign links to, or why it is skipped. Pure.
+export function pickClass(
+  campaign: { campaign_id: string; name: string },
+  classes: ClassFacts[],
+  removed: Set<string>,
+): { class: ClassFacts } | { skip: "none" | "more than one" | "removed" } {
+  const fits = classes.filter(
+    (k) =>
+      suggestsClass(campaign.name, k.start_date) &&
+      sharesCourseWord(campaign.name, k.course_name, k.code),
+  );
+  if (fits.length === 0) return { skip: "none" };
+  if (fits.length > 1) return { skip: "more than one" };
+  if (removed.has(`${fits[0].id}|${campaign.campaign_id}`))
+    return { skip: "removed" };
+  return { class: fits[0] };
+}
+
+export async function autoLinkCampaigns(opts: {
+  apply: boolean;
+  includePastDays?: number;
+}): Promise<{
   links: { classCode: string; campaignId: string; name: string }[];
   stats: Record<string, number>;
 }> {
+  const past = Math.max(0, Math.floor(opts.includePastDays ?? 0));
   return withTransaction(async () => {
     const sql = db();
     const classes = await sql`
@@ -306,11 +340,11 @@ export async function autoLinkCampaigns(opts: { apply: boolean }): Promise<{
              co.name_en AS course_name
       FROM class k JOIN course co ON co.id = k.course_id
       WHERE k.status <> 'cancelled'
-        AND k.start_date >= (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date`;
+        AND k.start_date >= (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date - ${past}::int`;
     const campaigns = await sql`
       SELECT m.campaign_id, (array_agg(m.campaign_name ORDER BY m.day DESC))[1] AS name
       FROM meta_ad_insight m
-      WHERE m.day >= (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date - ${CHOICE_DAYS}::int
+      WHERE m.day >= (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date - ${CHOICE_DAYS + past}::int
         ${accountSql(sql)}
         AND NOT EXISTS (SELECT 1 FROM class_meta_campaign l
                         WHERE l.meta_campaign_id = m.campaign_id)
@@ -331,21 +365,19 @@ export async function autoLinkCampaigns(opts: { apply: boolean }): Promise<{
     const bump = (k: string) => (stats[k] = (stats[k] ?? 0) + 1);
     const links: { classCode: string; campaignId: string; name: string }[] = [];
     for (const c of campaigns) {
-      const fits = classes.filter(
-        (k) =>
-          suggestsClass(c.name, k.start_date) &&
-          sharesCourseWord(c.name, k.course_name, k.code),
+      const pick = pickClass(
+        c as { campaign_id: string; name: string },
+        classes as unknown as ClassFacts[],
+        removed,
       );
-      if (fits.length === 0) continue;
-      if (fits.length > 1) {
-        bump("skip: fits more than one class");
+      if ("skip" in pick) {
+        if (pick.skip === "more than one")
+          bump("skip: fits more than one class");
+        else if (pick.skip === "removed")
+          bump("skip: someone removed this link");
         continue;
       }
-      const [k] = fits;
-      if (removed.has(`${k.id}|${c.campaign_id}`)) {
-        bump("skip: someone removed this link");
-        continue;
-      }
+      const k = pick.class;
       if (opts.apply) {
         // A person may have linked it since the read above: then nothing is
         // inserted, audited or counted (review, 12 Nov).
