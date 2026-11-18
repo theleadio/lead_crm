@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import type { ClassRecord } from "@/lib/classes/service";
 import { CLASS_MODES, ROOM_SEATS } from "@/lib/classes/types";
 import { NoticeDialog } from "./notice-dialog";
+import { versionHeaders } from "@/lib/api/version-headers";
 
 export type CourseOption = { id: string; nameEn: string; code: string };
 
@@ -157,7 +158,7 @@ export function ClassForm({
           headers: {
             "Content-Type": "application/json",
             // §7 (v1.7): only an edit carries a version.
-            ...(existing ? { "If-Match": String(existing.version) } : {}),
+            ...(existing ? versionHeaders(existing.version) : {}),
           },
           body: JSON.stringify(body),
         },

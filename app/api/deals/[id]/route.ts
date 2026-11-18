@@ -1,7 +1,12 @@
 import type { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { permissionFor } from "@/lib/auth/permissions";
-import { apiError, forbidden, validationError } from "@/lib/api/errors";
+import {
+  apiError,
+  forbidden,
+  readIfMatch,
+  validationError,
+} from "@/lib/api/errors";
 import { getDealDetail, updateDeal } from "@/lib/deals/detail-service";
 import { keepCorporateFieldsMessage } from "@/lib/deals/stage-rules";
 import { dealUpdateSchema } from "@/lib/validation/deal";
@@ -40,9 +45,9 @@ export async function PATCH(
   if (!viewer) return apiError(401, "unauthenticated", "Sign in to continue.");
 
   // §7 (v1.7): If-Match is the integer row version from the GET.
-  const header = request.headers.get("If-Match");
-  const ifMatch = header === null ? null : Number(header);
-  if (ifMatch === null || !Number.isInteger(ifMatch) || ifMatch < 1)
+  // If-Match, or X-Row-Version on the live site (lib/api/version-headers.ts).
+  const ifMatch = readIfMatch(request);
+  if (ifMatch === null)
     return apiError(
       428,
       "precondition_required",

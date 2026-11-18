@@ -291,6 +291,42 @@ it("a part-timer cannot touch someone else's task, or hand theirs on", async () 
   );
 });
 
+it("a duplicate review or a payment match can't be ticked done; it closes where its work is done", async () => {
+  const sales = await newUser("sales");
+  const a = await newPerson("Duplicate A");
+  const b = await newPerson("Duplicate B");
+  const [dup] = await db()`
+    INSERT INTO task (type, title, person_id, related_person_id, assigned_user_id)
+    VALUES ('review_duplicate', 'Possible duplicate', ${a}, ${b}, ${sales.id})
+    RETURNING id`;
+  const cls = await newClass();
+  const enrolment = await enrol(cls, "confirmed");
+  const [pay] = await db()`
+    INSERT INTO payment (enrolment_id, method, status, amount_myr, paid_at,
+                         match_status, reference_no, proof_file_key)
+    VALUES (${enrolment}, 'bank_transfer', 'succeeded', '500.00', now(), 'matched',
+            ${`REF-${crypto.randomUUID()}`}, 'proofs/x.pdf')
+    RETURNING id`;
+  const [match] = await db()`
+    INSERT INTO task (type, title, person_id, payment_id, assigned_user_id)
+    VALUES ('match_payment', 'Match payment', ${a}, ${pay.id}, ${sales.id})
+    RETURNING id`;
+
+  for (const [id, says] of [
+    [dup.id, /Not a duplicate/],
+    [match.id, /payment match screen/],
+  ] as const) {
+    const r = await patch(sales, id, { action: "complete" });
+    assert.equal(r.kind, "closes_elsewhere");
+    assert.match((r as { message: string }).message, says);
+    const [row] =
+      await db()`SELECT done_at, version FROM task WHERE id = ${id}`;
+    assert.equal(row.done_at, null, "still open");
+    // Editing one still works.
+    ok(await patch(sales, id, { action: "edit", notes: "Looked at it" }));
+  }
+});
+
 it("a withdrawn task cannot be reopened", async () => {
   const sales = await newUser("sales");
   const id = await newTask({ assignedTo: sales.id, cancelled: true });

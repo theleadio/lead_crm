@@ -1,5 +1,6 @@
 // SalesProcess (GoHighLevel) API reads, as the API returns them. Used by
-// ghl:import --from-api, ghl:attribution, ghl:payments and ghl:enrolments.
+// ghl:import --from-api, ghl:attribution, ghl:payments, ghl:enrolments and
+// ghl:opportunities.
 // Needs SALESPROCESS_API_TOKEN and SALESPROCESS_LOCATION_ID.
 const BASE = "https://services.leadconnectorhq.com";
 
@@ -76,4 +77,78 @@ export async function fetchOrder<T>(orderId: string): Promise<T> {
     `${BASE}/payments/orders/${orderId}?altId=${loc}&altType=location`,
     headers,
   );
+}
+
+// Every opportunity of the location, any status (the search returns only
+// open ones unless asked), paged by the API's nextPageUrl.
+export async function fetchOpportunities<T>(): Promise<T[]> {
+  const { loc, headers } = config();
+  const all: T[] = [];
+  let next: string | undefined =
+    `${BASE}/opportunities/search?location_id=${loc}&status=all&limit=100`;
+  while (next) {
+    const body: { opportunities?: T[]; meta?: { nextPageUrl?: string } } =
+      await getPage(next, headers);
+    const page = body.opportunities ?? [];
+    all.push(...page);
+    next = page.length ? body.meta?.nextPageUrl : undefined;
+  }
+  return all;
+}
+
+// The location's pipelines with their stages (names for the stage ids).
+export async function fetchPipelines<T>(): Promise<T[]> {
+  const { loc, headers } = config();
+  const body = await getPage<{ pipelines?: T[] }>(
+    `${BASE}/opportunities/pipelines?locationId=${loc}`,
+    headers,
+  );
+  return body.pipelines ?? [];
+}
+
+// The location's users (an opportunity's assignedTo), for their emails.
+export async function fetchUsers<T>(): Promise<T[]> {
+  const { loc, headers } = config();
+  const body = await getPage<{ users?: T[] }>(
+    `${BASE}/users/?locationId=${loc}`,
+    headers,
+  );
+  return body.users ?? [];
+}
+
+// Every form of the location (12 Nov 2026: 38 forms). The API pages by
+// `skip`, at most 50 a page.
+export async function fetchForms<T>(): Promise<T[]> {
+  const { loc, headers } = config();
+  const all: T[] = [];
+  for (let skip = 0; ; skip += 50) {
+    const body = await getPage<{ forms?: T[] }>(
+      `${BASE}/forms/?locationId=${loc}&limit=50&skip=${skip}`,
+      headers,
+    );
+    const page = body.forms ?? [];
+    all.push(...page);
+    if (page.length < 50) return all;
+  }
+}
+
+// Every submission of one form. Each also carries the submitter's name, email
+// and answers: callers must not log or store them. Without startAt/endAt the
+// API returns only about the last month (12 Nov: one form showed 0 by default
+// and 1,340 over all time), so the range is always given.
+export async function fetchFormSubmissions<T>(formId: string): Promise<T[]> {
+  const { loc, headers } = config();
+  const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+  const range = `startAt=2020-01-01&endAt=${tomorrow}`;
+  const all: T[] = [];
+  for (let page: number | null = 1; page;) {
+    const body: { submissions?: T[]; meta?: { nextPage?: number | null } } =
+      await getPage(
+        `${BASE}/forms/submissions?locationId=${loc}&formId=${formId}&${range}&limit=100&page=${page}`,
+        headers,
+      );
+    all.push(...(body.submissions ?? []));
+    page = body.meta?.nextPage ?? null;
+  }
+  return all;
 }

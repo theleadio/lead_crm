@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { permissionFor } from "@/lib/auth/permissions";
+import { canWriteDeal, permissionFor } from "@/lib/auth/permissions";
 import { mayUseEnquiries, teamsOf } from "@/lib/enquiries/access";
 import { mayCreateEnquiries } from "@/lib/enquiries/create";
 import { canEditEnquirySettings } from "@/lib/enquiries/settings";
@@ -69,6 +69,7 @@ export default async function EnquiriesPage(props: PageProps<"/enquiries">) {
         canWrite: write.allowed,
         assignedOnly: write.assignedOnly,
         teamIds,
+        canWriteDeal: canWriteDeal(user),
       }}
       users={users}
       categories={categories}

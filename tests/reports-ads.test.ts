@@ -6,7 +6,12 @@
 // be a second definition that could drift from the one that counts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fillWeeks, META_CHANNELS, META_SOURCES } from "../lib/reports/ads.ts";
+import {
+  daysInRange,
+  fillWeeks,
+  META_CHANNELS,
+  META_SOURCES,
+} from "../lib/reports/ads.ts";
 import { SPEND_UNAVAILABLE, NO_SPEND } from "../lib/reports/types.ts";
 import {
   adsReportQuerySchema,
@@ -151,4 +156,14 @@ test("weeks: a range inside a single week is one week", () => {
   const weeks = fillWeeks([], q, []);
   assert.equal(weeks.length, 1);
   assert.equal(weeks[0]!.weekStart, "2026-10-26");
+});
+
+test("daysInRange: a week the range cuts short says how many days it holds", () => {
+  // 13 Oct – 11 Nov 2026: the week of 12 Oct loses its Monday, the week of
+  // 9 Nov has Mon–Wed, the weeks between are whole.
+  assert.equal(daysInRange("2026-10-12", "2026-10-13", "2026-11-11"), 6);
+  assert.equal(daysInRange("2026-10-19", "2026-10-13", "2026-11-11"), 7);
+  assert.equal(daysInRange("2026-11-09", "2026-10-13", "2026-11-11"), 3);
+  // A one-day range inside one week.
+  assert.equal(daysInRange("2026-11-09", "2026-11-10", "2026-11-10"), 1);
 });

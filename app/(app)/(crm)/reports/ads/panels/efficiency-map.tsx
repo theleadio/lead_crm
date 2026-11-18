@@ -98,7 +98,7 @@ export function EfficiencyMapPanel({ points }: { points: EfficiencyPoint[] }) {
       r,
       cx,
       cy,
-      label: campaignLabel(p.displayName ?? p.campaign),
+      label: p.label ?? campaignLabel(p.displayName ?? p.campaign),
       // Where a label's text starts on the right, or ends on the left.
       labelAt: { right: cx + r + 4, left: cx - r - 4 },
     };
@@ -112,8 +112,8 @@ export function EfficiencyMapPanel({ points }: { points: EfficiencyPoint[] }) {
         <>
           One point per campaign: what it cost, and the seats it produced.
           Bubble size is the grant-funded share. Signups are credited to the
-          campaign of the buyer&apos;s first touch, per person — a buyer with
-          two purchases credits that campaign twice (O30).
+          campaign that first brought the buyer in — a buyer with two purchases
+          counts twice for that campaign.
         </>
       }
     >

@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { BackLink, DetailHeader, Panel, Row } from "@/components/detail-kit";
 import { Badge } from "@/components/ui/badge";
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { permissionFor } from "@/lib/auth/permissions";
+import { canWriteDeal, permissionFor } from "@/lib/auth/permissions";
 import { mayUseEnquiries, teamsOf } from "@/lib/enquiries/access";
 import { enquiryDetail, type EnquiryDetail } from "@/lib/enquiries/detail";
 import { listCategories } from "@/lib/enquiries/routing";
@@ -17,6 +17,7 @@ import {
   queueCells,
   rowActions,
 } from "../queue-view";
+import { ConvertControl } from "../context-panel";
 import { EnquiryActions } from "./enquiry-actions";
 
 // One enquiry (migration 019): what the queue shows, plus its history, notes
@@ -39,6 +40,7 @@ export default async function EnquiryPage(props: PageProps<"/enquiries/[id]">) {
     canWrite: write.allowed,
     assignedOnly: write.assignedOnly,
     teamIds,
+    canWriteDeal: canWriteDeal(user),
   };
   const row = detail.row;
   const can = rowActions(row, access);
@@ -189,6 +191,7 @@ export default async function EnquiryPage(props: PageProps<"/enquiries/[id]">) {
             categories={categories.filter((c) => c.active)}
             viewerId={user.id}
           />
+          <ConvertControl enquiry={row} canConvert={can.convert} />
         </aside>
       </div>
     </div>

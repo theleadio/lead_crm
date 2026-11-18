@@ -71,6 +71,10 @@ export async function signIn(
     client ?? (await serverClient())
   ).auth.signInWithPassword({ email, password });
   if (error) console.error("sign-in rejected by Supabase:", error);
+  // §9.15 Users: the last sign-in, which the Users tab shows as the status.
+  // Only a successful sign-in moves it.
+  if (!error && userId)
+    await db()`UPDATE app_user SET last_login_at = now() WHERE id = ${userId}`;
   // Unknown emails log with no user and no email, so strangers' data isn't kept.
   await writeAudit({
     userId,
@@ -78,7 +82,8 @@ export async function signIn(
     entity: "app_user",
     entityId: userId,
     before: null,
-    after: null,
+    // Says which way they signed in; Google sign-in (phase 2) writes "google".
+    after: error ? null : { method: "password" },
     ip,
   });
   return error ? { ok: false, error: WRONG_LOGIN } : { ok: true };

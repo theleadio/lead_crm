@@ -1,7 +1,12 @@
 import type { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { canWriteCompany, permissionFor } from "@/lib/auth/permissions";
-import { apiError, forbidden, validationError } from "@/lib/api/errors";
+import {
+  apiError,
+  forbidden,
+  readIfMatch,
+  validationError,
+} from "@/lib/api/errors";
 import { getCompanyDetail, updateCompany } from "@/lib/companies/service";
 import { companyUpdateSchema } from "@/lib/validation/company";
 
@@ -47,9 +52,9 @@ export async function PATCH(
 
   // §7 (v1.7): If-Match is the integer row version from the GET. New here —
   // company edit had no stale check at all before (record-concurrency).
-  const header = request.headers.get("If-Match");
-  const ifMatch = header === null ? NaN : Number(header);
-  if (!Number.isInteger(ifMatch) || ifMatch < 1)
+  // If-Match, or X-Row-Version on the live site (lib/api/version-headers.ts).
+  const ifMatch = readIfMatch(request);
+  if (ifMatch === null)
     return apiError(
       428,
       "precondition_required",

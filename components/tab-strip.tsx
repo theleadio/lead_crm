@@ -5,13 +5,16 @@ import { useRef } from "react";
 
 // §9.10 tabs, §13 keyboard: the tab lives in the URL so a refresh, a back
 // button and a deep link all land on the same panel (design 10). Roving
-// tabindex plus arrow keys, as a tablist is expected to behave.
+// tabindex plus arrow keys, as a tablist is expected to behave. Used by Class
+// detail and Settings (§9.15).
 export function TabStrip<T extends string>({
   tabs,
   active,
+  label,
 }: {
   tabs: { id: T; label: string }[];
   active: T;
+  label: string;
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -48,7 +51,7 @@ export function TabStrip<T extends string>({
   return (
     <div
       role="tablist"
-      aria-label="Class detail sections"
+      aria-label={label}
       className="border-line bg-surface-raised flex w-fit gap-1 rounded-full border p-1"
     >
       {tabs.map((tab, index) => (

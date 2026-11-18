@@ -12,6 +12,7 @@ import {
 } from "@/lib/enquiries/types";
 import type { OwnerOption } from "@/lib/people/types";
 import { enquiryLabel } from "../queue-view";
+import { versionHeaders } from "@/lib/api/version-headers";
 
 const FIELD =
   "border-line-strong bg-surface-sunken text-ink focus-visible:outline-focus-ring h-8 w-full rounded-sm border px-2.5 text-[13px] focus-visible:outline-2 focus-visible:outline-offset-2";
@@ -58,7 +59,7 @@ export function EnquiryActions({
       method,
       headers: {
         "Content-Type": "application/json",
-        ...(method === "PATCH" ? { "If-Match": String(row.version) } : {}),
+        ...(method === "PATCH" ? versionHeaders(row.version) : {}),
       },
       body: JSON.stringify(body),
     }).catch(() => null);

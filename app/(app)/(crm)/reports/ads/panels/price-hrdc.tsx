@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/table";
 import { formatMoneyMyr } from "@/lib/format/money";
 import type { PriceShareRow } from "@/lib/reports/funding";
+import { labelSlots, type Slot } from "./label-slots";
 import { Figures, PanelCard } from "./panel-card";
 
 // §9.18 price against HRDC share: the question is where a programme sits, not
@@ -113,37 +114,48 @@ export function PriceHrdcPanel({ rows }: { rows: PriceShareRow[] }) {
                 List price
               </text>
 
-              {/* A label on the dearest course would run off the right
-                  edge, and two courses at one price land on each other, so a
-                  point past the two-thirds mark is labelled to its left and a
-                  clash is nudged down a line. The mark never moves. */}
+              {/* Labels go through label-slots, as on the spend chart: off
+                  every point, the axis figures and the edges, at most two
+                  lines from their own point, biggest programme first. One
+                  with no room is left off; the hover text and the table
+                  below still name it. The mark never moves. */}
               {(() => {
-                const placed: { y: number; left: boolean }[] = [];
-                // Points at 0% sit on the bottom rule, so nudging down puts
-                // their labels over the axis numbers. Near the floor the
-                // stack goes up instead, and either way it stays inside the
-                // plot — a label outside it is worse than one omitted.
-                const nudge = (cy: number, left: boolean) => {
-                  const floor = PAD.top + PLOT_H - 6;
-                  const step = cy > floor - 26 ? -13 : 13;
-                  let dy = 0;
-                  while (
-                    placed.some(
-                      (q) => q.left === left && Math.abs(q.y - (cy + dy)) < 13,
-                    ) &&
-                    cy + dy + step > PAD.top &&
-                    cy + dy + step < floor
-                  ) {
-                    dy += step;
-                  }
-                  placed.push({ y: cy + dy, left });
-                  return dy;
-                };
-                return rows.map((row) => {
+                const R = 6;
+                const dots = rows.map((row) => {
                   const cx = x(Number(row.listPriceMyr));
                   const cy = y(row.hrdcShare);
-                  const toTheLeft = cx > PAD.left + PLOT_W * 0.66;
-                  const dy = nudge(cy, toTheLeft);
+                  return {
+                    row,
+                    cx,
+                    cy,
+                    at: { right: cx + R + 4, left: cx - R - 4 },
+                  };
+                });
+                const slot = labelSlots(
+                  {
+                    floor: PAD.top + PLOT_H + 8,
+                    ceiling: PAD.top - 6,
+                    left: PAD.left,
+                    right: WIDTH,
+                  },
+                  dots.map((d) => ({
+                    left: d.cx - R,
+                    right: d.cx + R,
+                    top: d.cy - R,
+                    bottom: d.cy + R,
+                  })),
+                );
+                const slots = new Map<string, Slot | null>();
+                for (const d of [...dots].sort(
+                  (a, b) => b.row.seats - a.row.seats,
+                ))
+                  slots.set(
+                    d.row.course,
+                    slot(d.at, d.cy + 4, d.row.course.length),
+                  );
+
+                return dots.map(({ row, cx, cy, at }) => {
+                  const s = slots.get(row.course);
                   return (
                     <g key={row.course}>
                       <title>
@@ -154,20 +166,22 @@ export function PriceHrdcPanel({ rows }: { rows: PriceShareRow[] }) {
                       <circle
                         cx={cx}
                         cy={cy}
-                        r="6"
+                        r={R}
                         fill="var(--lead-blue)"
                         stroke="var(--surface-raised)"
                         strokeWidth="2"
                       />
-                      <text
-                        x={toTheLeft ? cx - 10 : cx + 10}
-                        y={cy + 4 + dy}
-                        textAnchor={toTheLeft ? "end" : "start"}
-                        fontSize="11"
-                        fill="var(--ink-muted)"
-                      >
-                        {row.course}
-                      </text>
+                      {s && (
+                        <text
+                          x={s.side === "right" ? at.right : at.left}
+                          y={cy + 4 + s.dy}
+                          textAnchor={s.side === "right" ? "start" : "end"}
+                          fontSize="10"
+                          fill="var(--ink-muted)"
+                        >
+                          {row.course}
+                        </text>
+                      )}
                     </g>
                   );
                 });

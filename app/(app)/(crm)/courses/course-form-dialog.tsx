@@ -13,6 +13,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { COURSE_TRACKS } from "@/lib/validation/course";
 import type { CourseListItem } from "@/lib/courses/service";
+import { versionHeaders } from "@/lib/api/version-headers";
 
 export type CourseFormValues = {
   code: string;
@@ -135,7 +136,7 @@ function CourseForm({
             "Content-Type": "application/json",
             // §7 (v1.7): only an edit carries a version; a create has none.
             ...(courseId && version !== undefined
-              ? { "If-Match": String(version) }
+              ? versionHeaders(version)
               : {}),
           },
           body: JSON.stringify(body),

@@ -82,3 +82,10 @@ export const enquiryCreateSchema = z.object({
     .optional(),
 });
 export type EnquiryCreate = z.output<typeof enquiryCreateSchema>;
+
+// POST /api/enquiries/:id/convert (§9.13). The rest of the deal (company,
+// headcount, amount, funding) is filled on the deal itself afterwards.
+export const enquiryConvertSchema = z.object({
+  pipeline: z.enum(["individual", "corporate"], "Pick individual or corporate"),
+  courseId: uuid.nullable().optional(),
+});

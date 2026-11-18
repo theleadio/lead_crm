@@ -23,9 +23,14 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/014_meta_ad_insight.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/015_touchpoint_campaign_ids.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/016_salesprocess_payment.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/017_deal_external_ref.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/018_enquiry_resolution.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/019_enquiry_tickets.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/020_message_imported.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/021_after_hours_reply.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/022_message_provider_id.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/023_campaign_link_funding.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/024_revoke_inbox_browser.sql
     psql -d <db> -f lib/db/tests/schema_constraints.sql
     psql -d <db> -f lib/db/tests/002_merge_erase_tests.sql
     psql -d <db> -f lib/db/tests/003_company_from_form_tests.sql
@@ -39,8 +44,10 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -f lib/db/tests/011_task_source_key_tests.sql
     psql -d <db> -f lib/db/tests/012_rate_limit_tests.sql
     psql -d <db> -f lib/db/tests/013_click_ids_tests.sql
+    psql -d <db> -f lib/db/tests/017_deal_external_ref_tests.sql
     psql -d <db> -f lib/db/tests/018_enquiry_resolution_tests.sql
     psql -d <db> -f lib/db/tests/019_enquiry_tickets_tests.sql
+    psql -d <db> -f lib/db/tests/023_campaign_link_funding_tests.sql
 
 Current result on PostgreSQL 16 with 001–008 applied: 38 of 38, 42 of 42, 26 of 26, 8 of 8, 9 of 9, 26 of 26, 14 of 14 and 6 of 6. 001–007 were also run with and without Supabase's `anon`/`authenticated` roles present; 008 was run without them (it creates no functions, so privileges don't apply).
 
@@ -222,6 +229,31 @@ Tested on PostgreSQL 16 after 001–016, 018 and 019, applied twice: `019_enquir
 ## Migration 020 — imported WhatsApp history (11 Nov)
 
 `conversation_message.imported`, boolean, default false: set by the WhatsApp history import (`npm run wati:history`, `lib/wati/history.ts`), which also stamps `created_at` with the message's own time. lead_sales' automations trigger "customer message received" skips imported rows, so copying old chats in never starts a flow. Moved from lead_sales (its PR #20) with the inbox.
+
+## Migration 021 — WhatsApp after-hours reply (11 Nov)
+
+`conversation.after_hours_reply_until` (timestamptz): the opening time of the after-hours stretch a thread was last auto-answered in, so one stretch (closing to the next 08:30 working-day opening) gets one reply. `conversation_message.automated` (boolean, default false): sent by the system; WATI's echo of it is not counted as staff's first response. Used by the after-hours auto-reply, removed on 13 Nov; the columns stay, unused except `automated` on rows it already sent. No backfill.
+
+## Migration 022 — WATI's id on our sends (12 Nov)
+
+`conversation_message.provider_message_id` (text, nullable): WATI's `whatsappMessageId` for a message saved under an id of ours (an inbox template or auto-reply, `app:<uuid>`, or a lead_sales automation, `auto:<run>:<step>`, sent to WATI as `local_message_id`). The webhook stores it when an event finds the row by our id, so delivered / read / failed events carrying only WATI's id still find it; the row keeps our id, which lead_sales looks up so a retry never sends twice. Plus a partial index on outgoing `[template …]` rows for the inbox's template suggestions. No backfill.
+
+## Migration 023 — class ↔ Meta campaign link, seat funding (12 Nov)
+
+Agreed with Shawn on 12 Nov, before the 27 Nov freeze. Additive only; old code keeps working.
+
+- **`class_meta_campaign`** (`class_id`, `meta_campaign_id`, `campaign_name`, `created_at`, `created_by`): which Meta campaigns sell which class. Join on `meta_campaign_id` (Meta's numeric id, the `campaign_id` in `meta_ad_insight`), never on the name: `campaign_name` is a display copy taken when the link is made. A class can have many campaigns; a campaign belongs to one class at most (`class_meta_campaign_one_class`), so its opt-ins never count on two class cards. No foreign key to `meta_ad_insight`, which is per ad per day: a campaign can be linked before its first spend row. Not readable from the browser.
+- **`enrolment.funding_type`**: how this one seat is paid, in the LMS's own values: `self_funded`, `hrdc`, `internal`, `leaders_club`, `refresher`. Who pays stays in `payer_type`; `deal.funding_type` is unchanged. Nullable, no default: old rows are unknown until a sync fills them from the LMS (a separate data step). A value outside the list fails `enrolment_funding_type_check`; the LMS's full list is still owed by its owner, and a new value needs a migration that widens the CHECK (025 added `guest`).
+
+Tested on an empty PostgreSQL 18 database with 001–023 applied (12 Nov): 023 13 of 13, `schema_constraints.sql` 38, 005 9, 006 26. 009's "24 tables" check fails with or without 023 (34 tables since 013–020), so that test only holds right after 012.
+
+## Migration 024 — browser roles off the inbox tables (12 Nov)
+
+Migration 019 left `conversation`, `conversation_message`, `enquiry_category`, `enquiry_event`, `enquiry_rule`, `holiday`, `team` and `team_member` readable by Supabase's `anon` and `authenticated` roles, so the public anon key could read customer WhatsApp text through the REST API. 024 revokes them, as 014 and 023 do for their tables, and the views `consent_current` and `payment_net` too (owned by `postgres`, not `security_invoker`, so they read past the RLS on `consent` and `payment`); both apps use the direct connection, so nothing reads them that way. Applied to production by hand on 12 Nov, the day it was found.
+
+## Migration 025 — `guest` seat funding (13 Nov)
+
+Adds `guest` to `enrolment_funding_type_check` (023). The LMS records it on one seat; before 025 the sync left that seat empty with a warning. Shawn's call on #76: widen the CHECK rather than store it as `internal`. Widens only, same constraint name; every 023 value still passes. Rollback is in the file header (clear `guest` seats first).
 
 ## Where this is stricter or more specific than the spec
 

@@ -6,6 +6,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { flash } from "@/components/flash-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { versionHeaders } from "@/lib/api/version-headers";
 
 // §9.10 Cancel class, §9 cross-screen destructive actions: a real dialog that
 // names how many students are affected, a required reason, and the §13 line
@@ -40,7 +41,7 @@ export function CancelClass({
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "If-Match": String(version),
+        ...versionHeaders(version),
       },
       body: JSON.stringify({ reason }),
     });

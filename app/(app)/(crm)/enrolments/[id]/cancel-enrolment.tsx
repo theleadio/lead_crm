@@ -6,6 +6,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Toast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { versionHeaders } from "@/lib/api/version-headers";
 
 // §9.11 cancel, §9 cross-screen destructive actions: a real dialog, a required
 // reason (it is what `cancelled_reason` and the §11.1 EnrolmentCancelled event
@@ -37,7 +38,7 @@ export function CancelEnrolment({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "If-Match": String(version),
+          ...versionHeaders(version),
         },
         body: JSON.stringify({ toStatus: "cancelled", reason }),
       },

@@ -17,6 +17,7 @@
 // Switch to a Supabase Realtime / LISTEN trigger on the LMS if it grows.
 import postgres from "postgres";
 import { normalizePhoneE164 } from "../lib/format/phone.ts";
+import { lmsFundingType, seatSyncKey } from "../lib/import/lms-funding.ts";
 import { ROOM_SEATS } from "../lib/classes/types.ts";
 import {
   adoptEnrolment,
@@ -337,8 +338,9 @@ async function once() {
 
     // enrolment. Two LMS rows for one person+class would collide with the CRM's
     // active-enrolment index: keep the first, warn about the rest.
+    // The value side must follow seatSyncKey's order (lib/import/lms-funding.ts).
     const haveEnrol = await existing(
-      tx`SELECT id, price_paid_myr::float8 FROM enrolment`,
+      tx`SELECT id, price_paid_myr::float8, funding_type FROM enrolment`,
     );
     const active = new Map(
       (
@@ -358,9 +360,16 @@ async function once() {
     );
     const matched = new Set<string>();
     const adopt: { id: string; status: string; completed_at: Date }[] = [];
+    // Funding for seats the LMS adopts (import and hand-added seats keep their
+    // own ids), and LMS values the CRM doesn't know, counted for one warning.
+    const adoptFunding: { id: string; funding: string }[] = [];
+    const unknownFunding = new Map<string, number>();
     const enrols: Record<string, unknown>[] = [];
     for (const e of src.enrols) {
       if (onCancelled.has(e.cohort_id)) continue;
+      const { funding, unknown } = lmsFundingType(e.funding_type);
+      if (unknown)
+        unknownFunding.set(unknown, (unknownFunding.get(unknown) ?? 0) + 1);
       const personId = personOf.get(e.participant_id);
       if (!personId) {
         warnings.push(
@@ -384,6 +393,8 @@ async function once() {
         }
         matched.add(d.id);
         if (d.action === "update") adopt.push(d);
+        // An empty LMS value never clears what staff set on the seat.
+        if (funding) adoptFunding.push({ id: d.id, funding });
         bump("enrolment: adopted", d.action);
         continue;
       }
@@ -396,7 +407,7 @@ async function once() {
       }
       active.set(key, e.id);
       const seen = haveEnrol.get(e.id);
-      if (seen === JSON.stringify([e.amount_paid_cents / 100])) {
+      if (seen === seatSyncKey(e.amount_paid_cents / 100, funding)) {
         bump("enrolment", "same");
         continue;
       }
@@ -407,6 +418,7 @@ async function once() {
         status: finished ? "completed" : "confirmed",
         payer_type: e.funding_type === "hrdc" ? "company" : "self",
         price_paid_myr: e.amount_paid_cents / 100,
+        funding_type: funding,
         completed_at: finished ? cohortEnd.get(e.cohort_id) : null,
         created_at: e.created_at,
       });
@@ -427,13 +439,24 @@ async function once() {
 
     // A full class refuses the seat (no_seats): skip that row, not the whole sync.
     const codeOf = new Map(src.cohorts.map((k) => [classOf.get(k.id), k.slug]));
-    await upsert("enrolment", enrols, "id", ["price_paid_myr"], (row) => {
+    await upsert("enrolment", enrols, "id", ["price_paid_myr", "funding_type"], (row) => {
       stats.enrolment[haveEnrol.has(row.id as string) ? "update" : "insert"]--;
       bump("enrolment: class full", "same");
       warnings.push(`enrolment refused, class full: ${codeOf.get(row.class_id as string) ?? "(unknown class)"}`);
     });
     for (const a of adopt)
       await tx`UPDATE enrolment SET status = ${a.status}, completed_at = ${a.completed_at} WHERE id = ${a.id} AND status = 'confirmed'`;
+    for (const f of adoptFunding) {
+      const changed = await tx`
+        UPDATE enrolment SET funding_type = ${f.funding}
+        WHERE id = ${f.id} AND funding_type IS DISTINCT FROM ${f.funding}
+        RETURNING id`;
+      bump("enrolment: adopted funding", changed.length ? "update" : "same");
+    }
+    for (const [value, n] of unknownFunding)
+      warnings.push(
+        `funding_type "${value}" is not a CRM value, left empty on ${n} seat(s); widen enrolment_funding_type_check to keep it`,
+      );
 
     if (!apply) throw new Error("dry-run"); // roll back
   };

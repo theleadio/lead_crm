@@ -6,6 +6,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Toast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import { enumLabel } from "@/lib/classes/types";
+import { versionHeaders } from "@/lib/api/version-headers";
 
 // §9.11 status control, §12.4: one button per legal next status, never a
 // dropdown of all eleven. The server checks §12.4 again, so a stale screen
@@ -71,7 +72,7 @@ export function StatusControl({
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "If-Match": String(version),
+            ...versionHeaders(version),
           },
           body: JSON.stringify({ toStatus }),
         },

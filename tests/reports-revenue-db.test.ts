@@ -4,7 +4,7 @@
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { type Viewer } from "../lib/auth/permissions.ts";
-import { revenuePerCampaign } from "../lib/reports/ads.ts";
+import { paidInRange, revenuePerCampaign } from "../lib/reports/ads.ts";
 import { closeDb, db, rollbackAfter } from "../lib/sql.ts";
 import { adsReportQuerySchema } from "../lib/validation/report.ts";
 
@@ -15,7 +15,10 @@ const it = (name: string, fn: () => Promise<void>) =>
     rollbackAfter(fn),
   );
 
-const RANGE = adsReportQuerySchema.parse({ from: "2031-03-01", to: "2031-03-31" });
+const RANGE = adsReportQuerySchema.parse({
+  from: "2031-03-01",
+  to: "2031-03-31",
+});
 const uid = () => crypto.randomUUID().slice(0, 12);
 
 async function viewer(): Promise<Viewer> {
@@ -41,7 +44,8 @@ async function newClass(): Promise<string> {
 
 // A person whose first touch is a Meta lead form on `campaignId`, 10 Mar 2031.
 async function lead(campaignId: string): Promise<string> {
-  const [p] = await db()`INSERT INTO person (full_name) VALUES ('Buyer') RETURNING id`;
+  const [p] =
+    await db()`INSERT INTO person (full_name) VALUES ('Buyer') RETURNING id`;
   await db()`
     INSERT INTO touchpoint (person_id, channel, occurred_at, utm_campaign_id, is_first_touch)
     VALUES (${p.id}, 'lead_form', '2031-03-10T04:00:00Z', ${campaignId}, true)`;
@@ -109,7 +113,12 @@ it("revenue: CRM payments net of refunds, instalments one order, a deal-only pay
   const buyer = await lead(campaign);
   const enrolment = await seat(buyer, classId);
   await crmPayment({ enrolment, amount: 300 });
-  await crmPayment({ enrolment, amount: 380, refunded: 80, status: "partially_refunded" });
+  await crmPayment({
+    enrolment,
+    amount: 380,
+    refunded: 80,
+    status: "partially_refunded",
+  });
 
   const dealBuyer = await lead(campaign);
   const [d] = await db()`
@@ -132,8 +141,18 @@ it("revenue: refunded, pending, out-of-range and paid-before-first-touch CRM pay
   const buyer = await lead(campaign);
   const enrolment = await seat(buyer, classId);
 
-  await crmPayment({ enrolment, amount: 680, refunded: 680, status: "refunded" });
-  await crmPayment({ enrolment, amount: 680, status: "pending", paidAt: "2031-03-15T04:00:00Z" });
+  await crmPayment({
+    enrolment,
+    amount: 680,
+    refunded: 680,
+    status: "refunded",
+  });
+  await crmPayment({
+    enrolment,
+    amount: 680,
+    status: "pending",
+    paidAt: "2031-03-15T04:00:00Z",
+  });
   await crmPayment({ enrolment, amount: 680, paidAt: "2031-04-02T04:00:00Z" });
   // Inside the range but before the 10 Mar first touch: the ad did not sell it.
   await crmPayment({ enrolment, amount: 680, paidAt: "2031-03-05T04:00:00Z" });
@@ -145,7 +164,10 @@ it("revenue: an unmatched CRM payment (no enrolment, no deal) is not credited", 
   const v = await viewer();
   const campaign = `c-${uid()}`;
   const classId = await newClass();
-  await crmPayment({ enrolment: await seat(await lead(campaign), classId), amount: 680 });
+  await crmPayment({
+    enrolment: await seat(await lead(campaign), classId),
+    amount: 680,
+  });
   await db()`
     INSERT INTO payment (match_status, method, status, amount_myr, paid_at)
     VALUES ('unmatched', 'stripe_card', 'succeeded', 1000, '2031-03-15T04:00:00Z')`;
@@ -155,4 +177,37 @@ it("revenue: an unmatched CRM payment (no enrolment, no deal) is not credited", 
     revenue: "680.00",
     orders: 1,
   });
+});
+
+it("paid in range: everything paid, credited or not, so the ROAS note can say what the bars leave out", async () => {
+  const v = await viewer();
+  const classId = await newClass();
+  // Credited: a Meta lead who enrolled and paid.
+  await crmPayment({
+    enrolment: await seat(await lead(`c-${uid()}`), classId),
+    amount: 680,
+  });
+  // Not credited: a buyer no Meta campaign found.
+  const [walkIn] =
+    await db()`INSERT INTO person (full_name) VALUES ('Walk-in') RETURNING id`;
+  await crmPayment({ enrolment: await seat(walkIn.id, classId), amount: 500 });
+  // Not credited: paid, and matched to nobody yet.
+  await db()`
+    INSERT INTO payment (match_status, method, status, amount_myr, paid_at)
+    VALUES ('unmatched', 'stripe_card', 'succeeded', 1000, '2031-03-15T04:00:00Z')`;
+  // Out of range: not paid in range.
+  await crmPayment({
+    enrolment: await seat(walkIn.id, await newClass()),
+    amount: 900,
+    paidAt: "2031-04-02T04:00:00Z",
+  });
+
+  // Not credited: a SalesProcess payment whose buyer was never imported.
+  await db()`
+    INSERT INTO salesprocess_payment (id, order_id, ghl_contact_id, status, amount_myr,
+                                      currency, live_mode, paid_at)
+    VALUES (${uid()}, ${uid()}, ${uid()}, 'succeeded', 44, 'MYR', true,
+            '2031-03-16T04:00:00Z')`;
+
+  assert.equal(await paidInRange(v, RANGE), "2224.00");
 });

@@ -78,8 +78,11 @@ export function withCors(
 
 // x-real-ip, then the first x-forwarded-for hop, as the platform sets them.
 // Only sound behind a proxy that overwrites both (Vercel does) — see O40.
-export function requestIp(headers: Headers): string | null {
+// `trusted` (the API key checked out): lead_sales pages call server to server,
+// so the platform IP is theirs; X-Lead-Client-Ip carries the visitor's.
+export function requestIp(headers: Headers, trusted = false): string | null {
   return (
+    (trusted ? clientIp(headers.get("x-lead-client-ip")) : null) ??
     clientIp(headers.get("x-real-ip")) ??
     clientIp(headers.get("x-forwarded-for"))
   );

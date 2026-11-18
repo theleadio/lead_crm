@@ -185,6 +185,42 @@ it("the session carries the three metadata ids and the class's own price", async
   assert.ok(call.cancelUrl.startsWith("https://lead.test/register/"));
 });
 
+it("register with returnUrl on ai.thelead.io uses it for Stripe success and cancel", async () => {
+  const classId = await newClass({});
+  const stripe = fakeCheckout();
+  await created(
+    await post(
+      form(await classCode(classId), {
+        returnUrl: "https://ai.thelead.io/x/thanks",
+      }),
+      { checkout: stripe.port },
+    ),
+  );
+  assert.equal(
+    stripe.calls[0].successUrl,
+    "https://ai.thelead.io/x/thanks?session_id={CHECKOUT_SESSION_ID}",
+  );
+  assert.equal(stripe.calls[0].cancelUrl, "https://ai.thelead.io/x/thanks");
+});
+
+it("register with returnUrl elsewhere falls back to the CRM thank-you URL", async () => {
+  const classId = await newClass({});
+  const stripe = fakeCheckout();
+  for (const returnUrl of [
+    "https://evil.test/x",
+    "https://ai.thelead.io.evil.test/x",
+    "http://ai.thelead.io/x",
+  ]) {
+    await created(
+      await post(form(await classCode(classId), { returnUrl }), {
+        checkout: stripe.port,
+      }),
+    );
+  }
+  for (const c of stripe.calls)
+    assert.ok(c.successUrl.startsWith("https://lead.test/register/thank-you"));
+});
+
 it("a Chinese registration comes back to the Chinese thank-you page", async () => {
   const classId = await newClass({});
   const stripe = fakeCheckout();

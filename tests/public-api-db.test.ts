@@ -889,6 +889,57 @@ it("attribution: the O61 click ids are stored on the touchpoint", async () => {
   );
 });
 
+it("attribution: utmId and utmAdId are stored as the touchpoint's campaign and ad ids", async () => {
+  const r = await ok(
+    await lead(
+      form({
+        attribution: {
+          utmSource: "facebook",
+          utmId: "6878812432797",
+          utmAdId: "120210000000001",
+        },
+      }),
+    ),
+  );
+  const [t] = await db()`
+    SELECT utm_campaign_id, utm_ad_id FROM touchpoint WHERE person_id = ${r.personId}`;
+  assert.equal(t.utm_campaign_id, "6878812432797");
+  assert.equal(t.utm_ad_id, "120210000000001");
+  assert.equal(
+    (await lead(form({ attribution: { utmAdId: "x".repeat(201) } }))).status,
+    400,
+  );
+});
+
+it("lead: createDeal false makes person and touchpoint but no deal; LeadCaptured carries dealId null", async () => {
+  const r = (await (
+    await lead(form({ createDeal: false }))
+  ).json()) as { ok: true; personId: string; dealId: string | null };
+  assert.equal(r.dealId, null);
+  assert.equal(await count("person", "id = $1", r.personId), 1);
+  assert.equal(await count("touchpoint", "person_id = $1", r.personId), 1);
+  assert.equal(await count("deal", "person_id = $1", r.personId), 0);
+  const [e] = await db()`
+    SELECT payload FROM event_outbox
+    WHERE type = 'LeadCaptured' AND aggregate_id = ${r.personId}`;
+  assert.equal(e.payload.dealId, null);
+});
+
+it("X-Lead-Client-Ip: used for the rate limit with a valid key, ignored without one", async () => {
+  const ip = "203.0.113.55";
+  const bucket = `ip:${createHmac("sha256", RL_SECRET).update(ip).digest("hex")}`;
+  await ok(await lead(form(), { headers: { "x-lead-client-ip": ip } }));
+  assert.equal(await count("rate_limit_hit", "bucket = $1", bucket), 1);
+
+  const ip2 = "203.0.113.56";
+  const bucket2 = `ip:${createHmac("sha256", RL_SECRET).update(ip2).digest("hex")}`;
+  const bad = await lead(form(), {
+    headers: { "x-api-key": "wrong", "x-lead-client-ip": ip2 },
+  });
+  assert.equal(bad.status, 401);
+  assert.equal(await count("rate_limit_hit", "bucket = $1", bucket2), 0);
+});
+
 test("cleanUrl: path and utm_* and click ids only; credentials, fragments and non-http dropped", () => {
   assert.equal(
     cleanUrl("https://u:p@x.test/a/b?gclid=1&q=x&utm_term=y#h"),

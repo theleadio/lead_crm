@@ -41,7 +41,11 @@ export type EnquiryWriteResult =
   | { kind: "inactive_user" }
   | { kind: "not_in_team" }
   | { kind: "unknown_category" }
-  | { kind: "not_open"; status: EnquiryStatus };
+  | { kind: "not_open"; status: EnquiryStatus }
+  // Convert only (convert.ts): the deal rules refused the deal, or the
+  // enquiry's person has been deleted or merged away since.
+  | { kind: "deal_refused"; fields: Record<string, string> }
+  | { kind: "person_gone" };
 
 // Free text about a person. audit_log is append-only and erase_person() can't
 // reach it, so these columns are never copied into an audit row (#48 review).
@@ -62,7 +66,9 @@ type Change = {
   assigned?: { teamId: string; userId: string | null };
 };
 
-async function writeEnquiry(
+// Exported for convert.ts, so converting closes an enquiry exactly as every
+// other write does.
+export async function writeEnquiry(
   id: string,
   ifMatch: number,
   viewer: Viewer,

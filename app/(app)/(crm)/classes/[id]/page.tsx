@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { BackLink, DetailHeader } from "@/components/detail-kit";
+import { TabStrip } from "@/components/tab-strip";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import {
   canExportClassLists,
@@ -11,6 +12,7 @@ import {
   permissionFor,
   type Viewer,
 } from "@/lib/auth/permissions";
+import { canLinkCampaigns, classCampaigns } from "@/lib/classes/campaigns";
 import { listClassNotices } from "@/lib/classes/notices";
 import { listRoster } from "@/lib/classes/roster";
 import { getCourse, listCourses } from "@/lib/courses/service";
@@ -23,7 +25,6 @@ import { ClassControls } from "./class-controls";
 import { DetailsTab } from "./details-tab";
 import { NoticesTab } from "./notices-tab";
 import { RosterTab } from "./roster-tab";
-import { TabStrip } from "./tab-strip";
 
 // Spec §9.10 Class detail. Server-rendered, like the 9.9 edit form: the tab in
 // the URL decides which panel is built, so a part-timer's page never carries
@@ -79,7 +80,7 @@ export default async function ClassDetailPage(
         canWrite={canWrite && !editing}
         websiteGaps={websiteGaps(cls, course?.listPriceMyr ?? null)}
       />
-      <TabStrip tabs={tabs} active={tab} />
+      <TabStrip tabs={tabs} active={tab} label="Class detail sections" />
 
       {editing && courses && (
         <section className="border-line bg-surface-raised rounded-md border p-5">
@@ -101,6 +102,8 @@ export default async function ClassDetailPage(
           // §12.1: seats taken is the two counts the database gave us, so the
           // dialog's number needs no query of its own.
           seatHolders={cls.confirmedCount + cls.reservedCount}
+          campaigns={await classCampaigns(id, user)}
+          canLinkCampaigns={canLinkCampaigns(user)}
         />
       )}
       {tab === "roster" && (

@@ -12,7 +12,7 @@ import type { LeadInput } from "../validation/public.ts";
 // One transaction: either the person, touchpoint, consent, deal and the
 // LeadCaptured row all exist, or none of them do.
 
-export type LeadResult = { personId: string; dealId: string };
+export type LeadResult = { personId: string; dealId: string | null };
 export type LeadContext = {
   // No ip: audit_log is append-only, so a public write must not put the
   // visitor's address there (PDPA; guard.ts keeps it out of the rate-limit
@@ -191,6 +191,7 @@ async function insertLead(
       INSERT INTO touchpoint (person_id, channel, utm_source, utm_medium,
                               utm_campaign, utm_content, utm_term, gclid, fbclid,
                               gbraid, wbraid, li_fat_id, ttclid,
+                              utm_campaign_id, utm_ad_id,
                               landing_url, referrer, form_name, is_first_touch,
                               external_ref)
       VALUES (${personId}, 'web_form', ${a?.utmSource ?? null},
@@ -198,7 +199,8 @@ async function insertLead(
               ${a?.utmContent ?? null}, ${a?.utmTerm ?? null},
               ${a?.gclid ?? null}, ${a?.fbclid ?? null},
               ${a?.gbraid ?? null}, ${a?.wbraid ?? null},
-              ${a?.liFatId ?? null}, ${a?.ttclid ?? null}, ${ctx.landingUrl},
+              ${a?.liFatId ?? null}, ${a?.ttclid ?? null},
+              ${a?.utmId ?? null}, ${a?.utmAdId ?? null}, ${ctx.landingUrl},
               ${ctx.referrer}, ${input.formName},
               ${priorTouches === 0 && !cookieFirst}, ${input.idempotencyKey})
       RETURNING id`;
@@ -260,11 +262,12 @@ async function insertLead(
       }
     }
 
-    // 6. Deal in `new`, unless this person already has an open one for the
+    // 6. (createDeal false: none; the person and touchpoint stand alone.)
+    // Deal in `new`, unless this person already has an open one for the
     // same course. Class code wins over course interest; unknown codes, and
     // classes the public schedule does not show (private, draft, cancelled,
     // completed), are ignored: the lead is still worth capturing.
-    const [cls] = input.classCode
+    const [cls] = input.createDeal && input.classCode
       ? await sql`
           SELECT id, course_id FROM class
           WHERE lower(code) = lower(${input.classCode})
@@ -282,14 +285,18 @@ async function insertLead(
     // until commit, so the second waits there and then sees the first's deal.
     // (tests/public-api-db.test.ts fails if that UPDATE is removed.) If that
     // UPDATE ever moves after this lookup, lock the row here with FOR UPDATE.
-    const [open] = await sql`
+    const [open] = input.createDeal
+      ? await sql`
       SELECT id FROM deal
       WHERE person_id = ${personId} AND deleted_at IS NULL
         AND stage NOT IN ('won', 'lost')
         AND course_id IS NOT DISTINCT FROM ${courseId}::uuid
-      ORDER BY created_at DESC LIMIT 1`;
-    let dealId: string;
-    if (open) {
+      ORDER BY created_at DESC LIMIT 1`
+      : [];
+    let dealId: string | null = null;
+    if (!input.createDeal) {
+      // no deal
+    } else if (open) {
       dealId = open.id;
     } else {
       const [d] = await sql`

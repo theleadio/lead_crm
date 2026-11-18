@@ -9,7 +9,9 @@ import { writeAudit } from "../audit.ts";
 import { stageLabel } from "../deals/types.ts";
 import { normalizeEmail } from "../format/email.ts";
 import { maskEmail, maskPhone } from "../format/mask.ts";
+import { formatDate } from "../format/date.ts";
 import { formatMoneyMyr } from "../format/money.ts";
+import { parseWorkshopForm } from "../import/ghl-forms.ts";
 import { normalizePhoneE164 } from "../format/phone.ts";
 import { db, withTransaction } from "../sql.ts";
 import type { PersonUpdate } from "../validation/person.ts";
@@ -173,15 +175,24 @@ export async function getPersonDetail(
   const duplicateOf = await pairIfFlagged(p);
 
   const touches = await sql`
-    SELECT id, occurred_at, channel, utm_source, utm_campaign, is_first_touch
+    SELECT id, occurred_at, channel, utm_source, utm_campaign, is_first_touch,
+           form_name, external_ref
     FROM touchpoint WHERE person_id = ${p.id} ORDER BY occurred_at`;
-  const toTouch = (t: (typeof touches)[number]): Touchpoint => ({
-    id: t.id,
-    occurredAt: t.occurred_at.toISOString(),
-    channel: t.channel,
-    utmSource: t.utm_source,
-    utmCampaign: t.utm_campaign,
-  });
+  const toTouch = (t: (typeof touches)[number]): Touchpoint => {
+    const workshop = String(t.external_ref ?? "").startsWith("ghl-form:")
+      ? parseWorkshopForm(t.form_name ?? "")
+      : null;
+    return {
+      id: t.id,
+      occurredAt: t.occurred_at.toISOString(),
+      channel: t.channel,
+      utmSource: t.utm_source,
+      utmCampaign: t.utm_campaign,
+      registeredFor: workshop
+        ? `${workshop.title} · ${formatDate(`${workshop.date}T00:00:00Z`)}`
+        : null,
+    };
+  };
   const first = touches.find((t) => t.is_first_touch) ?? touches[0];
   const latest = touches.at(-1);
 

@@ -109,6 +109,10 @@ export async function PATCH(
         "That category is switched off or no longer exists. Pick another.",
         { fields: { category: "Pick a category from the list" } },
       );
+    // Convert only (POST …/convert); never from this route.
+    case "deal_refused":
+    case "person_gone":
+      return apiError(422, "invalid", "That change isn't possible here.");
     case "not_open":
       return apiError(
         422,

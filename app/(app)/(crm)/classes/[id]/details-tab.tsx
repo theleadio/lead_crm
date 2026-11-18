@@ -3,11 +3,14 @@ import { formatMoneyMyr } from "@/lib/format/money";
 import type { ClassRecord } from "@/lib/classes/service";
 import { enumLabel } from "@/lib/classes/types";
 import { formatDate } from "@/lib/format/date";
+import type { CampaignChoice, LinkedCampaign } from "@/lib/classes/campaigns";
 import { CancelClass } from "./cancel-class";
+import { ClassCampaigns } from "./class-campaigns";
 
 // §9.10 Details tab: the §5 class fields, read-only. Editing is the 9.9
-// form's job; the only writes offered here are Edit (in the header) and
-// Cancel class, both for super_admin and operations only (§6).
+// form's job; the writes offered here are Edit (in the header) and Cancel
+// class, both for super_admin and operations only (§6), plus linking Meta
+// campaigns, which marketing and management may do too (12 Nov 2026).
 
 const NOT_SET = "Not set";
 // Today in Kuala Lumpur (§4), the day the cancel rule counts from.
@@ -25,9 +28,15 @@ export function DetailsTab({
   canWrite,
   seatHolders,
   courseListPriceMyr,
+  campaigns,
+  canLinkCampaigns,
 }: {
   cls: ClassRecord;
   canWrite: boolean;
+  // The Meta campaigns that sell this class, and the ones that could
+  // (lib/classes/campaigns.ts); linking is open to more roles than editing.
+  campaigns: { linked: LinkedCampaign[]; choices: CampaignChoice[] };
+  canLinkCampaigns: boolean;
   // A class with no price of its own sells at its course's list price (§5).
   courseListPriceMyr: string | null;
   // How many students the cancel dialog will name. Counted on the server
@@ -123,6 +132,15 @@ export function DetailsTab({
           <span className="text-ink-muted">On the website</span>
           <span>{cls.isPublic ? "Yes" : "No"}</span>
         </Row>
+      </Panel>
+
+      <Panel title="Meta campaigns">
+        <ClassCampaigns
+          classId={cls.id}
+          linked={campaigns.linked}
+          choices={campaigns.choices}
+          canLink={canLinkCampaigns}
+        />
       </Panel>
 
       {canWrite && (

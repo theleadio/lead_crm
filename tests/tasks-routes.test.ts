@@ -42,6 +42,11 @@ test("each write result has one status and code", async () => {
     [{ kind: "conflict", message: "Already done." }, 409, "conflict"],
     [{ kind: "inactive_user" }, 422, "inactive_user"],
     [{ kind: "due_locked" }, 422, "due_locked"],
+    [
+      { kind: "closes_elsewhere", message: "Settle it on the person." },
+      422,
+      "closes_elsewhere",
+    ],
   ];
   for (const [result, status, code] of cases) {
     const res = taskWriteResponse(result, 200);

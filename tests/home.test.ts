@@ -6,7 +6,11 @@ import assert from "node:assert/strict";
 import { STAGES } from "../lib/deals/types.ts";
 import { formatOverdue } from "../lib/format/date.ts";
 import { sumMyr } from "../lib/format/money.ts";
-import { openStageTotals, summariseTasks } from "../lib/home/service.ts";
+import {
+  openStageTotals,
+  optinsOrNull,
+  summariseTasks,
+} from "../lib/home/service.ts";
 import type { HomeTask } from "../lib/home/types.ts";
 
 const totalsFor = (pipeline: "individual" | "corporate") =>
@@ -99,4 +103,21 @@ test("overdue reads in the largest honest unit", () => {
   assert.equal(formatOverdue("2026-10-04T12:00:00+08:00", now), "1 day late");
   assert.equal(formatOverdue("2026-10-05T07:00:00+08:00", now), "5 hours late");
   assert.equal(formatOverdue("2026-10-05T11:30:00+08:00", now), "due now");
+});
+
+// Review (12 Nov): opt-ins are an extra on the class cards, so a failing
+// opt-ins read must leave the cards loading rather than take the panel down.
+test("a failing opt-ins read gives no number instead of an error", async () => {
+  const original = console.error;
+  console.error = () => {};
+  try {
+    const failed = await optinsOrNull(async () => {
+      throw new Error('relation "class_meta_campaign" does not exist');
+    });
+    assert.equal(failed, null);
+  } finally {
+    console.error = original;
+  }
+  const counts = new Map([["c1", { linkedCampaigns: 1, people: 3 }]]);
+  assert.equal(await optinsOrNull(async () => counts), counts);
 });

@@ -39,11 +39,15 @@ const str = (v: unknown): string | null =>
       ? String(v)
       : null;
 
-// The referral on a customer's message, or null. WATI sends it as an object
-// through the API; a JSON string is accepted too.
-export function referralOf(m: WatiMessage): CtwaReferral | null {
+// The referral on a customer's message, or null. WATI's API gives it as a
+// `messageReferral` object; a JSON string is accepted too. The webhook's shape
+// is not confirmed yet (no live delivery on 11 Nov), so flat `sourceId` /
+// `ctwaClid` / `sourceUrl` fields on the event itself are read as well.
+export function referralOf(
+  m: WatiMessage & Record<string, unknown>,
+): CtwaReferral | null {
   if (m.owner === true) return null; // sent by us, not the customer
-  let r = m.messageReferral;
+  let r = m.messageReferral ?? m.referral;
   if (typeof r === "string") {
     try {
       r = JSON.parse(r);
@@ -51,6 +55,8 @@ export function referralOf(m: WatiMessage): CtwaReferral | null {
       return null;
     }
   }
+  if (!r && (m.sourceId != null || m.ctwaClid != null))
+    r = { sourceId: m.sourceId, ctwaClid: m.ctwaClid, url: m.sourceUrl };
   if (!r || typeof r !== "object") return null;
   const o = r as Record<string, unknown>;
   const adId = str(o.sourceId);

@@ -8,7 +8,7 @@
 // panel says which source it used.
 //
 // HRDC is `funding_type = 'hrdc'`. The LMS also records `self_funded`,
-// `internal`, `leaders_club` and `refresher`; none of those is a grant, so
+// `internal`, `leaders_club`, `refresher` and `guest`; none of those is a grant, so
 // they count as not-HRDC rather than being folded into a guess.
 
 import { requireReportReader } from "./ads.ts";

@@ -73,7 +73,7 @@ export function TopAdsPanel({
                 <TableRow key={`${row.campaignId ?? row.campaign}-${row.ad}`}>
                   <TableCell>{row.ad}</TableCell>
                   <TableCell title={row.campaign}>
-                    {campaignLabel(row.campaign)}
+                    {row.label ?? campaignLabel(row.campaign)}
                   </TableCell>
                   <TableCell>
                     <span className="flex items-center gap-2">

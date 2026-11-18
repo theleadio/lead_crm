@@ -35,6 +35,7 @@ import {
 } from "@/lib/enquiries/types";
 import { formatDateTime } from "@/lib/format/date";
 import type { ListResponse, OwnerOption } from "@/lib/people/types";
+import { versionHeaders } from "@/lib/api/version-headers";
 
 // FilterSelect's look, for the selects it cannot be: the status filter (no
 // value means open or waiting, not all) and the row actions.
@@ -207,7 +208,7 @@ export function EnquiriesQueue({
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        "If-Match": String(row.version),
+        ...versionHeaders(row.version),
       },
       body: JSON.stringify(body),
     }).catch(() => null);
@@ -285,7 +286,7 @@ export function EnquiriesQueue({
       <ListHeader title="Enquiries">
         {canEditSettings && (
           <Button asChild variant="outline">
-            <Link href="/settings/enquiries">Teams and categories</Link>
+            <Link href="/settings?tab=enquiries">Teams and categories</Link>
           </Button>
         )}
         {canCreate && (
@@ -434,9 +435,9 @@ export function EnquiriesQueue({
                   ) : (
                     <EmptyRow columns={columns}>
                       This is the support queue: every enquiry waiting for a
-                      reply, oldest first. They arrive from the help form, from
-                      the inbox, or are added by hand — there are none open
-                      right now.
+                      reply, oldest first. They arrive from WhatsApp, the help
+                      form and the inbox, or are added by hand — there are none
+                      open right now.
                     </EmptyRow>
                   ))}
                 {rows.map((row) => {
@@ -695,6 +696,7 @@ export function EnquiriesQueue({
               key={selectedRow.id}
               enquiry={selectedRow}
               closeHref={closeHref}
+              canConvert={rowActions(selectedRow, access).convert}
             />
           </div>
         )}

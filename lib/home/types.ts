@@ -53,6 +53,27 @@ export type HomeClass = {
   capacity: number;
   // Seats taken per §12.1.
   sold: number;
+  // WhatsApp opt-ins from the Meta campaigns linked to this class (migration
+  // 023): distinct live people, all time. null when this viewer may not see
+  // lead counts (canSeeLeadCounts).
+  optins: { linkedCampaigns: number; people: number } | null;
+};
+
+// A free workshop on Home, read from its GHL registration form's name
+// (lib/home/workshops.ts). Not a class, so there is no id to link to.
+export type HomeWorkshop = {
+  title: string;
+  language: "en" | "zh";
+  // YYYY-MM-DD
+  date: string;
+  // Distinct live people who registered on any of its forms, all time.
+  signups: number;
+  // How many registration forms were merged into this workshop.
+  forms: number;
+  // Sign-up goal set on Home (app_setting), null until someone sets one;
+  // goalVersion is what an edit sends back (§7).
+  goal: number | null;
+  goalVersion: number | null;
 };
 
 // One count per item, and null for an item this role cannot act on (§9.0:
