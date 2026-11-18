@@ -492,8 +492,22 @@ function firstCampaignSql(sql: postgres.Sql) {
 // The payments ROAS counts, one row per payment with its buyer: SalesProcess
 // payments plus CRM `payment` rows, net of refunds, paid in the range. Shared
 // by `revenuePerCampaign` and `paidInRange`, so the panel's "of RM Y paid"
-// is the same money its bars are cut from.
+// is the same money its bars are cut from, and by the Conversions API
+// (lib/meta/capi.ts), so Meta hears the same orders and values as the report.
 function paidSql(sql: postgres.Sql, q: AdsReportQuery) {
+  return paidBetweenSql(
+    sql,
+    sql`(${q.from}::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')`,
+    sql`((${q.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')`,
+  );
+}
+
+// `from` is inclusive and `to` exclusive, both timestamptz expressions.
+export function paidBetweenSql(
+  sql: postgres.Sql,
+  from: postgres.PendingQuery<postgres.Row[]>,
+  to: postgres.PendingQuery<postgres.Row[]>,
+) {
   return sql`
     paid AS (
       SELECT DISTINCT b.person_id, sp.id, coalesce(sp.order_id, sp.id) AS order_key,
@@ -508,8 +522,8 @@ function paidSql(sql: postgres.Sql, q: AdsReportQuery) {
       WHERE sp.live_mode
         AND sp.status IN ('succeeded', 'partially_refunded')
         AND sp.currency = 'MYR'
-        AND sp.paid_at >= (${q.from}::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
-        AND sp.paid_at < ((${q.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
+        AND sp.paid_at >= ${from}
+        AND sp.paid_at < ${to}
       UNION ALL
       -- CRM payments (Stripe webhook, manual): the sales that move off
       -- SalesProcess. The buyer is the enrolment's person, else the deal's;
@@ -525,8 +539,8 @@ function paidSql(sql: postgres.Sql, q: AdsReportQuery) {
       LEFT JOIN enrolment e ON e.id = pn.enrolment_id
       LEFT JOIN deal d ON d.id = pn.deal_id
       WHERE pn.status IN ('succeeded', 'partially_refunded')
-        AND pn.paid_at >= (${q.from}::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
-        AND pn.paid_at < ((${q.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')
+        AND pn.paid_at >= ${from}
+        AND pn.paid_at < ${to}
     )`;
 }
 
