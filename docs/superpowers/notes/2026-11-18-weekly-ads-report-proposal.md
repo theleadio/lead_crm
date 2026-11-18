@@ -1,6 +1,11 @@
 # Weekly signups, pending and ad spend on /reports/ads: proposal for review
 
-Status: draft for review. Nothing is built yet.
+Status: revised after Zhixuan's review (18 Nov). Nothing is built yet. Shipping in two parts:
+
+- **Part 1 (no sheet):** CRM/LMS and SalesProcess signups, pending, Meta spend, the weekly view, by class and by ad. All the data is already in the CRM.
+- **Part 2:** the participant sheet sync (Apps Script, endpoint, label mapping, migration). It needs Ops setup, and its migration must land before the 27 Nov schema freeze.
+
+**Expect a large "not matched" share at first.** On 11 Nov only about a quarter of paid revenue could be credited to an ad. The report is honest about that, and the share should rise as URL parameters and the Source column take effect.
 
 ## Why
 
@@ -28,13 +33,13 @@ Today `/reports/ads` can't answer these:
 
 ## Definitions
 
-| Term        | Meaning                                                                                                                                                                                                                                                        |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Signup      | A person holding a seat in a class: an enrolment that is reserved, confirmed, onboarded, attended or completed. Also counts a paid SalesProcess order, or a row in the participant sheet. One person in one class counts once, however many systems record it. |
-| Pending     | An enrolment with status `payment_pending`. It's shown separately and **not** counted in signups.                                                                                                                                                              |
-| Meta signup | A signup whose person's first touch resolves to a Meta campaign.                                                                                                                                                                                               |
-| Ad spend    | Meta spend from `meta_ad_insight`, scoped to `META_AD_ACCOUNT_ID`. Google Ads spend isn't included.                                                                                                                                                            |
-| Week        | Monday to Sunday, Kuala Lumpur time.                                                                                                                                                                                                                           |
+| Term        | Meaning                                                                                                                                                                                                                                                                                                                                         |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Signup      | A person holding a paid-for seat in a class: an enrolment that is confirmed, onboarded, attended or completed. Also counts a paid SalesProcess order, or a row in the participant sheet. One person in one class counts once, however many systems record it.                                                                                   |
+| Pending     | An enrolment that is `payment_pending`, or `reserved` with a hold that hasn't expired (`seat_reserved_until > now()`, as in `seatTakenSql`). `reserved` is a Stripe checkout hold, so nobody has paid yet. Shown separately and **not** counted in signups. Checkout links sent but never opened aren't recorded anywhere, so they're left out. |
+| Meta signup | A signup whose person's first touch resolves to a Meta campaign.                                                                                                                                                                                                                                                                                |
+| Ad spend    | Meta spend from `meta_ad_insight`, scoped to `META_AD_ACCOUNT_ID`. Google Ads spend isn't included.                                                                                                                                                                                                                                             |
+| Week        | Monday to Sunday, Kuala Lumpur time.                                                                                                                                                                                                                                                                                                            |
 
 ## The report (layout agreed with the owner on 18 Nov)
 
@@ -46,7 +51,7 @@ All text is in English, the same as the rest of the report.
    - Signups, including how many came from Meta ads and what share that is
    - Pending
    - Ad spend
-   - Cost per signup (spend divided by Meta signups)
+   - Cost per Meta signup (spend divided by Meta signups, labelled that way so it doesn't read as all signups)
 
    Each card also shows the change against the same point last week.
 
@@ -88,14 +93,15 @@ The report shows numbers only. It doesn't list student names.
 **Transport: the sheet pushes its data to the CRM.** This was chosen over a Google service account, so the sheet doesn't need to be shared with anyone new.
 
 - An Apps Script inside the sheet runs every hour, using the sheet owner's own permission. It sends the rows in batches of 500 to a new CRM endpoint, `POST /api/sync/participants`.
-- The endpoint checks a dedicated `X-Api-Key`, the same way `app/api/public/leads/route.ts` does. The key is stored in the script's Script Properties, never in the sheet itself.
+- The endpoint checks its own server-only key, `PARTICIPANT_SYNC_KEY`, compared in constant time. It does **not** reuse `PUBLIC_API_KEY` (`lib/public/guard.ts`), because browsers hold that key and this endpoint creates people. Only the Apps Script holds the new key, in Script Properties, never in the sheet itself.
 - The logic lives in `lib/sync/participants.ts` so it can be tested without HTTP.
 
 **Processing:**
 
 - Each row is split into one pair per class: (person, class label).
-- A row is matched to a CRM person by email, then by Malaysian phone number (spaces and dashes removed, leading 0 replaced with 60). If there's no match, a new person is created.
-- A class label is mapped to a CRM class through a small mapping table. Labels that don't map are listed in the report so someone can map them.
+- A row is matched to a CRM person by email, then by phone normalised with the existing `normalizePhoneE164` (`lib/format/phone.ts`). If there's no match, a new person is created through the existing duplicate handling, so a near match is flagged `possible_duplicate_*` rather than silently duplicated.
+- Every person created from the sheet records where they came from (participant sheet), for consent and PDPA.
+- A class label is mapped to a CRM class through a small mapping table. Labels that don't map are listed in the report so someone can map them. Better still, Ops get a dropdown of class names in the sheet, so new labels map themselves.
 - `(HRDC)` in a label marks the signup as HRDC-funded.
 - The first time a (person, class) pair is seen counts as its signup date, so the date is accurate to within an hour.
 - **First run (backfill):** older rows use the class date instead, and are flagged as approximate. Without this, week one would show a spike of about 2,000 signups.
@@ -144,12 +150,12 @@ Four methods are tried in order, and the first one that finds an answer wins.
 
 ## Verification
 
-- Unit tests for the week helpers. Database tests on local Postgres: one seat, one `payment_pending` enrolment, one SalesProcess order, one sheet row for the same person and class, and spend across two weeks. Assert the weekly counts, that pending isn't counted in signups, and that duplicates count once.
+- Unit tests for the week helpers. Database tests on local Postgres: one seat, one `payment_pending` enrolment, one live and one expired `reserved` hold, one SalesProcess order, one sheet row for the same person and class, and spend across two weeks. Assert the weekly counts, that pending isn't counted in signups, and that duplicates count once.
 - Run a dev server and open `/reports/ads` with an 8-week range. Check weekly spend against Meta Ads Manager.
 - Only read-only checks against production.
 
-## Questions for the reviewer
+## Review answers (Zhixuan, 18 Nov)
 
-1. Is "pending = `payment_pending`" the right definition, or should it also include checkouts sent but not paid?
-2. Are the sheet class labels consistent enough to map, or should ops pick from a fixed class list?
-3. Who maps new class labels, and who adds the URL parameters to ads?
+1. Pending is `payment_pending` plus `reserved` with a hold that hasn't expired. Unopened checkout links are left out. The Definitions table above is updated.
+2. The labels are free text, so a mapping table is right. A class-name dropdown in the sheet is better still.
+3. Who maps labels and adds URL parameters is for Shawn and Ops to decide. Still open.
