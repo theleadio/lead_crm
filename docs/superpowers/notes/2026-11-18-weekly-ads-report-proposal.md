@@ -3,7 +3,7 @@
 Status: revised after Zhixuan's review (18 Nov). Nothing is built yet. Shipping in two parts:
 
 - **Part 1 (no sheet):** CRM/LMS and SalesProcess signups, pending, Meta spend, the weekly view, by class and by ad. All the data is already in the CRM.
-- **Part 2:** the participant sheet sync (Apps Script, endpoint, label mapping, migration). It needs Ops setup, and its migration must land before the 27 Nov schema freeze.
+- **Part 2 (built, see `2026-11-18-participant-sheet-setup.md`):** the participant sheet sync (Apps Script, endpoint, label mapping, migration). It needs Ops setup, and its migration must land before the 27 Nov schema freeze.
 
 **Expect a large "not matched" share at first.** On 11 Nov only about a quarter of paid revenue could be credited to an ad. The report is honest about that, and the share should rise as URL parameters and the Source column take effect.
 

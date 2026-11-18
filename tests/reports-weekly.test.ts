@@ -169,8 +169,14 @@ test("classes: signups, HRDC, Meta and pending per class; spend through the camp
   assert.equal(s.classes.find((c) => c.key === "course:k2")?.signups, 1);
   assert.equal(s.unlinkedSpend, "50.00");
   assert.equal(s.totals.spend, "150.30");
-  assert.deepEqual(s.sources, { seat: 3, order: 1 });
-  assert.deepEqual(s.match, { meta: 3, meta_no_id: 0, other: 0, none: 1 });
+  assert.deepEqual(s.sources, { seat: 3, order: 1, sheet: 0 });
+  assert.deepEqual(s.match, {
+    meta: 3,
+    meta_no_id: 0,
+    self: 0,
+    other: 0,
+    none: 1,
+  });
 
   // The ad that spent and brought nobody is listed, at zero.
   const a9 = s.ads.find((a) => a.adId === "a9");
@@ -251,4 +257,40 @@ test("by first touch: a Meta signup counts in the week of its first ad touch", (
     ],
   );
   assert.equal(s.cohortBefore, 1);
+});
+
+test("sheet signups count by class and source, and an approximate week says so", () => {
+  const s = summarise(
+    input({
+      signups: [
+        signup("2026-11-03T03:00:00Z", {
+          source: "sheet",
+          approx: true,
+          matched: "self",
+        }),
+        signup("2026-11-04T03:00:00Z", {
+          source: "sheet",
+          approx: true,
+          matched: "none",
+        }),
+        signup("2026-11-17T03:00:00Z", { source: "sheet", matched: "none" }),
+        signup("2026-11-17T04:00:00Z"),
+      ],
+      sheetUnmapped: [{ label: "Mystery Class 12 Nov", people: 2 }],
+      sheetLastSeen: "2026-11-18T01:00:00Z",
+    }),
+    Q,
+  );
+  assert.deepEqual(s.sources, { seat: 1, order: 0, sheet: 3 });
+  assert.equal(s.match.self, 1);
+  // Only the week holding backfilled rows is approximate.
+  assert.deepEqual(
+    s.weeks.map((w) => w.approx),
+    [true, false, false],
+  );
+  assert.equal(s.classes.find((c) => c.key === "c1")?.signups, 4);
+  assert.deepEqual(s.sheetUnmapped, [
+    { label: "Mystery Class 12 Nov", people: 2 },
+  ]);
+  assert.equal(s.sheetLastSeen, "2026-11-18T01:00:00.000Z");
 });

@@ -67,6 +67,15 @@ function Stat({
   );
 }
 
+const formatSeen = (iso: string) =>
+  new Date(iso).toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Kuala_Lumpur",
+  });
+
 const pct = (part: number, whole: number) =>
   whole > 0 ? `${Math.round((part / whole) * 100)}%` : "—";
 
@@ -110,9 +119,15 @@ export function WeeklyCards({ summary }: { summary: WeeklySummary }) {
         </Stat>
       </div>
       <p className="text-ink-muted text-sm">
-        In the whole date range: {summary.sources.seat} paid seats in the CRM
-        and {summary.sources.order} paid SalesProcess orders with no seat yet.
-        One person in one class counts once.
+        In the whole date range: {summary.sources.seat} paid seats in the CRM,{" "}
+        {summary.sources.order} paid SalesProcess orders with no seat yet, and{" "}
+        {summary.sources.sheet} people only on the participant sheet. One person
+        in one class counts once.
+      </p>
+      <p className="text-ink-muted text-sm">
+        {summary.sheetLastSeen
+          ? `The participant sheet last reached the CRM ${formatSeen(summary.sheetLastSeen)}.`
+          : "The participant sheet hasn't reached the CRM yet, so sign-ups only on the sheet aren't counted."}
       </p>
     </PanelCard>
   );
@@ -161,7 +176,7 @@ export function SignupsByClass({ summary }: { summary: WeeklySummary }) {
                   <TableCell>
                     {c.name ?? (
                       <span className="text-ink-muted italic">
-                        Course not known
+                        Class not known (an unmatched sheet class or product)
                       </span>
                     )}
                   </TableCell>
@@ -217,27 +232,37 @@ export function SignupsByClass({ summary }: { summary: WeeklySummary }) {
 const MATCH_TEXT = {
   meta: "Their first Meta ad touch names a campaign",
   meta_no_id: "Came from Meta, but no campaign or ad id",
+  self: "Said how they came on the sheet (not an ad)",
   other: "Has a source, but not Meta",
   none: "No source recorded",
 } as const;
 
 export function AdMatch({ summary }: { summary: WeeklySummary }) {
   const m = summary.match;
-  const notMatched = m.meta_no_id + m.other + m.none;
+  const notMatched = m.meta_no_id + m.self + m.other + m.none;
   return (
     <PanelCard
       eyebrow="ADS"
       title="How signups were matched to ads"
       description="Each signup's person is matched to the first Meta ad they came through: a Lead Ads form, a click-to-WhatsApp chat, or a link carrying the ad's id. Expect many not matched at first; this rises as every ad carries the standard URL parameters."
     >
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <Stat label="Matched to an ad" value={m.meta}>
           {pct(m.meta, summary.totals.signups)} of signups
         </Stat>
-        {(["meta_no_id", "other", "none"] as const).map((k) => (
+        {(["meta_no_id", "self", "other", "none"] as const).map((k) => (
           <Stat key={k} label={MATCH_TEXT[k]} value={m[k]} />
         ))}
       </div>
+      {summary.sheetUnmapped.length > 0 && (
+        <p className="text-ink-muted text-sm">
+          Sheet classes with no CRM class yet, by people:{" "}
+          {summary.sheetUnmapped
+            .map((u) => `${u.label} (${u.people})`)
+            .join(", ")}
+          . Map one with <code>npm run participants:map</code>.
+        </p>
+      )}
       <p className="text-ink-muted text-sm">
         {notMatched} of {summary.totals.signups} signups can&apos;t be credited
         to a specific ad.
@@ -397,6 +422,15 @@ export function ByWeek({ summary }: { summary: WeeklySummary }) {
                       <span className="text-ink-muted">
                         {" "}
                         ({w.days} of 7 days)
+                      </span>
+                    )}
+                    {w.approx && (
+                      <span
+                        className="text-ink-muted"
+                        title="Some of this week's sheet signups are dated by their class, not by when they signed up."
+                      >
+                        {" "}
+                        (approx.)
                       </span>
                     )}
                   </TableCell>
