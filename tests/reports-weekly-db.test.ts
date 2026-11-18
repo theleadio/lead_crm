@@ -140,6 +140,47 @@ it("a person with no recorded source counts as not matched", async () => {
   assert.ok(s.match.none >= 1);
 });
 
+it("a signup's source is its last touch before signing up, bare import rows skipped", async () => {
+  const v = await viewer();
+  const cls = await newClass();
+  const touch = (
+    p: string,
+    channel: string,
+    at: string,
+    campaign: string | null,
+  ) =>
+    db()`
+      INSERT INTO touchpoint (person_id, channel, occurred_at, utm_source, utm_campaign)
+      VALUES (${p}, ${channel}, ${at}, ${campaign ? "facebook" : null}, ${campaign})`;
+
+  // Lead form, then a WhatsApp ad opt-in, then a bare import row, then the
+  // seat on 10 Mar, then a later touch that can't have brought them.
+  const optedIn = await person();
+  await touch(optedIn, "lead_form", "2031-02-01T02:00:00Z", "Older form");
+  await touch(optedIn, "ctwa", "2031-03-05T02:00:00Z", "Weekly opt-in");
+  await touch(optedIn, "import", "2031-03-08T02:00:00Z", null);
+  await touch(optedIn, "web_form", "2031-03-12T02:00:00Z", "After signup");
+  await enrol(optedIn, cls, "confirmed");
+
+  // Only a bare import row: no source.
+  const imported = await person();
+  await touch(imported, "import", "2031-03-04T02:00:00Z", null);
+  await enrol(imported, cls, "confirmed");
+
+  const s = await weeklySummary(v, RANGE);
+  const who = (id: string) => s.people.find((p) => p.personId === id);
+  assert.deepEqual(
+    [who(optedIn)?.source, who(optedIn)?.utmCampaign, who(optedIn)?.name],
+    ["whatsapp_ad", "Weekly opt-in", "Weekly person"],
+  );
+  assert.equal(who(imported)?.source, "none");
+  assert.ok(
+    s.campaigns.some(
+      (c) => c.utmCampaign === "Weekly opt-in" && c.signups === 1,
+    ),
+  );
+});
+
 it("part_time is refused", async () => {
   const partTime = await viewer("part_time");
   await assert.rejects(() => weeklySummary(partTime, RANGE), PermissionError);

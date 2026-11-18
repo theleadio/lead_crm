@@ -5,8 +5,9 @@
 // seat yet, and the ops team's participant sheet (migration 026, Part 2).
 //
 // The database returns plain rows and `summarise` does the arithmetic, so
-// the week, class and ad grouping is tested without a database. No row
-// carries a name or contact detail: person ids are counted, never shown.
+// the week, class and ad grouping is tested without a database. Each signup
+// carries the person's name for the Weekly tab's signup list (owner, 19 Nov);
+// no contact detail is read. The page is gated like the person pages it links to.
 
 import type postgres from "postgres";
 import { PRODUCT_COURSE } from "../import/salesprocess-enrolments.ts";
@@ -52,6 +53,67 @@ export type SignupRow = {
   // When their first Meta touch happened; null when there is none before the
   // signup.
   firstTouchAt: Date | string | null;
+  personName?: string | null;
+  // The latest touch before the signup that says where they came from
+  // (`LAST_TOUCH_SQL`); null when none does.
+  lastTouch?: LastTouch | null;
+};
+
+export type LastTouch = {
+  channel: string;
+  utmSource: string | null;
+  utmCampaign: string | null;
+};
+
+// Where a signup came from, by its last informative touch (owner, 19 Nov):
+// an opt-in (a WhatsApp chat from an ad, or direct), a lead form, a link.
+export const SOURCE_BUCKETS = [
+  "whatsapp_ad",
+  "lead_form",
+  "web_form",
+  "utm_link",
+  "whatsapp",
+  "referral",
+  "walk_in",
+  "self",
+  "none",
+] as const;
+export type SourceBucket = (typeof SOURCE_BUCKETS)[number];
+
+export function sourceBucket(t: LastTouch | null | undefined): SourceBucket {
+  if (!t) return "none";
+  // The sheet's Source column (written as utm_source "self:referral").
+  if (t.utmSource?.startsWith("self:")) return "self";
+  switch (t.channel) {
+    case "ctwa":
+      return "whatsapp_ad";
+    case "lead_form":
+    case "web_form":
+    case "whatsapp":
+    case "referral":
+    case "walk_in":
+      return t.channel;
+    // An import or payment-link row only counts as a source when it carries
+    // a UTM or click id (`LAST_TOUCH_SQL`), so what is left is a tagged link.
+    default:
+      return "utm_link";
+  }
+}
+
+export type SignupPerson = {
+  personId: string;
+  name: string | null;
+  className: string | null;
+  day: string;
+  source: SourceBucket;
+  utmSource: string | null;
+  utmCampaign: string | null;
+};
+
+export type CampaignCount = {
+  utmSource: string | null;
+  utmCampaign: string;
+  signups: number;
 };
 
 export type PendingRow = {
@@ -81,6 +143,8 @@ export type WeeklyInput = {
   signups: SignupRow[];
   pending: PendingRow[];
   spend: SpendRow[];
+  // Meta spend over `previousWindow(q)`, for the latest week's comparison.
+  previousSpend?: { currency: string; spend: string }[];
   classes: ClassInfo[];
   // Meta campaign id to class id (`class_meta_campaign`).
   campaignClass: [string, string][];
@@ -146,9 +210,16 @@ export type WeeklySummary = {
   // The range's last week, and the week before it cut to the same number of
   // days, so a Wednesday is compared with last Wednesday and not a full week.
   latest: WeekRow;
-  previous: { signups: number; pending: number };
+  previous: { signups: number; pending: number; spend: string };
   totals: WeekRow;
   sources: { seat: number; order: number; sheet: number };
+  // Every signup in range by where it came from (last informative touch).
+  bySource: Record<SourceBucket, number>;
+  // By UTM campaign, most signups first; the rest are counted in
+  // `campaignsDropped`. Signups with no utm_campaign are not here.
+  campaigns: CampaignCount[];
+  campaignsDropped: number;
+  people: SignupPerson[];
   sheetUnmapped: { label: string; people: number }[];
   sheetLastSeen: string | null;
   match: Record<Matched, number>;
@@ -160,6 +231,7 @@ export type WeeklySummary = {
 
 const DAY = 86_400_000;
 export const ADS_SHOWN = 30;
+export const CAMPAIGNS_SHOWN = 10;
 
 const ymd = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 const dayMs = (d: string) => Date.parse(`${d}T00:00:00Z`);
@@ -178,6 +250,42 @@ export function mondayOf(day: string): string {
 // for its comparison.
 export function weekBefore(day: string): string {
   return ymd(dayMs(day) - 7 * DAY);
+}
+export function weekAfter(day: string): string {
+  return ymd(dayMs(day) + 7 * DAY);
+}
+
+// The range's last week, and the same days of the week before it: a Wednesday
+// is compared with last Wednesday, a full week with the full week before.
+export function previousWindow(q: { from: string; to: string }) {
+  const monday = mondayOf(q.to);
+  const latestFirst = monday < q.from ? q.from : monday;
+  const days = (dayMs(q.to) - dayMs(latestFirst)) / DAY + 1;
+  const from = weekBefore(latestFirst);
+  return { from, to: ymd(dayMs(from) + (days - 1) * DAY) };
+}
+
+// The Weekly tab's week from `?week=` (any day of it). No param: the last
+// full Monday-to-Sunday week. The current week ends today. A malformed or
+// future week is null, refused rather than swapped for another week.
+export function weekQuery(
+  param: string | undefined,
+  today: string = kualaLumpurDay(),
+): { from: string; to: string; current: boolean } | null {
+  const thisMonday = mondayOf(today);
+  let monday = weekBefore(thisMonday);
+  if (param !== undefined) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(param) || ymd(dayMs(param)) !== param)
+      return null;
+    monday = mondayOf(param);
+  }
+  if (monday > thisMonday) return null;
+  const sunday = ymd(dayMs(monday) + 6 * DAY);
+  return {
+    from: monday,
+    to: sunday < today ? sunday : today,
+    current: monday === thisMonday,
+  };
 }
 
 const classKey = (r: { classId: string | null; courseId: string | null }) =>
@@ -201,7 +309,10 @@ export function summarise(
   // Already ranged on Meta's day by the query.
   const spend = input.spend;
   // Money from two currencies is never added (§12.7, as `assertOneCurrency`).
-  const currencies = new Set(spend.map((s) => s.currency));
+  const previousSpend = input.previousSpend ?? [];
+  const currencies = new Set(
+    [...spend, ...previousSpend].map((s) => s.currency),
+  );
   if (currencies.size > 1 || (currencies.size === 1 && !currencies.has("MYR")))
     throw new Error("Ad spend is not all in MYR");
 
@@ -244,13 +355,12 @@ export function summarise(
 
   // The week before the latest one, over as many days as the latest has
   // had. Read from the rows before the range, which the load fetched for this.
-  const latestFirst = latest.weekStart < q.from ? q.from : latest.weekStart;
-  const prevFrom = weekBefore(latestFirst);
-  const prevTo = ymd(dayMs(prevFrom) + (latest.days - 1) * DAY);
-  const prevWindow = (day: string) => day >= prevFrom && day <= prevTo;
+  const prev = previousWindow(q);
+  const prevWindow = (day: string) => day >= prev.from && day <= prev.to;
   const previous = {
     signups: input.signups.filter((s) => prevWindow(klDay(s.at))).length,
     pending: input.pending.filter((p) => prevWindow(klDay(p.at))).length,
+    spend: sumMyr(previousSpend.map((s) => s.spend)),
   };
 
   const totals: WeekRow = {
@@ -369,6 +479,46 @@ export function summarise(
       (a.adId < b.adId ? -1 : 1),
   );
 
+  // Where signups came from, by the last touch that says so.
+  const bySource = Object.fromEntries(
+    SOURCE_BUCKETS.map((b) => [b, 0]),
+  ) as Record<SourceBucket, number>;
+  const campaignCounts = new Map<string, CampaignCount>();
+  const people: SignupPerson[] = [];
+  for (const s of signups) {
+    const t = s.lastTouch ?? null;
+    const source = sourceBucket(t);
+    bySource[source] += 1;
+    if (t?.utmCampaign) {
+      const key = `${t.utmSource ?? ""}|${t.utmCampaign}`;
+      const c = campaignCounts.get(key) ?? {
+        utmSource: t.utmSource,
+        utmCampaign: t.utmCampaign,
+        signups: 0,
+      };
+      c.signups += 1;
+      campaignCounts.set(key, c);
+    }
+    people.push({
+      personId: s.personId,
+      name: s.personName ?? null,
+      className: info.get(classKey(s))?.name ?? null,
+      day: s.day,
+      source,
+      utmSource: t?.utmSource ?? null,
+      utmCampaign: t?.utmCampaign ?? null,
+    });
+  }
+  const allCampaigns = [...campaignCounts.values()].sort(
+    (a, b) =>
+      b.signups - a.signups || a.utmCampaign.localeCompare(b.utmCampaign),
+  );
+  people.sort(
+    (a, b) =>
+      (a.day < b.day ? 1 : a.day > b.day ? -1 : 0) ||
+      (a.name ?? "").localeCompare(b.name ?? ""),
+  );
+
   return {
     weeks,
     cohorts,
@@ -381,6 +531,12 @@ export function summarise(
       order: signups.filter((s) => s.source === "order").length,
       sheet: signups.filter((s) => s.source === "sheet").length,
     },
+    bySource,
+    campaigns: allCampaigns.slice(0, CAMPAIGNS_SHOWN),
+    campaignsDropped: allCampaigns
+      .slice(CAMPAIGNS_SHOWN)
+      .reduce((n, c) => n + c.signups, 0),
+    people,
     sheetUnmapped: input.sheetUnmapped ?? [],
     sheetLastSeen: input.sheetLastSeen
       ? new Date(input.sheetLastSeen).toISOString()
@@ -418,6 +574,26 @@ const SELF_SOURCE_SQL = (sql: postgres.Sql) => sql`
                  AND t.form_name = 'participant-sheet'
                  AND t.utm_source LIKE 'self:%') THEN 'self'`;
 
+// The latest touch before the signup that says where the person came from,
+// and their name. Import and payment-link rows say nothing unless they carry
+// a UTM or click id, so they are skipped and the touch before them is used:
+// a bare import row never hides a known source (owner, 19 Nov). Joined onto
+// a signup CTE named `s`.
+const LAST_TOUCH_SQL = (sql: postgres.Sql) => sql`
+  JOIN person pn ON pn.id = s.person_id
+  LEFT JOIN LATERAL (
+    SELECT t.channel, t.utm_source, t.utm_campaign
+    FROM touchpoint t
+    WHERE t.person_id = s.person_id
+      AND t.occurred_at <= s.at
+      AND (t.channel NOT IN ('import', 'payment_link')
+           OR t.utm_source IS NOT NULL OR t.utm_campaign IS NOT NULL
+           OR t.fbclid IS NOT NULL OR t.ctwa_clid IS NOT NULL
+           OR t.gclid IS NOT NULL)
+    ORDER BY t.occurred_at DESC, t.id
+    LIMIT 1
+  ) lt ON true`;
+
 // The participant sheet's signups (migration 026): one per person and class,
 // dated by when the row first reached the CRM. Run apart from the main query
 // so a database without the 026 tables still draws the rest of the report.
@@ -449,6 +625,8 @@ async function sheetRows(sql: postgres.Sql, q: AdsReportQuery, from: string) {
     )
     SELECT s.person_id, s.class_id, s.course_id, s.at, s.hrdc, s.source, s.approx,
            f.campaign_id, f.ad_id, f.occurred_at AS first_touch_at,
+           pn.full_name, lt.channel AS lt_channel, lt.utm_source AS lt_utm_source,
+           lt.utm_campaign AS lt_utm_campaign,
            CASE
              WHEN f.person_id IS NOT NULL THEN 'meta'
              WHEN EXISTS (SELECT 1 FROM touchpoint t
@@ -465,7 +643,8 @@ async function sheetRows(sql: postgres.Sql, q: AdsReportQuery, from: string) {
            END AS matched
     FROM s
     LEFT JOIN first_touch f ON f.person_id = s.person_id
-                           AND f.occurred_at <= s.at`;
+                           AND f.occurred_at <= s.at
+    ${LAST_TOUCH_SQL(sql)}`;
 }
 
 // Labels with no class, for the people who signed up in range, and when the
@@ -506,8 +685,11 @@ export async function weeklySummary(
   const codes = Object.values(PRODUCT_COURSE);
   const account = process.env.META_AD_ACCOUNT_ID?.trim().replace(/^act_/, "");
 
-  const [mainSignups, pending, spend, links] = await Promise.all([
-    sql`
+  const prev = previousWindow(q);
+
+  const [mainSignups, pending, spend, links, previousSpend] = await Promise.all(
+    [
+      sql`
       WITH ${campaignMapSql(sql)},
       ${firstCampaignSql(sql)},
       seats AS (
@@ -555,6 +737,8 @@ export async function weeklySummary(
       s AS (SELECT * FROM seats UNION ALL SELECT * FROM orders)
       SELECT s.person_id, s.class_id, s.course_id, s.at, s.hrdc, s.source,
              f.campaign_id, f.ad_id, f.occurred_at AS first_touch_at,
+             pn.full_name, lt.channel AS lt_channel, lt.utm_source AS lt_utm_source,
+             lt.utm_campaign AS lt_utm_campaign,
              CASE
                WHEN f.person_id IS NOT NULL THEN 'meta'
                WHEN EXISTS (SELECT 1 FROM touchpoint t
@@ -572,8 +756,9 @@ export async function weeklySummary(
       FROM s
       -- An ad cannot have brought a signup that happened before it was seen.
       LEFT JOIN first_touch f ON f.person_id = s.person_id
-                             AND f.occurred_at <= s.at`,
-    sql`
+                             AND f.occurred_at <= s.at
+      ${LAST_TOUCH_SQL(sql)}`,
+      sql`
       SELECT DISTINCT ON (e.person_id, e.class_id)
              e.class_id, cl.course_id, e.created_at AS at
       FROM enrolment e
@@ -587,15 +772,22 @@ export async function weeklySummary(
         ${sizeSql(sql, q)}
         AND ${between(sql, "e.created_at", from, to)}
       ORDER BY e.person_id, e.class_id, e.created_at`,
-    sql`
+      sql`
       SELECT to_char(date_trunc('week', day), 'YYYY-MM-DD') AS week_start,
              campaign_id, ad_id, currency, sum(spend)::numeric(14, 2)::text AS spend
       FROM meta_ad_insight
       WHERE day >= ${q.from}::date AND day <= ${q.to}::date
         ${account ? sql`AND account_id = ${account}` : sql``}
       GROUP BY 1, campaign_id, ad_id, currency`,
-    sql`SELECT meta_campaign_id, class_id::text FROM class_meta_campaign`,
-  ]);
+      sql`SELECT meta_campaign_id, class_id::text FROM class_meta_campaign`,
+      sql`
+      SELECT currency, sum(spend)::numeric(14, 2)::text AS spend
+      FROM meta_ad_insight
+      WHERE day >= ${prev.from}::date AND day <= ${prev.to}::date
+        ${account ? sql`AND account_id = ${account}` : sql``}
+      GROUP BY currency`,
+    ],
+  );
 
   // The participant sheet. If its tables are not there yet (migration 026 not
   // applied) or the read fails, the report is drawn without it.
@@ -664,6 +856,18 @@ export async function weeklySummary(
         adId: r.ad_id,
         matched: r.matched,
         firstTouchAt: r.first_touch_at ?? null,
+        personName: r.full_name ?? null,
+        lastTouch: r.lt_channel
+          ? {
+              channel: r.lt_channel,
+              utmSource: r.lt_utm_source ?? null,
+              utmCampaign: r.lt_utm_campaign ?? null,
+            }
+          : null,
+      })),
+      previousSpend: previousSpend.map((r) => ({
+        currency: r.currency,
+        spend: r.spend,
       })),
       pending: pending.map((r) => ({
         classId: r.class_id,

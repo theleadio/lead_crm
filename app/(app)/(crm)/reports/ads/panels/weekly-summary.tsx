@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { EmptyRow, TableCard } from "@/components/list-kit";
 import {
   Table,
@@ -9,12 +10,18 @@ import {
 } from "@/components/ui/table";
 import { formatMoneyMyr } from "@/lib/format/money";
 import { costPer } from "@/lib/reports/spend";
-import type { WeeklySummary, WeekRow } from "@/lib/reports/weekly";
+import {
+  SOURCE_BUCKETS,
+  type SourceBucket,
+  type WeeklySummary,
+  type WeekRow,
+} from "@/lib/reports/weekly";
 import { PanelCard } from "./panel-card";
 
 // The weekly summary the owner asked for (18 Nov): signups, pending and ad
-// spend for the latest week, then by class, by ad and by week. Numbers only:
-// no student is named on this screen.
+// spend for the latest week, then by class, by ad and by week. The Weekly
+// tab's signup list (19 Nov) names each person and links to their page;
+// every other panel is numbers only.
 
 const dash = <span className="text-ink-muted">—</span>;
 
@@ -38,13 +45,24 @@ function weekLabel(w: WeekRow) {
   return `Week of ${shortDate(w.weekStart)}`;
 }
 
-function Delta({ now, before }: { now: number; before: number }) {
+// A full week is compared with the full week before; a week still running
+// with the same days of the week before (`previousWindow`).
+function Delta({
+  now,
+  before,
+  fullWeek,
+}: {
+  now: number;
+  before: number;
+  fullWeek: boolean;
+}) {
+  const than = fullWeek ? "the week before" : "this point last week";
   const d = now - before;
-  if (d === 0) return <span>Same as this point last week</span>;
+  if (d === 0) return <span>Same as {than}</span>;
   return (
-    <span>
+    <span className={d > 0 ? "text-success" : "text-danger"}>
       {d > 0 ? "+" : "−"}
-      {Math.abs(d)} vs this point last week
+      {Math.abs(d)} vs {than} ({before})
     </span>
   );
 }
@@ -79,11 +97,24 @@ const formatSeen = (iso: string) =>
 const pct = (part: number, whole: number) =>
   whole > 0 ? `${Math.round((part / whole) * 100)}%` : "—";
 
-export function WeeklyCards({ summary }: { summary: WeeklySummary }) {
+// `week`: the Weekly tab, where the range is exactly one week and `current`
+// says whether it is still running. Without it, the Ad details tab: the last
+// week of whatever range was picked.
+export function WeeklyCards({
+  summary,
+  week,
+}: {
+  summary: WeeklySummary;
+  week?: { current: boolean };
+}) {
   const w = summary.latest;
+  const fullWeek = w.days === 7;
+  const matchedShare = pct(w.metaSignups, w.signups);
   return (
     <PanelCard
-      eyebrow="THIS WEEK"
+      eyebrow={
+        week ? (week.current ? "THIS WEEK SO FAR" : "WEEK") : "THIS WEEK"
+      }
       title={
         <>
           {weekLabel(w)}
@@ -95,35 +126,56 @@ export function WeeklyCards({ summary }: { summary: WeeklySummary }) {
           )}
         </>
       }
-      description="The last week in the date range, Monday to Sunday in Kuala Lumpur time. Meta spend is synced daily at 03:00, so today's spend arrives tomorrow."
+      description={
+        week
+          ? "Monday to Sunday in Kuala Lumpur time. Meta spend is synced daily at 03:00, so today's spend arrives tomorrow."
+          : "The last week in the date range, Monday to Sunday in Kuala Lumpur time. Meta spend is synced daily at 03:00, so today's spend arrives tomorrow."
+      }
     >
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="Signups" value={w.signups}>
-          From Meta ads {w.metaSignups} · {pct(w.metaSignups, w.signups)}
+          From Meta ads {w.metaSignups} · {matchedShare}
           <br />
-          <Delta now={w.signups} before={summary.previous.signups} />
+          <Delta
+            now={w.signups}
+            before={summary.previous.signups}
+            fullWeek={fullWeek}
+          />
         </Stat>
         <Stat label="Pending" value={w.pending}>
           Signed up, not paid yet
           <br />
-          <Delta now={w.pending} before={summary.previous.pending} />
+          <Delta
+            now={w.pending}
+            before={summary.previous.pending}
+            fullWeek={fullWeek}
+          />
         </Stat>
         <Stat label="Ad spend" value={money(w.spend)}>
-          Meta
+          Meta · {fullWeek ? "week before" : "this point last week"}{" "}
+          {money(summary.previous.spend)}
         </Stat>
         <Stat
           label="Cost per Meta signup"
           value={perSignup(w.spend, w.metaSignups)}
         >
-          Spend ÷ signups from Meta ads
+          Spend ÷ {w.metaSignups} signups from Meta ads
         </Stat>
       </div>
-      <p className="text-ink-muted text-sm">
-        In the whole date range: {summary.sources.seat} paid seats in the CRM,{" "}
-        {summary.sources.order} paid SalesProcess orders with no seat yet, and{" "}
-        {summary.sources.sheet} people only on the participant sheet. One person
-        in one class counts once.
-      </p>
+      {w.signups > 0 && w.metaSignups < w.signups && (
+        <p className="text-warning text-sm">
+          Only {w.metaSignups} of {w.signups} signups ({matchedShare}) are
+          matched to an ad, so cost per Meta signup reads high.
+        </p>
+      )}
+      {!week && (
+        <p className="text-ink-muted text-sm">
+          In the whole date range: {summary.sources.seat} paid seats in the CRM,{" "}
+          {summary.sources.order} paid SalesProcess orders with no seat yet, and{" "}
+          {summary.sources.sheet} people only on the participant sheet. One
+          person in one class counts once.
+        </p>
+      )}
       <p className="text-ink-muted text-sm">
         {summary.sheetLastSeen
           ? `The participant sheet last reached the CRM ${formatSeen(summary.sheetLastSeen)}.`
@@ -135,8 +187,17 @@ export function WeeklyCards({ summary }: { summary: WeeklySummary }) {
 
 const CLASS_COLUMNS = 9;
 
-export function SignupsByClass({ summary }: { summary: WeeklySummary }) {
+// `compact`: the Weekly tab's five columns (class, signups, HRDC, pending,
+// spend). The Ad details tab keeps all nine.
+export function SignupsByClass({
+  summary,
+  compact = false,
+}: {
+  summary: WeeklySummary;
+  compact?: boolean;
+}) {
   const t = summary.totals;
+  if (compact) return <SignupsByClassCompact summary={summary} />;
   return (
     <PanelCard
       eyebrow="SIGNUPS"
@@ -173,13 +234,7 @@ export function SignupsByClass({ summary }: { summary: WeeklySummary }) {
             ) : (
               summary.classes.map((c) => (
                 <TableRow key={c.key}>
-                  <TableCell>
-                    {c.name ?? (
-                      <span className="text-ink-muted italic">
-                        Class not known (an unmatched sheet class or product)
-                      </span>
-                    )}
-                  </TableCell>
+                  <TableCell>{className(c.name)}</TableCell>
                   <TableCell>
                     {c.workshop === null
                       ? dash
@@ -222,6 +277,207 @@ export function SignupsByClass({ summary }: { summary: WeeklySummary }) {
               <TableCell>{perSignup(t.spend, t.metaSignups)}</TableCell>
               <TableCell />
             </TableRow>
+          </TableBody>
+        </Table>
+      </TableCard>
+    </PanelCard>
+  );
+}
+
+const className = (name: string | null) =>
+  name ?? (
+    <span className="text-ink-muted italic">
+      Class not known (an unmatched sheet class or product)
+    </span>
+  );
+
+function SignupsByClassCompact({ summary }: { summary: WeeklySummary }) {
+  const t = summary.totals;
+  return (
+    <PanelCard eyebrow="SIGNUPS" title="Signups by class">
+      <TableCard>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Class</TableHead>
+              <TableHead>Signups</TableHead>
+              <TableHead>HRDC</TableHead>
+              <TableHead>Pending</TableHead>
+              <TableHead>Spend</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {summary.classes.length === 0 ? (
+              <EmptyRow columns={5}>Nobody signed up this week.</EmptyRow>
+            ) : (
+              summary.classes.map((c) => (
+                <TableRow key={c.key}>
+                  <TableCell>{className(c.name)}</TableCell>
+                  <TableCell>{c.signups}</TableCell>
+                  <TableCell>{c.hrdc}</TableCell>
+                  <TableCell>{c.pending}</TableCell>
+                  <TableCell>{money(c.spend)}</TableCell>
+                </TableRow>
+              ))
+            )}
+            {summary.unlinkedSpend !== "0.00" && (
+              <TableRow>
+                <TableCell className="text-ink-muted italic">
+                  Ads not linked to a class
+                </TableCell>
+                <TableCell colSpan={3} />
+                <TableCell>{money(summary.unlinkedSpend)}</TableCell>
+              </TableRow>
+            )}
+            <TableRow className="font-semibold">
+              <TableCell>Total</TableCell>
+              <TableCell>{t.signups}</TableCell>
+              <TableCell>
+                {summary.classes.reduce((n, c) => n + c.hrdc, 0)}
+              </TableCell>
+              <TableCell>{t.pending}</TableCell>
+              <TableCell>{money(t.spend)}</TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </TableCard>
+    </PanelCard>
+  );
+}
+
+const SOURCE_TEXT: Record<SourceBucket, string> = {
+  whatsapp_ad: "WhatsApp ad opt-in",
+  lead_form: "Meta Lead Ads form",
+  web_form: "Website form",
+  utm_link: "Link with UTM",
+  whatsapp: "WhatsApp, direct",
+  referral: "Referral",
+  walk_in: "Walk-in",
+  self: "Said on the sheet",
+  none: "No source recorded",
+};
+
+export function SignupSources({ summary }: { summary: WeeklySummary }) {
+  const total = summary.totals.signups;
+  const rows = SOURCE_BUCKETS.filter(
+    (b) => summary.bySource[b] > 0 || b === "none",
+  ).sort((a, b) =>
+    a === "none"
+      ? 1
+      : b === "none"
+        ? -1
+        : summary.bySource[b] - summary.bySource[a],
+  );
+  return (
+    <PanelCard
+      eyebrow="SOURCES"
+      title="Where signups came from"
+      description="Each signup by the latest source the person had before signing up: a WhatsApp chat started from an ad, a Lead Ads form, a website form, a link carrying UTM tags. Import and payment-link rows with no UTM are skipped, so they never hide an earlier source. Ad details credits the first Meta touch instead, so its counts can differ."
+    >
+      <TableCard>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Source</TableHead>
+              <TableHead>Signups</TableHead>
+              <TableHead>Share</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((b) => (
+              <TableRow key={b}>
+                <TableCell className={b === "none" ? "text-danger" : undefined}>
+                  {SOURCE_TEXT[b]}
+                </TableCell>
+                <TableCell>{summary.bySource[b]}</TableCell>
+                <TableCell>{pct(summary.bySource[b], total)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableCard>
+      {summary.campaigns.length > 0 && (
+        <TableCard>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>utm_source</TableHead>
+                <TableHead>utm_campaign</TableHead>
+                <TableHead>Signups</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {summary.campaigns.map((c) => (
+                <TableRow key={`${c.utmSource}|${c.utmCampaign}`}>
+                  <TableCell>{c.utmSource ?? dash}</TableCell>
+                  <TableCell>{c.utmCampaign}</TableCell>
+                  <TableCell>{c.signups}</TableCell>
+                </TableRow>
+              ))}
+              {summary.campaignsDropped > 0 && (
+                <TableRow>
+                  <TableCell className="text-ink-muted italic" colSpan={2}>
+                    Other campaigns
+                  </TableCell>
+                  <TableCell>{summary.campaignsDropped}</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableCard>
+      )}
+    </PanelCard>
+  );
+}
+
+// Folded shut: the counts above answer the weekly question, the list is for
+// following one up.
+export function SignupPeople({ summary }: { summary: WeeklySummary }) {
+  return (
+    <PanelCard
+      eyebrow="SIGNUPS"
+      title={`Each signup (${summary.people.length})`}
+      description="Newest first. Each name opens the person's page."
+      defaultOpen={false}
+    >
+      <TableCard>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Person</TableHead>
+              <TableHead>Class</TableHead>
+              <TableHead>Source</TableHead>
+              <TableHead>utm_campaign</TableHead>
+              <TableHead>Date</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {summary.people.length === 0 ? (
+              <EmptyRow columns={5}>Nobody signed up this week.</EmptyRow>
+            ) : (
+              summary.people.map((p, i) => (
+                <TableRow key={`${p.personId}-${i}`}>
+                  <TableCell>
+                    <Link
+                      href={`/people/${p.personId}`}
+                      className="text-primary hover:underline"
+                    >
+                      {p.name ?? "Unnamed"}
+                    </Link>
+                  </TableCell>
+                  <TableCell>{className(p.className)}</TableCell>
+                  <TableCell
+                    className={p.source === "none" ? "text-danger" : undefined}
+                  >
+                    {SOURCE_TEXT[p.source]}
+                  </TableCell>
+                  <TableCell className="text-ink-muted">
+                    {p.utmCampaign ?? "—"}
+                  </TableCell>
+                  <TableCell>{shortDate(p.day)}</TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </TableCard>

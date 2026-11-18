@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ads weekly tab demo</title>
+<!--
+  Static demo of the /reports/ads Weekly tab (design: 2026-11-19-ads-weekly-tab-design.md).
+  Every number, class, campaign and name here is made up (the repo is public).
+  No scripts, no network requests.
+-->
+<style>
+:root{--bg:#f7f7f5;--card:#fff;--raised:#f0efeb;--ink:#1d1d1b;--muted:#6b6a65;--line:#e2e0d9;--blue:#1f5fd6;--ok:#2f7a2a;--bad:#b3261e;--warn:#8a5a00;--warn-bg:#fdf3dc}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121212;--card:#1b1b1b;--raised:#242424;--ink:#ededea;--muted:#a3a29c;--line:#2f2f2d;--blue:#7aa7ff;--ok:#7fcf78;--bad:#ff8a80;--warn:#f2c46b;--warn-bg:#3a2e12}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1040px;margin:0 auto;padding:24px 16px 64px;display:flex;flex-direction:column;gap:20px}
+.banner{background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:10px 14px;font-size:13px}
+h1{font-size:20px;margin:0}
+.sub{color:var(--muted);margin:4px 0 0;font-size:13px}
+.tabs{display:inline-flex;gap:4px;padding:4px;border:1px solid var(--line);border-radius:999px;background:var(--card);width:fit-content}
+.tabs span{padding:6px 18px;border-radius:999px;font-size:13px;font-weight:600;color:var(--muted)}
+.tabs .on{background:var(--ink);color:var(--bg)}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.btn{border:1px solid var(--line);border-radius:6px;padding:6px 12px;background:var(--card);color:var(--ink);text-decoration:none;font-size:13px}
+.week{font-weight:600;padding:0 4px}
+.right{margin-left:auto;display:flex;gap:8px}
+select{border:1px solid var(--line);border-radius:6px;padding:6px 10px;background:var(--card);color:var(--ink)}
+.panel{border:1px solid var(--line);border-radius:10px;background:var(--card);padding:16px;display:flex;flex-direction:column;gap:12px}
+.eyebrow{font-size:11px;letter-spacing:.12em;color:var(--muted);font-weight:500}
+.title{font-size:16px;font-weight:600}
+.desc{color:var(--muted);font-size:13px}
+.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+@media (max-width:720px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.stat{background:var(--raised);border-radius:8px;padding:14px}
+.stat .l{color:var(--muted);font-size:13px}
+.stat .v{font-size:24px;font-weight:600;font-variant-numeric:tabular-nums}
+.stat .s{color:var(--muted);font-size:12px}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+.wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+th{color:var(--muted);font-weight:500}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+tr.total td{font-weight:600}
+.sample{font-size:11px;padding:2px 8px;border-radius:6px;background:var(--warn-bg);color:var(--warn);margin-left:6px;vertical-align:middle}
+a.link{color:var(--blue);text-decoration:none}
+details summary{cursor:pointer;font-weight:600}
+.meter{display:inline-block;height:8px;border-radius:2px;background:var(--blue);vertical-align:middle;margin-right:6px}
+</style>
+</head>
+<body>
+<main>
+<p class="banner">Demo only. Every number, class, campaign and name on this page is made up.</p>
+
+<div>
+  <h1>Ads</h1>
+  <p class="sub">A Meta lead is anyone who came from a Facebook or Instagram ad: a Lead Ads form, a click-to-WhatsApp chat, or a link from an ad.</p>
+</div>
+<div class="tabs" role="tablist"><span class="on" role="tab" aria-selected="true">Weekly</span><span role="tab" aria-selected="false">Ad details</span></div>
+
+<div class="bar">
+  <a class="btn" href="#">‹ Previous week</a>
+  <span class="week">9 Nov – 15 Nov 2026</span>
+  <a class="btn" href="#">Next week ›</a>
+  <a class="btn" href="#">This week so far</a>
+  <span class="right"><select aria-label="Class size"><option>Every size</option><option>Big — certifications</option><option>Middle — one-day mastery</option><option>Small — online workshops</option></select><a class="btn" href="#">Apply</a></span>
+</div>
+
+<section class="panel">
+  <div><div class="eyebrow">WEEK</div><div class="title">Week of 9 Nov</div><div class="desc">Monday to Sunday in Kuala Lumpur time. Meta spend is synced daily at 03:00, so today's spend arrives tomorrow.</div></div>
+  <div class="cards">
+    <div class="stat"><div class="l">Signups</div><div class="v">42</div><div class="s">From Meta ads 14 · 33%<br><span class="ok">+12 vs the week before (30)</span></div></div>
+    <div class="stat"><div class="l">Pending</div><div class="v">3</div><div class="s">Signed up, not paid yet<br><span class="ok">+1 vs the week before (2)</span></div></div>
+    <div class="stat"><div class="l">Ad spend</div><div class="v">RM8,000.00</div><div class="s">Meta · week before RM7,200.00</div></div>
+    <div class="stat"><div class="l">Cost per Meta signup</div><div class="v">RM571.43</div><div class="s">Spend ÷ 14 signups from Meta ads</div></div>
+  </div>
+  <p class="warn" style="margin:0;font-size:13px">Only 14 of 42 signups (33%) are matched to an ad, so cost per Meta signup reads high.</p>
+  <p class="desc" style="margin:0">The participant sheet hasn't reached the CRM yet, so sign-ups only on the sheet aren't counted.</p>
+</section>
+
+<section class="panel">
+  <div><div class="eyebrow">SIGNUPS</div><div class="title">Signups by class</div></div>
+  <div class="wrap"><table>
+    <thead><tr><th>Class</th><th class="n">Signups</th><th class="n">HRDC</th><th class="n">Pending</th><th class="n">Spend</th></tr></thead>
+    <tbody>
+      <tr><td>Sample Certification A · 14 Nov 2026</td><td class="n">18</td><td class="n">8</td><td class="n">1</td><td class="n">RM1,500.00</td></tr>
+      <tr><td>Sample Certification B · 11 Nov 2026</td><td class="n">12</td><td class="n">6</td><td class="n">2</td><td class="n">RM900.00</td></tr>
+      <tr><td>Sample Workshop C · 23 Nov 2026</td><td class="n">7</td><td class="n">0</td><td class="n">0</td><td class="n">RM1,200.00</td></tr>
+      <tr><td>Sample Workshop C · no class yet</td><td class="n">3</td><td class="n">0</td><td class="n">0</td><td class="n">—</td></tr>
+      <tr><td>Sample Program D · 7 Dec 2026</td><td class="n">2</td><td class="n">1</td><td class="n">0</td><td class="n">RM600.00</td></tr>
+      <tr><td>Sample Program E · 9 Dec 2026</td><td class="n">0</td><td class="n">0</td><td class="n">0</td><td class="n">RM800.00</td></tr>
+      <tr><td style="color:var(--muted);font-style:italic">Ads not linked to a class</td><td></td><td></td><td></td><td class="n">RM3,000.00</td></tr>
+      <tr class="total"><td>Total</td><td class="n">42</td><td class="n">15</td><td class="n">3</td><td class="n">RM8,000.00</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="panel">
+  <div><div class="eyebrow">SOURCES</div><div class="title">Where signups came from</div><div class="desc">Each signup by the latest source the person had before signing up. Import and payment-link rows with no UTM are skipped, so they never hide an earlier source. Ad details credits the first Meta touch instead, so its counts can differ.</div></div>
+  <div class="wrap"><table>
+    <thead><tr><th>Source</th><th class="n">Signups</th><th>Share</th></tr></thead>
+    <tbody>
+      <tr><td>WhatsApp ad opt-in</td><td class="n">10</td><td><span class="meter" style="width:48px"></span>24%</td></tr>
+      <tr><td>Meta Lead Ads form</td><td class="n">6</td><td><span class="meter" style="width:28px"></span>14%</td></tr>
+      <tr><td>Website form</td><td class="n">4</td><td><span class="meter" style="width:20px"></span>10%</td></tr>
+      <tr><td>Link with UTM</td><td class="n">2</td><td><span class="meter" style="width:10px"></span>5%</td></tr>
+      <tr><td>WhatsApp, direct</td><td class="n">2</td><td><span class="meter" style="width:10px"></span>5%</td></tr>
+      <tr><td class="bad">No source recorded</td><td class="n">18</td><td><span class="meter" style="width:86px;background:var(--bad)"></span>43%</td></tr>
+    </tbody>
+  </table></div>
+  <div class="wrap"><table>
+    <thead><tr><th>utm_source</th><th>utm_campaign</th><th class="n">Signups</th></tr></thead>
+    <tbody>
+      <tr><td>facebook</td><td>sample-campaign-a</td><td class="n">7</td></tr>
+      <tr><td>facebook</td><td>sample-campaign-b</td><td class="n">5</td></tr>
+      <tr><td>facebook</td><td>sample-campaign-c</td><td class="n">3</td></tr>
+      <tr><td>google</td><td>sample-search</td><td class="n">2</td></tr>
+      <tr><td colspan="2" style="color:var(--muted);font-style:italic">Other campaigns</td><td class="n">4</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<details class="panel">
+  <summary>Each signup (42)</summary>
+  <div class="wrap"><table>
+    <thead><tr><th>Person</th><th>Class</th><th>Source</th><th>utm_campaign</th><th>Date</th></tr></thead>
+    <tbody>
+      <tr><td><a class="link" href="#">Person A</a></td><td>Sample Certification A · 14 Nov 2026</td><td>WhatsApp ad opt-in</td><td>sample-campaign-a</td><td>13 Nov</td></tr>
+      <tr><td><a class="link" href="#">Person B</a></td><td>Sample Workshop C · 23 Nov 2026</td><td>Website form</td><td>sample-campaign-c</td><td>12 Nov</td></tr>
+      <tr><td><a class="link" href="#">Person C</a></td><td>Sample Certification A · 14 Nov 2026</td><td class="bad">No source recorded</td><td>—</td><td>11 Nov</td></tr>
+      <tr><td><a class="link" href="#">Person D</a></td><td>Sample Certification B · 11 Nov 2026</td><td>Meta Lead Ads form</td><td>sample-campaign-b</td><td>9 Nov</td></tr>
+      <tr><td colspan="5" style="color:var(--muted)">… 38 more. In the app each name opens that person's page.</td></tr>
+    </tbody>
+  </table></div>
+</details>
+
+<a class="link" href="#">Weekly trend, ad matching and campaign detail are under Ad details →</a>
+</main>
+</body>
+</html>

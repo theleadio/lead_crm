@@ -5,7 +5,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   mondayOf,
+  previousWindow,
+  sourceBucket,
   summarise,
+  weekQuery,
   type SignupRow,
   type WeeklyInput,
 } from "../lib/reports/weekly.ts";
@@ -83,7 +86,129 @@ test("latest week is compared with the same days of the week before", () => {
     Q,
   );
   assert.equal(s.latest.signups, 1);
-  assert.deepEqual(s.previous, { signups: 1, pending: 1 });
+  assert.deepEqual(s.previous, { signups: 1, pending: 1, spend: "0.00" });
+});
+
+test("previousWindow: a partial week compares the same days, a full week the full week before", () => {
+  assert.deepEqual(previousWindow(Q), { from: "2026-11-09", to: "2026-11-11" });
+  assert.deepEqual(previousWindow({ from: "2026-11-09", to: "2026-11-15" }), {
+    from: "2026-11-02",
+    to: "2026-11-08",
+  });
+  // A range starting mid-week compares from its own first day.
+  assert.deepEqual(previousWindow({ from: "2026-11-11", to: "2026-11-15" }), {
+    from: "2026-11-04",
+    to: "2026-11-08",
+  });
+});
+
+test("previous spend is summed, and a second currency there is refused too", () => {
+  const prev = (currency: string, spend: string) => ({ currency, spend });
+  const s = summarise(
+    input({ previousSpend: [prev("MYR", "10.50"), prev("MYR", "0.25")] }),
+    Q,
+  );
+  assert.equal(s.previous.spend, "10.75");
+  assert.throws(() =>
+    summarise(input({ previousSpend: [prev("USD", "1")] }), Q),
+  );
+});
+
+test("weekQuery: no param is the last full week; any day snaps to its Monday", () => {
+  // Thursday 19 Nov 2026.
+  assert.deepEqual(weekQuery(undefined, "2026-11-19"), {
+    from: "2026-11-09",
+    to: "2026-11-15",
+    current: false,
+  });
+  assert.deepEqual(weekQuery("2026-11-04", "2026-11-19"), {
+    from: "2026-11-02",
+    to: "2026-11-08",
+    current: false,
+  });
+  // The current week ends today, not on Sunday.
+  assert.deepEqual(weekQuery("2026-11-16", "2026-11-19"), {
+    from: "2026-11-16",
+    to: "2026-11-19",
+    current: true,
+  });
+  // A future week and a malformed one are refused, not swapped.
+  assert.equal(weekQuery("2026-11-23", "2026-11-19"), null);
+  assert.equal(weekQuery("2026-02-30", "2026-11-19"), null);
+  assert.equal(weekQuery("next", "2026-11-19"), null);
+});
+
+test("sourceBucket: opt-ins, forms and tagged links are told apart", () => {
+  const t = (channel: string, utmSource: string | null = null) => ({
+    channel,
+    utmSource,
+    utmCampaign: null,
+  });
+  assert.equal(sourceBucket(null), "none");
+  assert.equal(sourceBucket(t("ctwa")), "whatsapp_ad");
+  assert.equal(sourceBucket(t("whatsapp")), "whatsapp");
+  assert.equal(sourceBucket(t("lead_form")), "lead_form");
+  assert.equal(sourceBucket(t("web_form", "facebook")), "web_form");
+  assert.equal(sourceBucket(t("import", "facebook")), "utm_link");
+  assert.equal(sourceBucket(t("payment_link", "google")), "utm_link");
+  assert.equal(sourceBucket(t("import", "self:referral")), "self");
+});
+
+test("signups by source, by UTM campaign, and the list of people", () => {
+  const touch = (channel: string, utmCampaign: string | null) => ({
+    channel,
+    utmSource: utmCampaign ? "facebook" : null,
+    utmCampaign,
+  });
+  const s = summarise(
+    input({
+      signups: [
+        signup("2026-11-03T03:00:00Z", {
+          personName: "Ali",
+          lastTouch: touch("ctwa", "Full-Stack 14 Nov"),
+        }),
+        signup("2026-11-10T03:00:00Z", {
+          personName: "Bee",
+          lastTouch: touch("lead_form", "Full-Stack 14 Nov"),
+        }),
+        signup("2026-11-12T03:00:00Z", {
+          personName: "Chan",
+          lastTouch: touch("web_form", "Automation 11 Nov"),
+        }),
+        signup("2026-11-12T03:00:00Z", { personName: "Dev" }),
+        // Before the range: in no count and not listed.
+        signup("2026-10-28T03:00:00Z", { personName: "Old" }),
+      ],
+    }),
+    Q,
+  );
+  assert.equal(s.bySource.whatsapp_ad, 1);
+  assert.equal(s.bySource.lead_form, 1);
+  assert.equal(s.bySource.web_form, 1);
+  assert.equal(s.bySource.none, 1);
+  assert.equal(
+    Object.values(s.bySource).reduce((a, b) => a + b, 0),
+    s.totals.signups,
+  );
+  assert.deepEqual(
+    s.campaigns.map((c) => [c.utmCampaign, c.signups]),
+    [
+      ["Full-Stack 14 Nov", 2],
+      ["Automation 11 Nov", 1],
+    ],
+  );
+  assert.equal(s.campaignsDropped, 0);
+  // Newest first, then by name; the class name rides along.
+  assert.deepEqual(
+    s.people.map((p) => [p.name, p.day, p.source]),
+    [
+      ["Chan", "2026-11-12", "web_form"],
+      ["Dev", "2026-11-12", "none"],
+      ["Bee", "2026-11-10", "lead_form"],
+      ["Ali", "2026-11-03", "whatsapp_ad"],
+    ],
+  );
+  assert.equal(s.people[0].className, "N8N · 25 Nov 2026");
 });
 
 test("rows before the range feed the comparison but no total", () => {
