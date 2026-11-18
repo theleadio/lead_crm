@@ -18,8 +18,11 @@ posts to the CRM with its own key.
 ## Once, by the sheet owner
 
 1. In the sheet: Extensions > Apps Script. Paste `scripts/apps-script/participant-push.gs`.
-2. Project Settings > Script properties > add `PARTICIPANT_SYNC_KEY`, the same
-   value as the CRM's. Never put it in a cell.
+2. Project Settings > Script properties > add two. `PARTICIPANT_SYNC_KEY`: the same
+   value as the CRM's, never in a cell. `CRM_URL`: the CRM's address followed by
+   `/api/sync/participants`. The address is kept here and not in the code
+   because Netlify's secrets scan fails a build when an environment
+   variable's value, such as the site address, appears in the repo.
 3. Run `install()` once and accept the permission prompt. This adds an hourly
    trigger (newest 300 rows), a nightly trigger (every row) and a "LEAD CRM"
    menu.

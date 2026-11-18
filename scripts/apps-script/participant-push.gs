@@ -3,8 +3,11 @@
  *
  * Paste this into the sheet: Extensions > Apps Script. It runs as the sheet's
  * owner, so nothing is shared with anyone new. Setup, once:
- *   1. Project Settings > Script properties > add PARTICIPANT_SYNC_KEY (the
- *      same value as the CRM's PARTICIPANT_SYNC_KEY). Never put it in a cell.
+ *   1. Project Settings > Script properties > add two:
+ *      PARTICIPANT_SYNC_KEY  the same value as the CRM's PARTICIPANT_SYNC_KEY.
+ *                            Never put it in a cell.
+ *      CRM_URL               the CRM's address followed by /api/sync/participants
+ *                            (kept here, not in the code, so the repo never holds it).
  *   2. Run install() once and accept the permission prompt. It adds the hourly
  *      and nightly triggers and a "LEAD CRM" menu to the sheet.
  *   3. Menu > Check what the CRM is missing (nothing is written), then
@@ -19,7 +22,6 @@
  */
 
 var CFG = {
-  URL: 'https://theleadiocrm.netlify.app/api/sync/participants',
   TAB: 'Participants',
   CHUNK: 50,
   RECENT_ROWS: 300,
@@ -47,6 +49,12 @@ function syncRecent() { run_('sync', false, CFG.RECENT_ROWS, 'NEXT_RECENT'); }
 function syncAll() { run_('sync', false, 0, 'NEXT_ALL'); }
 function backfillHistory() { run_('backfill', false, 0, 'NEXT_BACKFILL'); }
 function checkOnly() { run_('sync', true, 0, 'NEXT_CHECK'); }
+
+function url_() {
+  var u = PropertiesService.getScriptProperties().getProperty('CRM_URL');
+  if (!u) throw new Error('Add CRM_URL under Project Settings > Script properties.');
+  return u;
+}
 
 function key_() {
   var k = PropertiesService.getScriptProperties().getProperty('PARTICIPANT_SYNC_KEY');
@@ -86,7 +94,7 @@ function readRows_(limit) {
 }
 
 function post_(mode, dryRun, rows) {
-  var res = UrlFetchApp.fetch(CFG.URL, {
+  var res = UrlFetchApp.fetch(url_(), {
     method: 'post',
     contentType: 'application/json',
     headers: { 'X-Api-Key': key_() },
