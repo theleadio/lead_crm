@@ -41,6 +41,9 @@ export type SignupRow = {
   campaignId: string | null;
   adId: string | null;
   matched: Matched;
+  // When their first Meta touch happened; null when there is none before the
+  // signup.
+  firstTouchAt: Date | string | null;
 };
 
 export type PendingRow = {
@@ -88,6 +91,14 @@ export type WeekRow = {
   spend: string;
 };
 
+// A week of first ad touch: what Meta spent that week, and how many of the
+// range's Meta signups first met an ad that week (whenever they signed up).
+export type CohortRow = {
+  weekStart: string;
+  spend: string;
+  metaSignups: number;
+};
+
 export type ClassRow = {
   key: string;
   name: string | null;
@@ -114,6 +125,9 @@ export type AdRow = {
 
 export type WeeklySummary = {
   weeks: WeekRow[];
+  cohorts: CohortRow[];
+  // Meta signups whose first touch was before the range's first week.
+  cohortBefore: number;
   // The range's last week, and the week before it cut to the same number of
   // days, so a Wednesday is compared with last Wednesday and not a full week.
   latest: WeekRow;
@@ -193,6 +207,22 @@ export function summarise(
     });
   }
   const latest = weeks[weeks.length - 1];
+
+  // By first touch: the same weeks, but each Meta signup counts in the week
+  // of its first ad touch, so signups that lag the spend land beside it.
+  const touched = new Map<string, number>();
+  let cohortBefore = 0;
+  for (const s of signups) {
+    if (s.matched !== "meta" || !s.firstTouchAt) continue;
+    const week = mondayOf(klDay(s.firstTouchAt));
+    if (week < weeks[0].weekStart) cohortBefore += 1;
+    else tally(touched, week);
+  }
+  const cohorts = weeks.map((w): CohortRow => ({
+    weekStart: w.weekStart,
+    spend: w.spend,
+    metaSignups: touched.get(w.weekStart) ?? 0,
+  }));
 
   // The week before the latest one, over as many days as the latest has
   // had. Read from the rows before the range, which the load fetched for this.
@@ -321,6 +351,8 @@ export function summarise(
 
   return {
     weeks,
+    cohorts,
+    cohortBefore,
     latest,
     previous,
     totals,
@@ -409,7 +441,7 @@ export async function weeklySummary(
       ),
       s AS (SELECT * FROM seats UNION ALL SELECT * FROM orders)
       SELECT s.person_id, s.class_id, s.course_id, s.at, s.hrdc, s.source,
-             f.campaign_id, f.ad_id,
+             f.campaign_id, f.ad_id, f.occurred_at AS first_touch_at,
              CASE
                WHEN f.person_id IS NOT NULL THEN 'meta'
                WHEN EXISTS (SELECT 1 FROM touchpoint t
@@ -489,6 +521,7 @@ export async function weeklySummary(
         campaignId: r.campaign_id,
         adId: r.ad_id,
         matched: r.matched,
+        firstTouchAt: r.first_touch_at ?? null,
       })),
       pending: pending.map((r) => ({
         classId: r.class_id,

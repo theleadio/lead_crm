@@ -318,6 +318,51 @@ export function SignupsPerAd({ summary }: { summary: WeeklySummary }) {
   );
 }
 
+const COHORT_COLUMNS = 4;
+
+export function ByFirstTouchWeek({ summary }: { summary: WeeklySummary }) {
+  return (
+    <PanelCard
+      eyebrow="SIGNUPS"
+      title="By week of first ad touch"
+      description="Each Meta signup counts in the week they first met a Meta ad, however long before they signed up. Spend is that week's Meta spend, so the cost per signup is not thrown off by signups that arrive weeks after the ad."
+    >
+      <TableCard>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Week of first touch</TableHead>
+              <TableHead>Meta spend</TableHead>
+              <TableHead>Meta signups</TableHead>
+              <TableHead>Per Meta signup</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {summary.cohorts.length === 0 ? (
+              <EmptyRow columns={COHORT_COLUMNS}>No weeks in range.</EmptyRow>
+            ) : (
+              [...summary.cohorts].reverse().map((c) => (
+                <TableRow key={c.weekStart}>
+                  <TableCell>{shortDate(c.weekStart)}</TableCell>
+                  <TableCell>{money(c.spend)}</TableCell>
+                  <TableCell>{c.metaSignups}</TableCell>
+                  <TableCell>{perSignup(c.spend, c.metaSignups)}</TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </TableCard>
+      {summary.cohortBefore > 0 && (
+        <p className="text-ink-muted text-sm">
+          {summary.cohortBefore} more Meta signups first met an ad before the
+          first week shown.
+        </p>
+      )}
+    </PanelCard>
+  );
+}
+
 const WEEK_COLUMNS = 7;
 
 export function ByWeek({ summary }: { summary: WeeklySummary }) {

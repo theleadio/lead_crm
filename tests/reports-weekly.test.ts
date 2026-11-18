@@ -24,6 +24,7 @@ const signup = (at: string, over: Partial<SignupRow> = {}): SignupRow => ({
   campaignId: null,
   adId: null,
   matched: "none",
+  firstTouchAt: null,
   ...over,
 });
 
@@ -213,4 +214,41 @@ test("spend in two currencies is refused, not added", () => {
       Q,
     ),
   );
+});
+
+test("by first touch: a Meta signup counts in the week of its first ad touch", () => {
+  const meta = (at: string, firstTouchAt: string | null) =>
+    signup(at, { matched: "meta", firstTouchAt });
+  const s = summarise(
+    input({
+      signups: [
+        meta("2026-11-17T03:00:00Z", "2026-11-04T03:00:00Z"), // touched wk 2 Nov
+        meta("2026-11-10T03:00:00Z", "2026-11-04T03:00:00Z"), // touched wk 2 Nov
+        meta("2026-11-17T03:00:00Z", "2026-11-16T03:00:00Z"), // touched wk 16 Nov
+        meta("2026-11-12T03:00:00Z", "2026-10-20T03:00:00Z"), // before the range
+        // Sunday night KL is still the earlier week.
+        meta("2026-11-17T03:00:00Z", "2026-11-15T15:30:00Z"),
+        signup("2026-11-12T03:00:00Z"), // not from Meta: never counted
+      ],
+      spend: [
+        {
+          weekStart: "2026-11-02",
+          campaignId: "1",
+          adId: "a",
+          currency: "MYR",
+          spend: "300.00",
+        },
+      ],
+    }),
+    Q,
+  );
+  assert.deepEqual(
+    s.cohorts.map((c) => [c.weekStart, c.spend, c.metaSignups]),
+    [
+      ["2026-11-02", "300.00", 2],
+      ["2026-11-09", "0.00", 1],
+      ["2026-11-16", "0.00", 1],
+    ],
+  );
+  assert.equal(s.cohortBefore, 1);
 });

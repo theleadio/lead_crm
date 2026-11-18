@@ -55,6 +55,7 @@ import { WaitingPanel } from "./panels/waiting";
 import { WhoPaysPanel } from "./panels/who-pays";
 import {
   AdMatch,
+  ByFirstTouchWeek,
   ByWeek,
   SignupsByClass,
   SignupsPerAd,
@@ -300,6 +301,7 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
           <AdMatch summary={summary.data} />
           <SignupsPerAd summary={summary.data} />
           <ByWeek summary={summary.data} />
+          <ByFirstTouchWeek summary={summary.data} />
         </>
       ) : (
         <PanelError what="the weekly summary" />
