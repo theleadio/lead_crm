@@ -1,11 +1,11 @@
 // Spec §9.15 Templates, §6: templates have no table here, so this tab only
 // says where they are edited. Read-only on purpose.
 //
-// Email templates live in Resend (Shawn, 18 Nov 2026).
+// Open (proposal question 2, for Shawn): which email service holds the email
+// templates, and its link. Until then the email line names no service.
 // shortcut: WATI's general sign-in address; swap in the account's own link
 // once Shawn confirms it.
 const WATI_URL = "https://app.wati.io/";
-const RESEND_TEMPLATES_URL = "https://resend.com/templates";
 
 export function TemplatesTab() {
   return (
@@ -29,17 +29,9 @@ export function TemplatesTab() {
       <section className="space-y-1">
         <h2 className="font-semibold">Email templates</h2>
         <p className="text-ink-muted">
-          Email templates are written and edited in Resend, the email sending
-          service, not in the CRM.
+          Email templates are edited in the email sending service, not in the
+          CRM. Where to find them will be added here.
         </p>
-        <a
-          href={RESEND_TEMPLATES_URL}
-          target="_blank"
-          rel="noreferrer"
-          className="text-blue-ink inline-block underline"
-        >
-          Open Resend
-        </a>
       </section>
     </div>
   );
