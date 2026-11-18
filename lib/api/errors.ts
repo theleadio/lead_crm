@@ -41,13 +41,14 @@ function parseVersion(raw: string | null): number | null {
 }
 
 // Field-level messages for forms (spec §9 cross-screen: field-level errors).
-export function validationError(err: ZodError) {
+// §7 answers 400; the §9.15 Settings routes answer 422, as their specs say.
+export function validationError(err: ZodError, status: 400 | 422 = 400) {
   const fields: Record<string, string> = {};
   for (const issue of err.issues) {
     const key = issue.path.join(".");
     if (key && !fields[key]) fields[key] = issue.message;
   }
-  return apiError(400, "validation_failed", "Check the highlighted fields.", {
+  return apiError(status, "validation_failed", "Check the highlighted fields.", {
     fields,
   });
 }

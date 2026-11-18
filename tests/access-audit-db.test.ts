@@ -105,6 +105,26 @@ it("sign-in: success writes sign_in with the ip", async () => {
   assert.equal(row.ip, "198.51.100.4");
 });
 
+it("sign-in: success sets last_login_at and says it was a password", async () => {
+  await db()`UPDATE app_user SET last_login_at = NULL WHERE id = ${sales.id}`;
+  const email = await STAFF_EMAIL();
+  await signIn(email, "right", null, stub("right"));
+  const [u] = await db()`
+    SELECT last_login_at IS NOT NULL AND last_login_at > now() - interval '1 minute' AS fresh
+    FROM app_user WHERE id = ${sales.id}`;
+  assert.equal(u.fresh, true);
+  const [row] = await db()`
+    SELECT after FROM audit_log WHERE action = 'sign_in' AND user_id = ${sales.id}`;
+  assert.deepEqual(row.after, { method: "password" });
+});
+
+it("sign-in: a failure leaves last_login_at alone", async () => {
+  await db()`UPDATE app_user SET last_login_at = NULL WHERE id = ${sales.id}`;
+  await signIn(await STAFF_EMAIL(), "wrong", null, stub("right"));
+  const [u] = await db()`SELECT last_login_at FROM app_user WHERE id = ${sales.id}`;
+  assert.equal(u.last_login_at, null);
+});
+
 it("sign-in: unknown email stores no email and no user", async () => {
   const r = await signIn("nobody@example.com", "x", null, stub("right"));
   assert.deepEqual(r, {
