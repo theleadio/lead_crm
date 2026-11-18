@@ -27,6 +27,7 @@ import {
 } from "../lib/people/duplicate-review.ts";
 import { closeDb, db, withTransaction } from "../lib/sql.ts";
 import { it, newCourse, newUser } from "./seed.ts";
+import { proxy } from "../proxy.ts";
 
 after(closeDb);
 
@@ -148,14 +149,13 @@ test("proxy matcher: /api/public/* skips the session proxy, CRM routes and other
     assert.equal(re.test(p), true, `${p} should go through the proxy`);
 });
 
-test("proxy: the API branch never redirects to sign-in (handlers authenticate themselves)", () => {
-  const src = readFileSync(new URL("../proxy.ts", import.meta.url), "utf8");
-  const apiBranch = src.slice(
-    src.indexOf('startsWith("/api")'),
-    src.indexOf("const { data }"),
-  );
-  assert.match(apiBranch, /return response;/);
-  assert.doesNotMatch(apiBranch, /redirect/);
+test("proxy: an API call with no session is never redirected to sign-in (handlers authenticate themselves)", async () => {
+  for (const path of ["/api/people", "/api/users"])
+    assert.equal(
+      await proxy(new Request(`https://crm.test${path}`) as never),
+      undefined,
+      path,
+    );
 });
 
 it("key: a wrong, missing or unconfigured key is refused before anything is read", async () => {
@@ -912,9 +912,11 @@ it("attribution: utmId and utmAdId are stored as the touchpoint's campaign and a
 });
 
 it("lead: createDeal false makes person and touchpoint but no deal; LeadCaptured carries dealId null", async () => {
-  const r = (await (
-    await lead(form({ createDeal: false }))
-  ).json()) as { ok: true; personId: string; dealId: string | null };
+  const r = (await (await lead(form({ createDeal: false }))).json()) as {
+    ok: true;
+    personId: string;
+    dealId: string | null;
+  };
   assert.equal(r.dealId, null);
   assert.equal(await count("person", "id = $1", r.personId), 1);
   assert.equal(await count("touchpoint", "person_id = $1", r.personId), 1);

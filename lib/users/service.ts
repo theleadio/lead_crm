@@ -3,7 +3,7 @@ import { writeAudit } from "../audit.ts";
 import type { Role, Viewer } from "../auth/permissions.ts";
 import { isUuid } from "../people/service.ts";
 import { db, withTransaction } from "../sql.ts";
-import type { UserUpdate } from "../validation/user.ts";
+import type { UserCreate, UserUpdate } from "../validation/user.ts";
 
 // Spec §9.15 Users, §6, §7 /api/users. super_admin only; the routes check.
 
@@ -27,7 +27,9 @@ export type UserWriteResult =
   // 422: your own role or active flag (design 6).
   | { kind: "self_change" }
   // 422: would leave no active super_admin.
-  | { kind: "last_super_admin" };
+  | { kind: "last_super_admin" }
+  // 409: someone already has this email, in any case.
+  | { kind: "duplicate_email" };
 
 function toUserRow(r: postgres.Row): UserRow {
   return {
@@ -52,6 +54,40 @@ export async function listUsers(): Promise<UserRow[]> {
   const rows = await db()`
     SELECT * FROM app_user ORDER BY is_active DESC, lower(full_name), id`;
   return rows.map(toUserRow);
+}
+
+// Add user: a new allowlist row. They show as "Not signed in yet" until their
+// first AI365 sign-in.
+export async function createUser(
+  input: UserCreate,
+  viewer: Viewer,
+): Promise<UserWriteResult> {
+  return withTransaction(async () => {
+    let row: postgres.Row;
+    try {
+      // Own savepoint, so the unique violation doesn't abort the caller.
+      [row] = await withTransaction(
+        () => db()`
+          INSERT INTO app_user (email, full_name, role_code, created_by)
+          VALUES (${input.email}, ${input.fullName}, ${input.roleCode}, ${viewer.id})
+          RETURNING *`,
+      );
+    } catch (err) {
+      // app_user_email_uq is on lower(email).
+      if ((err as { code?: string }).code === "23505")
+        return { kind: "duplicate_email" } as const;
+      throw err;
+    }
+    await writeAudit({
+      userId: viewer.id,
+      action: "create",
+      entity: "app_user",
+      entityId: row.id,
+      before: null,
+      after: input,
+    });
+    return { kind: "ok", user: toUserRow(row) } as const;
+  });
 }
 
 // Body field → column, for the SET and the audit row.
@@ -79,7 +115,8 @@ export async function updateUser(
     // Design 6: serialises every user write, so two demotions at once can't
     // both see the other as the remaining super_admin.
     await sql`SELECT pg_advisory_xact_lock(hashtext('app_user_super_admin'))`;
-    const [before] = await sql`SELECT * FROM app_user WHERE id = ${id} FOR UPDATE`;
+    const [before] =
+      await sql`SELECT * FROM app_user WHERE id = ${id} FOR UPDATE`;
     if (!before) return { kind: "not_found" };
     if (Number(before.version) !== ifMatch) return { kind: "stale" };
 

@@ -1,98 +1,61 @@
 import { clientIp, writeAudit } from "../audit.ts";
+import { isUuid } from "../people/service.ts";
 import { db } from "../sql.ts";
 
-// Spec §6 Audit + §14: every sign-in, failed sign-in and sign-out is logged,
-// and an account locks after 5 failures in 15 minutes. Failure counts come
-// straight from audit_log (audit_log_user_idx), so no extra table.
+// Spec §6 Audit + §14: every sign-in, failed sign-in and sign-out is logged.
+// AI365 says who someone is; app_user is the allowlist that says whether they
+// may use the CRM: an active row with that email, case-insensitive. The CRM
+// stores no passwords.
 
-const MAX_FAILURES = 5;
-const WINDOW_MINUTES = 15;
-
-export const WRONG_LOGIN = "Wrong email or password. Try again.";
-
-// The slice of the Supabase client we use, so tests can stub it.
-export type AuthClient = {
-  auth: {
-    signInWithPassword(c: {
-      email: string;
-      password: string;
-    }): Promise<{ error: unknown }>;
-    signOut(): Promise<unknown>;
-  };
-};
-
-async function serverClient(): Promise<AuthClient> {
-  return (await import("./server.ts")).createClient();
-}
-
-// A same-site path only: blocks https://evil.com, //evil.com and /\evil.com.
+// A same-site path only. Resolved like a browser would (which drops tab, CR and
+// LF, so "/\t/evil.com" means //evil.com), then the origin must still be ours.
 export function safeNext(next: unknown): string {
-  return typeof next === "string" && /^\/(?![/\\])/.test(next)
-    ? next
-    : "/people";
-}
-
-// Minutes until the lock lifts, or 0 when the account isn't locked.
-async function lockedMinutes(userId: string): Promise<number> {
-  const rows = await db()`
-    SELECT ceil(extract(epoch FROM (at + make_interval(mins => ${WINDOW_MINUTES}) - now())) / 60)::int AS mins
-    FROM audit_log
-    WHERE user_id = ${userId} AND action = 'sign_in_failed'
-      AND at > now() - make_interval(mins => ${WINDOW_MINUTES})
-    ORDER BY at DESC LIMIT ${MAX_FAILURES}`;
-  return rows.length < MAX_FAILURES
-    ? 0
-    : Math.max(1, rows[MAX_FAILURES - 1].mins);
-}
-
-export async function signIn(
-  email: string,
-  password: string,
-  forwardedFor: string | null,
-  client?: AuthClient,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  const ip = clientIp(forwardedFor);
-  const [user] = await db()`
-    SELECT id FROM app_user WHERE lower(email) = lower(${email})`;
-  const userId: string | null = user?.id ?? null;
-
-  // ponytail: two simultaneous attempts can both pass this check and allow a
-  // 6th failure; add a per-user advisory lock if that ever matters.
-  if (userId) {
-    const mins = await lockedMinutes(userId);
-    if (mins > 0)
-      return {
-        ok: false,
-        error: `Too many attempts. Try again in ${mins} minute${mins === 1 ? "" : "s"}.`,
-      };
+  if (typeof next !== "string" || !next.startsWith("/")) return "/people";
+  const base = "https://crm.invalid";
+  try {
+    const u = new URL(next, base);
+    return u.origin === base ? u.pathname + u.search + u.hash : "/people";
+  } catch {
+    return "/people";
   }
+}
 
-  const { error } = await (
-    client ?? (await serverClient())
-  ).auth.signInWithPassword({ email, password });
-  if (error) console.error("sign-in rejected by Supabase:", error);
+// The app_user id when that person is active staff, else null. Either way the
+// attempt is audited; a refusal stores no user and no email, so a stranger's
+// address (a course learner, say) is never kept.
+export async function signIn(
+  who: { email: string } | { id: string },
+  method: "ai365" | "dev",
+  forwardedFor: string | null,
+): Promise<string | null> {
+  const sql = db();
+  const [user] =
+    "email" in who
+      ? await sql`SELECT id, is_active FROM app_user
+                  WHERE lower(email) = lower(${who.email})`
+      : isUuid(who.id)
+        ? await sql`SELECT id, is_active FROM app_user WHERE id = ${who.id}`
+        : [];
+  const userId: string | null = user?.is_active ? user.id : null;
+
   // §9.15 Users: the last sign-in, which the Users tab shows as the status.
-  // Only a successful sign-in moves it.
-  if (!error && userId)
-    await db()`UPDATE app_user SET last_login_at = now() WHERE id = ${userId}`;
-  // Unknown emails log with no user and no email, so strangers' data isn't kept.
+  if (userId)
+    await sql`UPDATE app_user SET last_login_at = now() WHERE id = ${userId}`;
   await writeAudit({
     userId,
-    action: error ? "sign_in_failed" : "sign_in",
+    action: userId ? "sign_in" : "sign_in_failed",
     entity: "app_user",
     entityId: userId,
     before: null,
-    // Says which way they signed in; Google sign-in (phase 2) writes "google".
-    after: error ? null : { method: "password" },
-    ip,
+    after: { method },
+    ip: clientIp(forwardedFor),
   });
-  return error ? { ok: false, error: WRONG_LOGIN } : { ok: true };
+  return userId;
 }
 
 export async function signOut(
   user: { id: string } | null,
   forwardedFor: string | null,
-  client?: AuthClient,
 ): Promise<void> {
   if (user)
     await writeAudit({
@@ -104,5 +67,4 @@ export async function signOut(
       after: null,
       ip: clientIp(forwardedFor),
     });
-  await (client ?? (await serverClient())).auth.signOut();
 }

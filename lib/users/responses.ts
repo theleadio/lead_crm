@@ -1,12 +1,15 @@
 import { apiError } from "../api/errors.ts";
 import type { UserWriteResult } from "./service.ts";
 
-// One §13 answer per updateUser result. Kept out of the route file so it can
+// One §13 answer per createUser / updateUser result. Kept out of the route file so it can
 // be tested without a session (as lib/tasks/responses.ts).
-export function userWriteResponse(result: UserWriteResult): Response {
+export function userWriteResponse(
+  result: UserWriteResult,
+  okStatus = 200,
+): Response {
   switch (result.kind) {
     case "ok":
-      return Response.json(result.user);
+      return Response.json(result.user, { status: okStatus });
     case "not_found":
       return apiError(404, "not_found", "This user doesn't exist.");
     case "stale":
@@ -26,6 +29,12 @@ export function userWriteResponse(result: UserWriteResult): Response {
         422,
         "last_super_admin",
         "There must always be at least one active super admin. Make someone else a super admin first.",
+      );
+    case "duplicate_email":
+      return apiError(
+        409,
+        "duplicate_email",
+        "Someone with this email is already a user.",
       );
   }
 }

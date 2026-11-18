@@ -1,15 +1,18 @@
 import { cache } from "react";
+import { cookies } from "next/headers";
 import { db } from "../sql";
-import { getSession } from "./server";
+import { SESSION_COOKIE, verifySession } from "./session";
 import { ROLES, type Role, type Viewer } from "./permissions";
 
 export type CurrentUser = Viewer & { email: string | null; fullName: string };
 
-// Spec §6 + v1.2: the signed-in auth user maps to an app_user through
-// auth_user_id. A deactivated or unlinked user gets no access on their
-// next request (null → 401).
+// Spec §6: the CRM's signed session cookie (lib/auth/session.ts) names an
+// app_user. A deactivated user gets no access on their next request
+// (null → 401), even with a cookie that is still valid.
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
-  const session = await getSession();
+  const session = await verifySession(
+    (await cookies()).get(SESSION_COOKIE)?.value,
+  );
   if (!session) return null;
 
   const dev = process.env.NODE_ENV !== "production";
@@ -23,7 +26,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     ? await sql`SELECT id, email, full_name, role_code FROM app_user
                 WHERE id = ${actAs} AND is_active`
     : await sql`SELECT id, email, full_name, role_code FROM app_user
-                WHERE auth_user_id = ${session.id} AND is_active`;
+                WHERE id = ${session.uid} AND is_active`;
   if (!user) return null;
 
   const override = dev ? (process.env.DEV_ROLE?.trim() as Role) : undefined;

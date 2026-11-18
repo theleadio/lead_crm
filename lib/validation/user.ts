@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { ROLES } from "../auth/permissions.ts";
+import { isValidEmail } from "../format/email.ts";
 
-// Bodies of /api/users (§7, §9.15 Users). The add-user body (company email,
-// name, role) arrives with sign-in in phase 2. No employment type: unused.
+// Bodies of /api/users (§7, §9.15 Users). No employment type: the column is
+// unused, and the Part-timer role is what limits access (17 Nov 2026).
 
 const roleCode = z.enum(ROLES, "Pick one of the roles");
 
@@ -17,3 +18,21 @@ export const userUpdateSchema = z
     path: ["roleCode"],
   });
 export type UserUpdate = z.output<typeof userUpdateSchema>;
+
+// POST /api/users. The email is the one they sign in to AI365 with; it is
+// the allowlist entry, matched case-insensitively.
+export const userCreateSchema = z.strictObject({
+  email: z
+    .string("Enter their email")
+    .trim()
+    .min(1, "Enter their email")
+    .max(320, "Keep the email under 320 characters")
+    .refine(isValidEmail, "Enter a valid email address"),
+  fullName: z
+    .string("Enter their name")
+    .trim()
+    .min(1, "Enter their name")
+    .max(200, "Keep the name under 200 characters"),
+  roleCode,
+});
+export type UserCreate = z.output<typeof userCreateSchema>;

@@ -1,12 +1,35 @@
 import Image from "next/image";
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth/server";
+import { getCurrentUser } from "@/lib/auth/current-user";
 import leadLogoWhite from "@/public/brand/lead-logo-white.webp";
-import { SignInForm } from "./sign-in-form";
 
-export default async function SignInPage() {
-  const user = await getSession();
-  if (user) redirect("/people");
+// What went wrong on the way back from AI365 (lib/auth/flow.ts). The button
+// below is the retry: every one of these starts sign-in over.
+const ERRORS: Record<string, string> = {
+  not_verified:
+    "Your AI365 account is not active or verified yet. Finish setting it up in AI365, then try again.",
+  expired: "That sign-in didn't finish in time. Please sign in again.",
+  state:
+    "We couldn't match that sign-in to this browser. Please sign in again from this page.",
+  unavailable:
+    "Sign-in isn't working right now. Try again in a few minutes, and tell a super admin if it keeps happening.",
+};
+
+const BUTTON =
+  "bg-lead-blue hover:bg-lead-blue-hover focus-visible:outline-focus-ring text-on-blue block w-full cursor-pointer rounded-full py-2.5 text-center text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2";
+
+export default async function SignInPage(props: PageProps<"/sign-in">) {
+  if (await getCurrentUser()) redirect("/people");
+  const { next, error } = await props.searchParams;
+  const message = typeof error === "string" ? ERRORS[error] : undefined;
+  const start =
+    typeof next === "string"
+      ? `/auth/ai365/start?next=${encodeURIComponent(next)}`
+      : "/auth/ai365/start";
+  // AI365 only sends people back to the production site, so local
+  // development signs in as DEV_USER_ID (the route 404s in production).
+  const devSignIn =
+    process.env.NODE_ENV !== "production" && !!process.env.DEV_USER_ID?.trim();
 
   return (
     <main className="bg-surface flex min-h-screen items-center justify-center">
@@ -27,7 +50,24 @@ export default async function SignInPage() {
             CRM
           </span>
         </h1>
-        <SignInForm />
+        <div className="space-y-4">
+          {message && (
+            <p role="alert" className="text-danger text-sm">
+              {message}
+            </p>
+          )}
+          {/* A plain link, not fetch: the browser itself goes to AI365. */}
+          <a href={start} className={BUTTON}>
+            Sign in with AI365
+          </a>
+          {devSignIn && (
+            <form action="/auth/dev-sign-in" method="post">
+              <button className="border-line-strong text-ink focus-visible:outline-focus-ring w-full cursor-pointer rounded-full border py-2.5 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2">
+                Dev sign-in
+              </button>
+            </form>
+          )}
+        </div>
       </div>
     </main>
   );

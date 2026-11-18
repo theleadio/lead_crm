@@ -4,12 +4,7 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { forbidden } from "../lib/api/errors.ts";
 import { canWriteCompany, type Viewer } from "../lib/auth/permissions.ts";
-import {
-  safeNext,
-  signIn,
-  signOut,
-  type AuthClient,
-} from "../lib/auth/sign-in.ts";
+import { safeNext, signIn, signOut } from "../lib/auth/sign-in.ts";
 import { closeDb, db, rollbackAfter } from "../lib/sql.ts";
 import { SEED_USERS } from "../scripts/seed-ids.ts";
 
@@ -71,15 +66,8 @@ it("403: a junk x-forwarded-for is stored as no ip, still 403", async () => {
   assert.equal((await denials(marketing.id))[0].ip, null);
 });
 
-// Sign-in, with the Supabase call stubbed. Only the password check differs.
-const stub = (goodPassword: string | null): AuthClient => ({
-  auth: {
-    signInWithPassword: async ({ password }) => ({
-      error: password === goodPassword ? null : new Error("bad"),
-    }),
-    signOut: async () => ({}),
-  },
-});
+// Sign-in: AI365 has already said who they are; this is the allowlist check.
+// The callback's own tests are in ai365-callback-db.test.ts.
 const STAFF_EMAIL = async () =>
   (await db()`SELECT email FROM app_user WHERE id = ${sales.id}`)[0]
     .email as string;
@@ -87,94 +75,51 @@ const failRows = async () =>
   await db()`
     SELECT user_id, entity_id, before, after FROM audit_log
     WHERE action = 'sign_in_failed' ORDER BY at DESC`;
-const failNTimes = async (email: string, n: number) => {
-  for (let i = 0; i < n; i++) await signIn(email, "wrong", null, stub("right"));
-};
-const insertFailure = async (minutesAgo: number) =>
-  await db()`
-    INSERT INTO audit_log (user_id, action, at)
-    VALUES (${sales.id}, 'sign_in_failed', now() - make_interval(mins => ${minutesAgo}))`;
 
-it("sign-in: success writes sign_in with the ip", async () => {
+it("sign-in: success writes sign_in with the ip and the method", async () => {
   const email = await STAFF_EMAIL();
-  const r = await signIn(email, "right", "198.51.100.4", stub("right"));
-  assert.deepEqual(r, { ok: true });
+  assert.equal(await signIn({ email }, "ai365", "198.51.100.4"), sales.id);
   const [row] = await db()`
-    SELECT user_id, host(ip) AS ip FROM audit_log
+    SELECT host(ip) AS ip, after FROM audit_log
     WHERE action = 'sign_in' AND user_id = ${sales.id}`;
   assert.equal(row.ip, "198.51.100.4");
+  assert.deepEqual(row.after, { method: "ai365" });
 });
 
-it("sign-in: success sets last_login_at and says it was a password", async () => {
+it("sign-in: success sets last_login_at", async () => {
   await db()`UPDATE app_user SET last_login_at = NULL WHERE id = ${sales.id}`;
-  const email = await STAFF_EMAIL();
-  await signIn(email, "right", null, stub("right"));
+  await signIn({ email: await STAFF_EMAIL() }, "ai365", null);
   const [u] = await db()`
-    SELECT last_login_at IS NOT NULL AND last_login_at > now() - interval '1 minute' AS fresh
+    SELECT last_login_at > now() - interval '1 minute' AS fresh
     FROM app_user WHERE id = ${sales.id}`;
   assert.equal(u.fresh, true);
-  const [row] = await db()`
-    SELECT after FROM audit_log WHERE action = 'sign_in' AND user_id = ${sales.id}`;
-  assert.deepEqual(row.after, { method: "password" });
-});
-
-it("sign-in: a failure leaves last_login_at alone", async () => {
-  await db()`UPDATE app_user SET last_login_at = NULL WHERE id = ${sales.id}`;
-  await signIn(await STAFF_EMAIL(), "wrong", null, stub("right"));
-  const [u] = await db()`SELECT last_login_at FROM app_user WHERE id = ${sales.id}`;
-  assert.equal(u.last_login_at, null);
 });
 
 it("sign-in: unknown email stores no email and no user", async () => {
-  const r = await signIn("nobody@example.com", "x", null, stub("right"));
-  assert.deepEqual(r, {
-    ok: false,
-    error: "Wrong email or password. Try again.",
-  });
+  assert.equal(
+    await signIn({ email: "nobody@example.com" }, "ai365", null),
+    null,
+  );
   const [row] = await failRows();
   assert.equal(row.user_id, null);
   assert.equal(JSON.stringify(row).includes("nobody@example.com"), false);
 });
 
-it("sign-in: 5 failures lock the 6th attempt even with the right password", async () => {
-  const email = await STAFF_EMAIL();
-  const before = (await failRows()).length;
-  await failNTimes(email, 5);
-  const r = await signIn(email, "right", null, stub("right"));
-  assert.equal(r.ok, false);
-  assert.match(
-    !r.ok ? r.error : "",
-    /^Too many attempts\. Try again in \d+ minutes?\.$/,
+it("sign-in: a deactivated user is refused and last_login_at stays", async () => {
+  await db()`UPDATE app_user SET is_active = false, last_login_at = NULL
+             WHERE id = ${sales.id}`;
+  assert.equal(
+    await signIn({ email: await STAFF_EMAIL() }, "ai365", null),
+    null,
   );
-  // A refused attempt is not itself a failure row, so the window can end.
-  assert.equal((await failRows()).length, before + 5);
-});
-
-it("sign-in: 4 failures don't lock", async () => {
-  const email = await STAFF_EMAIL();
-  await failNTimes(email, 4);
-  assert.deepEqual(await signIn(email, "right", null, stub("right")), {
-    ok: true,
-  });
-});
-
-it("sign-in: failures older than 15 minutes don't count", async () => {
-  const email = await STAFF_EMAIL();
-  for (const m of [16, 20, 30, 40, 50]) await insertFailure(m);
-  assert.deepEqual(await signIn(email, "right", null, stub("right")), {
-    ok: true,
-  });
-});
-
-it("sign-in: lock message says minutes until the 5th-newest failure expires", async () => {
-  const email = await STAFF_EMAIL();
-  for (const m of [1, 2, 3, 4, 14]) await insertFailure(m);
-  const locked = await signIn(email, "right", null, stub("right"));
-  assert.match(!locked.ok ? locked.error : "", /in 1 minute\./);
+  const [u] =
+    await db()`SELECT last_login_at FROM app_user WHERE id = ${sales.id}`;
+  assert.equal(u.last_login_at, null);
+  assert.equal((await failRows())[0].user_id, null);
 });
 
 it("sign-out: writes sign_out for the session user", async () => {
-  await signOut({ id: sales.id }, "198.51.100.9", stub(null));
+  await signOut({ id: sales.id }, "198.51.100.9");
   const [row] = await db()`
     SELECT host(ip) AS ip FROM audit_log
     WHERE action = 'sign_out' AND user_id = ${sales.id}`;
@@ -183,6 +128,8 @@ it("sign-out: writes sign_out for the session user", async () => {
 
 test("safeNext: only same-site paths", () => {
   assert.equal(safeNext("/deals?x=1"), "/deals?x=1");
-  for (const bad of ["//evil.com", "/\\evil.com", "https://evil.com", "", null])
-    assert.equal(safeNext(bad), "/people");
+  const bads = ["//evil.com", "/\\evil.com", "https://evil.com", "", null];
+  // Browsers drop tab, CR and LF from a URL, which turns these into //evil.com.
+  bads.push("/\t/evil.com", "/\n/evil.com", "/\r\\evil.com", "/\t\\evil.com");
+  for (const bad of bads) assert.equal(safeNext(bad), "/people", String(bad));
 });
