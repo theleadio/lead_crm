@@ -31,6 +31,8 @@ passed 38 of 38 checks against it. The test script rolls itself back.
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/022_message_provider_id.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/023_campaign_link_funding.sql
     psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/024_revoke_inbox_browser.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/025_enrolment_funding_guest.sql
+    psql -d <db> -v ON_ERROR_STOP=1 -f lib/db/migrations/026_participant_sheet.sql
     psql -d <db> -f lib/db/tests/schema_constraints.sql
     psql -d <db> -f lib/db/tests/002_merge_erase_tests.sql
     psql -d <db> -f lib/db/tests/003_company_from_form_tests.sql
@@ -296,3 +298,7 @@ Match these in your mock layer so nothing surprises you when the real schema lan
 `app_setting` holds the decision-calendar fallbacks: 48-hour reservations,
 60-minute SLA, 8-hour idle timeout. The HRDC values are `null` until
 Finance supplies them (open item O7).
+
+## Migration 026 — participant sheet sync (18 Nov)
+
+Two tables for the ops team's Google Sheet "LEAD Participant List 2026", which holds some signups the CRM does not. `participant_class_label` maps a sheet class label and date to a CRM class (`class_id` NULL until matched; `source` auto or manual). `participant_entry` is one insert-only row per person and label: `first_seen_at` is the signup date (the hour the row reached the CRM), and `approx_date` marks rows loaded by the history backfill, dated by their class. Written by `POST /api/sync/participants` (own key `PARTICIPANT_SYNC_KEY`), read by the weekly ads report. Entries stay on a merged-away person and the report follows `merged_into_id`, so `merge_person` is unchanged. Not reachable from the browser. Setup: `docs/superpowers/notes/2026-11-18-participant-sheet-setup.md`. Rollback is in the file header.
