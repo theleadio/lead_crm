@@ -274,7 +274,14 @@ export function SignupsPerAd({ summary }: { summary: WeeklySummary }) {
             ) : (
               summary.ads.map((a) => (
                 <TableRow key={a.adId}>
-                  <TableCell>{a.adName}</TableCell>
+                  <TableCell>
+                    {a.adName}
+                    {a.campaignName && (
+                      <div className="text-ink-muted text-xs">
+                        {a.campaignName}
+                      </div>
+                    )}
+                  </TableCell>
                   <TableCell className="text-ink-muted">
                     {a.className ?? "Not linked"}
                   </TableCell>
@@ -287,7 +294,13 @@ export function SignupsPerAd({ summary }: { summary: WeeklySummary }) {
                   >
                     {a.signups}
                   </TableCell>
-                  <TableCell>{money(a.spend)}</TableCell>
+                  <TableCell>
+                    {a.spentEarlier ? (
+                      <span className="text-ink-muted">spent earlier</span>
+                    ) : (
+                      money(a.spend)
+                    )}
+                  </TableCell>
                   <TableCell>{perSignup(a.spend, a.signups)}</TableCell>
                 </TableRow>
               ))

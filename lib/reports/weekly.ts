@@ -74,6 +74,8 @@ export type WeeklyInput = {
   // Meta campaign id to class id (`class_meta_campaign`).
   campaignClass: [string, string][];
   adNames: [string, string][];
+  // Ad id to the name of the campaign it runs in, so same-named ads read apart.
+  adCampaignNames?: [string, string][];
 };
 
 export type WeekRow = {
@@ -101,9 +103,13 @@ export type ClassRow = {
 export type AdRow = {
   adId: string;
   adName: string;
+  campaignName: string | null;
   className: string | null;
   signups: number;
   spend: string;
+  // Brought a signup in range but spent nothing in range: its spend came
+  // before the range, so a dash would read as "free".
+  spentEarlier: boolean;
 };
 
 export type WeeklySummary = {
@@ -221,6 +227,7 @@ export function summarise(
   const classOfCampaign = new Map(input.campaignClass);
   const info = new Map(input.classes.map((c) => [c.key, c]));
   const adName = new Map(input.adNames);
+  const adCampaignName = new Map(input.adCampaignNames ?? []);
   const spendByClass = new Map<string, string[]>();
   const unlinked: string[] = [];
   for (const s of spend) {
@@ -297,9 +304,11 @@ export function summarise(
       return {
         adId,
         adName: adName.get(adId) ?? adId,
+        campaignName: adCampaignName.get(adId) ?? null,
         className: cls ? (info.get(cls)?.name ?? null) : null,
         signups: adSignups.get(adId) ?? 0,
         spend: sumMyr(adSpend.get(adId) ?? []),
+        spentEarlier: adSignups.has(adId) && !adSpend.has(adId),
       };
     },
   );
@@ -462,7 +471,9 @@ export async function weeklySummary(
       SELECT co.id::text AS id, co.name_en, co.track
       FROM course co WHERE co.id = ANY(${[...courseIds]}::uuid[])`,
     sql`
-      SELECT ad_id, max(ad_name) AS ad_name FROM meta_ad_insight
+      SELECT ad_id, max(ad_name) AS ad_name,
+             (array_agg(campaign_name ORDER BY day DESC))[1] AS campaign_name
+      FROM meta_ad_insight
       WHERE ad_id = ANY(${adIds}::text[]) GROUP BY ad_id`,
   ]);
 
@@ -505,6 +516,9 @@ export async function weeklySummary(
       ],
       campaignClass: links.map((l) => [l.meta_campaign_id, l.class_id]),
       adNames: adRows.map((a) => [a.ad_id, a.ad_name]),
+      adCampaignNames: adRows
+        .filter((a) => a.campaign_name)
+        .map((a) => [a.ad_id, a.campaign_name]),
     },
     q,
   );

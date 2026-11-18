@@ -138,7 +138,14 @@ test("classes: signups, HRDC, Meta and pending per class; spend through the camp
         },
       ],
       campaignClass: [["111", "c1"]],
-      adNames: [["a1", "N8N video A"]],
+      adNames: [
+        ["a1", "N8N video A"],
+        ["a2", "N8N video A"],
+      ],
+      adCampaignNames: [
+        ["a1", "LEAD | Nov2026 | Sales | N8N 25 Nov"],
+        ["a2", "LEAD | Nov2026 | Sales | N8N retarget"],
+      ],
     }),
     Q,
   );
@@ -172,6 +179,14 @@ test("classes: signups, HRDC, Meta and pending per class; spend through the camp
   });
   assert.equal(s.ads[0].adName, "N8N video A");
   assert.equal(s.ads[0].className, "N8N · 25 Nov 2026");
+  // Same-named ads are told apart by campaign; an ad with signups and no
+  // spend in range says it spent earlier, one that spent does not.
+  const a2 = s.ads.find((a) => a.adId === "a2")!;
+  assert.equal(a2.campaignName, "LEAD | Nov2026 | Sales | N8N retarget");
+  assert.equal(a2.spentEarlier, true);
+  assert.equal(s.ads[0].spentEarlier, false);
+  assert.equal(a9?.spentEarlier, false);
+  assert.equal(a9?.campaignName, null);
 });
 
 test("spend in two currencies is refused, not added", () => {
