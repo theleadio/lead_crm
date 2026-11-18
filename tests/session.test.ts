@@ -79,7 +79,8 @@ test("session: no secret, or a short one, fails closed", async () => {
 
 test("cookie: HttpOnly, Lax, Secure except on http://localhost in dev", () => {
   const local = new Request("http://localhost:3000/x");
-  const live = new Request("https://theleadiocrm.netlify.app/x");
+  // Not the real site: Netlify's secret scan fails on APP_BASE_URL's value.
+  const live = new Request("https://crm.example.com/x");
   const c = cookieHeader(live, SESSION_COOKIE, "v", SESSION_TTL);
   assert.equal(
     c,
