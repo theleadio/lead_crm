@@ -110,7 +110,10 @@ async function once() {
       update: string[],
       refused?: (row: Record<string, unknown>) => void,
     ) => {
-      const write = (s: postgres.TransactionSql, r: Record<string, unknown>[]) =>
+      const write = (
+        s: postgres.TransactionSql,
+        r: Record<string, unknown>[],
+      ) =>
         s`INSERT INTO ${s(table)} ${s(r)} ON CONFLICT (${s(conflict)}) DO UPDATE SET ${s(
           Object.fromEntries(
             update.map((c) => [c, s`EXCLUDED.${s(c)}`]),
@@ -231,7 +234,14 @@ async function once() {
     const classOf = new Map(
       cohorts.map((k) => [
         k.id,
-        classIdForCohort(k, crmClassIds, importClasses, cohorts, warnings, linked),
+        classIdForCohort(
+          k,
+          crmClassIds,
+          importClasses,
+          cohorts,
+          warnings,
+          linked,
+        ),
       ]),
     );
     const lmsClassIds = new Set(classOf.values());
@@ -329,8 +339,25 @@ async function once() {
         saved.forEach(() => bump("class: LMS id saved", "update"));
       } catch (err) {
         if ((err as { code?: string }).code !== "23505") throw err;
-        warnings.push(`LMS class ids not saved, two CRM classes claim one LMS cohort: ${(err as Error).message}`);
+        warnings.push(
+          `LMS class ids not saved, two CRM classes claim one LMS cohort: ${(err as Error).message}`,
+        );
       }
+    // Fill an empty class price from the LMS cohort, for /register. Only ever
+    // fills: a price staff set is the CRM's and is never overwritten. 0 or a
+    // missing price is "no price". ponytail: whether the LMS figure includes
+    // SST is open (review with Zhixuan); the sync copies it as given.
+    const priced = src.cohorts.filter(
+      (k) => k.price_cents > 0 && !onCancelled.has(k.id),
+    );
+    if (priced.length) {
+      const filled = await tx`
+        UPDATE class c SET price_myr = m.price
+        FROM unnest(${priced.map((k) => classOf.get(k.id)!)}::uuid[], ${priced.map((k) => k.price_cents / 100)}::numeric[]) AS m(id, price)
+        WHERE c.id = m.id AND c.price_myr IS NULL
+        RETURNING c.id`;
+      filled.forEach(() => bump("class: price filled", "update"));
+    }
 
     // person: match by email first (never overwrite an existing CRM person).
     const byId = ids(await tx`SELECT id FROM person`);
@@ -398,7 +425,11 @@ async function once() {
         await tx`SELECT DISTINCT order_id FROM salesprocess_payment WHERE order_id IS NOT NULL`
       ).map((r) => enrolmentIdFor(r.order_id))})`;
     // Seats an LMS enrollment adopts: the import's, plus ones staff added by hand.
-    const adoptable = await seatsToAdopt(tx, importEnrols.map((e) => e.id), src.enrols.map((e) => e.id));
+    const adoptable = await seatsToAdopt(
+      tx,
+      importEnrols.map((e) => e.id),
+      src.enrols.map((e) => e.id),
+    );
     const importOf = importSeatsByKey(adoptable);
     const adoptById = new Map(adoptable.map((s) => [s.id, s]));
     // CRM seats that carry the LMS's seat id (028): matched on it before
@@ -494,7 +525,13 @@ async function once() {
         await tx`SELECT id, start_date::text AS start FROM class WHERE id = ANY(${[...ownedClassIds]})`
       ).map((r) => [r.id as string, r.start as string]),
     );
-    const cut = cutOverCancels(importEnrols, ownedClassIds, matched, classStarts, kl_today);
+    const cut = cutOverCancels(
+      importEnrols,
+      ownedClassIds,
+      matched,
+      classStarts,
+      kl_today,
+    );
     const cutDone = await cancelCutOver(tx, cut);
     cutDone.forEach(() => bump("enrolment: cut over", "update"));
 
@@ -503,7 +540,9 @@ async function once() {
     await upsert("enrolment", enrols, "id", ["funding_type"], (row) => {
       stats.enrolment[haveEnrol.has(row.id as string) ? "update" : "insert"]--;
       bump("enrolment: class full", "same");
-      warnings.push(`enrolment refused, class full: ${codeOf.get(row.class_id as string) ?? "(unknown class)"}`);
+      warnings.push(
+        `enrolment refused, class full: ${codeOf.get(row.class_id as string) ?? "(unknown class)"}`,
+      );
     });
     for (const a of adopt)
       await tx`UPDATE enrolment SET status = ${a.status}, completed_at = ${a.completed_at} WHERE id = ${a.id} AND status = 'confirmed'`;
@@ -528,7 +567,9 @@ async function once() {
         saved.forEach(() => bump("enrolment: LMS id saved", "update"));
       } catch (err) {
         if ((err as { code?: string }).code !== "23505") throw err;
-        warnings.push(`LMS seat ids not saved, two CRM seats claim one LMS seat: ${(err as Error).message}`);
+        warnings.push(
+          `LMS seat ids not saved, two CRM seats claim one LMS seat: ${(err as Error).message}`,
+        );
       }
     // Seats the LMS removed, judged on the seats marked before this run, less
     // the ones this run matched (a re-enrolled student keeps the seat) or cut over.
@@ -568,7 +609,12 @@ async function once() {
         RETURNING id`;
       bump("task: check LMS removals", raised.length ? "insert" : "same");
     }
-    const goneDone = await cancelCutOver(tx, gone.cancel, GONE_REASON, GONE_TASK_REASON);
+    const goneDone = await cancelCutOver(
+      tx,
+      gone.cancel,
+      GONE_REASON,
+      GONE_TASK_REASON,
+    );
     goneDone.forEach(() => bump("enrolment: gone from LMS", "update"));
     for (const [value, n] of unknownFunding)
       warnings.push(
