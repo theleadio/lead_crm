@@ -16,11 +16,14 @@ export function TemplateBox({
   suggestions,
   greetingName,
   windowOpen,
+  consentWarning = false,
 }: {
   conversationId: string;
   suggestions: string[];
   greetingName: string;
   windowOpen: boolean;
+  // They never wrote to us and have no WhatsApp marketing consent: warn only.
+  consentWarning?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(!windowOpen);
@@ -113,6 +116,16 @@ export function TemplateBox({
           onChange={(e) => setParams(e.target.value)}
         />
       </label>
+      {consentWarning && (
+        <p
+          role="note"
+          className="border-warning bg-warning-soft text-warning rounded-md border p-3"
+        >
+          This person has never messaged us and hasn&apos;t agreed to WhatsApp
+          marketing. Only send a message they&apos;d expect, such as a reply to
+          their enquiry or a class reminder.
+        </p>
+      )}
       <Button type="submit" disabled={busy || !template.trim()}>
         {busy ? "Sending…" : "Send template"}
       </Button>
