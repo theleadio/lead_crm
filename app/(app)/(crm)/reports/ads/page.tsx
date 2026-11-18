@@ -22,6 +22,7 @@ import {
 } from "@/lib/reports/funding";
 import { fundingFromLms } from "@/lib/reports/lms-funding";
 import { adSpendRows } from "@/lib/reports/ad-spend";
+import { mondayOf, weekBefore, weeklySummary } from "@/lib/reports/weekly";
 import { CLASS_SIZES, SIZE_LABEL, SIZE_NOTE } from "@/lib/reports/class-size";
 import {
   byCampaign,
@@ -35,6 +36,7 @@ import {
 } from "@/lib/reports/spend";
 import {
   adsReportQuerySchema,
+  kualaLumpurDay,
   readAdsReportParams,
 } from "@/lib/validation/report";
 // The §9.0 panel error: a client component that retries the server render in
@@ -51,6 +53,14 @@ import { SpendSplitPanel } from "./panels/spend-split";
 import { TopAdsPanel } from "./panels/top-ads";
 import { WaitingPanel } from "./panels/waiting";
 import { WhoPaysPanel } from "./panels/who-pays";
+import {
+  AdMatch,
+  ByFirstTouchWeek,
+  ByWeek,
+  SignupsByClass,
+  SignupsPerAd,
+  WeeklyCards,
+} from "./panels/weekly-summary";
 
 // Spec §9.18. The ads dashboard, in the app now that the BI tool is dropped
 // (O67). Two panels are drawn from tables that exist; five name what they
@@ -119,6 +129,7 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
     paid,
     paidTotal,
     optins,
+    summary,
   ] = await Promise.all([
     panel("earliest touchpoint", () => earliestMetaTouchpoint(user)),
     panel("who pays", () => fundingSplit(user, query)),
@@ -137,6 +148,7 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
     panel("revenue per campaign", () => revenuePerCampaign(user, query)),
     panel("paid in range", () => paidInRange(user, query)),
     panel("whatsapp opt-ins", () => whatsappOptinRows(user, query)),
+    panel("weekly summary", () => weeklySummary(user, query)),
   ]);
 
   // The cost side of the report, from `meta_ad_insight` (migration 014). The
@@ -278,6 +290,21 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
           these classes. Leads, revenue and ad spend are not split by class, so
           the lead, spend and return panels still cover every campaign.
         </p>
+      )}
+
+      {/* The owner's weekly numbers lead the page (18 Nov). One read, so
+          the cards, the class rows and the weeks always agree. */}
+      {summary.ok ? (
+        <>
+          <WeeklyCards summary={summary.data} />
+          <SignupsByClass summary={summary.data} />
+          <AdMatch summary={summary.data} />
+          <SignupsPerAd summary={summary.data} />
+          <ByWeek summary={summary.data} />
+          <ByFirstTouchWeek summary={summary.data} />
+        </>
+      ) : (
+        <PanelError what="the weekly summary" />
       )}
 
       {earliest.ok && earliest.data && (
@@ -510,11 +537,50 @@ function Shell({
         </button>
       </form>
 
+      <RangePresets size={size} />
+
       {children}
 
       {/* The footer used to say spend had not arrived yet. It has: the panels
           above are drawn from `meta_ad_insight`. What is still missing is
           said by the panel that misses it, not by a line under all of them. */}
     </div>
+  );
+}
+
+// Quick ranges for the weekly summary. Links, not buttons: each is just a
+// URL, so it can be shared and works without client JavaScript. Weeks start
+// on Monday, Kuala Lumpur time, as everywhere on this screen.
+function RangePresets({ size }: { size: string }) {
+  const today = kualaLumpurDay();
+  const monday = mondayOf(today);
+  const lastMonday = weekBefore(monday);
+  const lastSunday = new Date(Date.parse(`${monday}T00:00:00Z`) - 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+  let eightWeeks = monday;
+  for (let i = 0; i < 7; i++) eightWeeks = weekBefore(eightWeeks);
+  const href = (from: string, to: string) => {
+    const p = new URLSearchParams({ "filter[from]": from, "filter[to]": to });
+    if (size) p.set("filter[size]", size);
+    return `?${p}`;
+  };
+  const presets = [
+    ["This week", href(monday, today)],
+    ["Last week", href(lastMonday, lastSunday)],
+    ["Last 8 weeks", href(eightWeeks, today)],
+  ] as const;
+  return (
+    <nav aria-label="Quick ranges" className="flex flex-wrap gap-2 text-sm">
+      {presets.map(([label, url]) => (
+        <a
+          key={label}
+          href={url}
+          className="border-line hover:bg-surface-raised focus-visible:outline-focus-ring rounded-md border px-3 py-1.5 focus-visible:outline-2"
+        >
+          {label}
+        </a>
+      ))}
+    </nav>
   );
 }

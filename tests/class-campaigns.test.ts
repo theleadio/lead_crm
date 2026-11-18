@@ -1,7 +1,11 @@
 // Which Meta campaigns the class page suggests for a class (12 Nov). Pure.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sharesCourseWord, suggestsClass } from "../lib/classes/campaigns.ts";
+import {
+  pickClass,
+  sharesCourseWord,
+  suggestsClass,
+} from "../lib/classes/campaigns.ts";
 
 test("a campaign naming the class's start day and month is suggested", () => {
   assert.equal(
@@ -123,5 +127,50 @@ test("a word that starts like a month is not the class's month", () => {
       "2026-12-09",
     ),
     true,
+  );
+});
+
+// Backfill (18 Nov): same rules for a class that already ran.
+const past = (id: string, start: string, course: string, code: string) => ({
+  id,
+  start_date: start,
+  course_name: course,
+  code,
+});
+const camp = {
+  campaign_id: "c1",
+  name: "LEAD | Oct2026 | Sales | Claude AI实战课 CN 28Oct",
+};
+const claude = past(
+  "k1",
+  "2026-10-28",
+  "Claude AI Mastery",
+  "claude-ai-mastery-28-Oct",
+);
+
+test("pickClass links the one class that fits, past or not", () => {
+  assert.deepEqual(pickClass(camp, [claude], new Set()), { class: claude });
+});
+
+test("pickClass skips two fitting classes, a removed link, and no fit", () => {
+  const twin = past(
+    "k2",
+    "2026-10-28",
+    "Claude AI Mastery",
+    "claude-ai-mastery-28-Oct-b",
+  );
+  assert.deepEqual(pickClass(camp, [claude, twin], new Set()), {
+    skip: "more than one",
+  });
+  assert.deepEqual(pickClass(camp, [claude], new Set(["k1|c1"])), {
+    skip: "removed",
+  });
+  assert.deepEqual(
+    pickClass(
+      camp,
+      [past("k3", "2026-10-29", "Claude AI Mastery", "x")],
+      new Set(),
+    ),
+    { skip: "none" },
   );
 });

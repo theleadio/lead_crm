@@ -49,7 +49,7 @@ export const META_SOURCES = [
 // price (lib/reports/class-size.ts), so the filter is a price range rather
 // than a name or a track. An unpriced course is in no band, which is why a
 // filtered view uses an inner comparison and not COALESCE.
-function sizeSql(sql: postgres.Sql, q: AdsReportQuery) {
+export function sizeSql(sql: postgres.Sql, q: AdsReportQuery) {
   if (!q.size) return sql``;
   const price = sql`co.list_price_myr`;
   if (q.size === "big") return sql`AND ${price} >= ${SIZE_FLOOR.big}`;
@@ -473,12 +473,15 @@ export function daysInRange(
 // resolves to a campaign, one row per person. Needs `campaignMapSql` earlier
 // in the same WITH. Shared by signups and revenue, so both panels credit the
 // same campaign for the same buyer.
-function firstCampaignSql(sql: postgres.Sql) {
+export function firstCampaignSql(sql: postgres.Sql) {
   return sql`
     first_touch AS (
       SELECT DISTINCT ON (t.person_id)
              t.person_id, ${campaignIdSql(sql)} AS campaign_id, t.utm_campaign,
-             t.occurred_at
+             t.occurred_at,
+             -- The ad itself, where the lead named one Meta still reports.
+             -- Only the weekly summary reads it; the campaign stays the key.
+             coalesce(ai.ad_id, ac.ad_id) AS ad_id
       FROM touchpoint t
       JOIN person p ON p.id = t.person_id
       ${campaignJoinSql(sql)}
