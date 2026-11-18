@@ -75,7 +75,7 @@ it("paid seats are signups; payment_pending and live holds are pending; expired 
   const v = await viewer();
   const cls = await newClass();
   await enrol(await person(), cls, "confirmed");
-  await enrol(await person(), cls, "completed");
+  await enrol(await person(), cls, "attended");
   await enrol(await person(), cls, "payment_pending");
   await enrol(
     await person(),
