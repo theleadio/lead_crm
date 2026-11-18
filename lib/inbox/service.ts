@@ -76,6 +76,86 @@ export async function mayUseInbox(viewer: Viewer): Promise<boolean> {
   return Boolean(m);
 }
 
+// §9.2 "WhatsApp via WATI" (agreed with Shawn, 17 Nov 2026): the person page
+// opens their WhatsApp thread in the inbox, which sends replies and templates.
+// Someone who never messaged us has no thread yet; the roles that see the
+// whole inbox may start one (openPersonWhatsapp). Null hides the button: no
+// thread the viewer may open and nothing they may start.
+export async function personWhatsapp(
+  viewer: Viewer,
+  personId: string,
+): Promise<{ threadId: string | null } | null> {
+  if (!isUuid(personId)) return null;
+  const [c] = await db()`
+    SELECT c.id FROM conversation c
+    WHERE c.person_id = ${personId} AND c.channel = 'whatsapp' AND ${visible(viewer)}
+    ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
+    LIMIT 1`;
+  if (c) return { threadId: c.id as string };
+  if (!seesWholeInbox(viewer.role)) return null;
+  // phone_e164 is empty for a possible duplicate phone (§12.2): no button.
+  const [p] = await db()`
+    SELECT 1 FROM person
+    WHERE id = ${personId} AND phone_e164 IS NOT NULL
+      AND deleted_at IS NULL AND merged_into_id IS NULL`;
+  return p ? { threadId: null } : null;
+}
+
+export type OpenWhatsappResult =
+  | { kind: "ok"; conversationId: string }
+  | { kind: "forbidden" }
+  | { kind: "not_found" }
+  | { kind: "no_phone" }
+  // The number's thread belongs to another person record: a likely duplicate.
+  | { kind: "number_taken"; otherPersonId: string };
+
+// POST /api/people/:id/whatsapp. Their existing thread, or a new empty one
+// keyed like the WATI webhook and history import (phone_e164 without "+"), so
+// their first reply lands in it. A row already on that key is never taken
+// over (Shawn, 17 Nov). The first message is a template from the inbox.
+export async function openPersonWhatsapp(
+  viewer: Viewer,
+  personId: string,
+): Promise<OpenWhatsappResult> {
+  if (!isUuid(personId)) return { kind: "not_found" };
+  const now = await personWhatsapp(viewer, personId);
+  if (now?.threadId) return { kind: "ok", conversationId: now.threadId };
+  if (!seesWholeInbox(viewer.role)) return { kind: "forbidden" };
+  return withTransaction(async (): Promise<OpenWhatsappResult> => {
+    const sql = db();
+    const [p] = await sql`
+      SELECT phone_e164 FROM person
+      WHERE id = ${personId} AND deleted_at IS NULL AND merged_into_id IS NULL`;
+    if (!p) return { kind: "not_found" };
+    if (!p.phone_e164) return { kind: "no_phone" };
+    const thread = (p.phone_e164 as string).replace(/^\+/, "");
+    const made = await sql`
+      INSERT INTO conversation (person_id, channel, external_thread_id)
+      VALUES (${personId}, 'whatsapp', ${thread})
+      ON CONFLICT (channel, external_thread_id) DO NOTHING
+      RETURNING id`;
+    const [c] = await sql`
+      SELECT id, person_id FROM conversation
+      WHERE channel = 'whatsapp' AND external_thread_id = ${thread}`;
+    if (c.person_id !== personId)
+      return { kind: "number_taken", otherPersonId: c.person_id as string };
+    if (made.length)
+      await writeAudit({
+        userId: viewer.id,
+        action: "create",
+        entity: "conversation",
+        entityId: c.id as string,
+        before: null,
+        after: {
+          channel: "whatsapp",
+          person_id: personId,
+          started_by: "person_page",
+        },
+      });
+    return { kind: "ok", conversationId: c.id as string };
+  });
+}
+
 // ---- List ---------------------------------------------------------------------
 
 export type InboxFilter = {
@@ -124,6 +204,9 @@ export async function listConversations(
     ) last ON true
     WHERE ${visible(viewer)}
       AND p.deleted_at IS NULL
+      -- A thread started from the person page with nothing sent yet stays out
+      -- of the list (17 Nov); the person page still opens it directly.
+      AND last.direction IS NOT NULL
       ${channel ? sql`AND c.channel = ${channel}` : sql``}
       ${status !== "all" ? sql`AND c.status = ${status}` : sql``}
       ${who === "mine" ? sql`AND c.assigned_user_id = ${viewer.id}` : sql``}
@@ -183,6 +266,10 @@ export type ConversationDetail = {
     canOpen: boolean;
   }[];
   suggestedCategory: string | null;
+  // WhatsApp to someone who never wrote to us and has no current
+  // marketing_whatsapp grant (§5 consent): the template box warns, and
+  // sending stays allowed (decided 17 Nov: warn, don't block).
+  consentWarning: boolean;
 };
 
 export async function conversationDetail(
@@ -194,7 +281,10 @@ export async function conversationDetail(
   const [c] = await sql`
     SELECT c.*, u.full_name AS assignee_name,
            p.full_name, p.email, p.phone_e164, p.phone, p.preferred_language,
-           p.needs_review
+           p.needs_review,
+           (SELECT is_granted FROM consent_current k
+            WHERE k.person_id = c.person_id AND k.purpose = 'marketing_whatsapp')
+             AS whatsapp_consent
     FROM conversation c
     JOIN person p ON p.id = c.person_id
     LEFT JOIN app_user u ON u.id = c.assigned_user_id
@@ -264,6 +354,8 @@ export async function conversationDetail(
       canOpen: e.can_open,
     })),
     suggestedCategory: lastIn?.body ? await suggestCategory(lastIn.body) : null,
+    consentWarning:
+      c.channel === "whatsapp" && !lastIn && c.whatsapp_consent !== true,
   };
 }
 
