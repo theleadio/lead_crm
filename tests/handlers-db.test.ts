@@ -347,3 +347,43 @@ it("drain: a handler that fails after writing tasks has them rolled back (savepo
   assert.equal(r.failed, 1);
   assert.equal((await tasksOf(ids)).length, 0);
 });
+
+// ---- ClassNoticeApproved ---------------------------------------------------
+
+it("ClassNoticeApproved: one send-the-notice task per student coming, carrying the message; twice is still one each", async () => {
+  const cls = await newClass();
+  const coming = [
+    await enrol(cls, "confirmed"),
+    await enrol(cls, "onboarded"),
+    await enrol(cls, "attended"),
+  ];
+  const notComing = [
+    await enrol(cls, "reserved"),
+    await enrol(cls, "payment_pending"),
+  ];
+  const [n] = await db()`
+    INSERT INTO class_notice (class_id, changed_fields, message_en, message_zh)
+    VALUES (${cls}, ${db().json({})}, 'Moved to Friday', '改到星期五')
+    RETURNING id`;
+  const e1 = event("ClassNoticeApproved", { noticeId: n.id, classId: cls });
+  await handlers.ClassNoticeApproved!(e1);
+  await handlers.ClassNoticeApproved!(e1);
+  const t = await tasksOf(coming);
+  assert.equal(t.length, 3);
+  assert.equal((await tasksOf(notComing)).length, 0);
+  const [notes] = await db()`
+    SELECT notes FROM task WHERE enrolment_id = ${coming[0]}`;
+  assert.match(notes.notes, /Moved to Friday[\s\S]*改到星期五/);
+});
+
+it("ClassNoticeApproved: a notice that does not exist fails, so the drain retries it", async () => {
+  await assert.rejects(
+    handlers.ClassNoticeApproved!(
+      event("ClassNoticeApproved", {
+        noticeId: crypto.randomUUID(),
+        classId: await newClass(),
+      }),
+    ),
+    /not found/,
+  );
+});

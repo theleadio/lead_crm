@@ -27,6 +27,7 @@ const classCancelled = z.object({
   reason: z.string(),
   enrolmentIds: z.array(uuid),
 });
+const classNoticeApproved = z.object({ noticeId: uuid, classId: uuid });
 const classChanged = z.object({
   classId: uuid,
   changedFields: z.record(z.string(), z.unknown()),
@@ -110,6 +111,33 @@ export function makeHandlers(
         else if (r.checkout_session_id) sessions.add(r.checkout_session_id);
       }
       for (const s of sessions) await ports.expireCheckoutSession(s);
+    },
+
+    // Stopgap until email sends through Resend: one "send the notice" task per
+    // student who is actually coming. Same recipients as the notice's count
+    // (RECIPIENT_STATUSES in lib/classes/service.ts). The notice stays
+    // 'approved'; `sent_at` is for the real sender.
+    ClassNoticeApproved: async (e) => {
+      const p = classNoticeApproved.parse(e.payload);
+      const [notice] = await db()`
+        SELECT message_en, message_zh FROM class_notice
+        WHERE id = ${p.noticeId} AND class_id = ${p.classId}`;
+      if (!notice) throw new Error(`class_notice ${p.noticeId} not found`);
+      const rows = await db()`
+        SELECT id, person_id FROM enrolment
+        WHERE class_id = ${p.classId}
+          AND status IN ('confirmed', 'onboarded', 'attended')
+        ORDER BY id`;
+      const message = [notice.message_en, notice.message_zh]
+        .filter(Boolean)
+        .join("\n\n");
+      for (const r of rows)
+        await opsTask(
+          `${e.id}:notice:${r.id}`,
+          "Class changed: send the student the approved notice",
+          r,
+          `No email channel yet; send this by hand, once.\n\n${message}`,
+        );
     },
 
     // "Clears the schedule cache": no schedule cache exists yet (the public
