@@ -1,3 +1,4 @@
+import { resolveSource } from "../attribution/source.ts";
 import { writeAudit } from "../audit.ts";
 import { raiseEvent } from "../events/raise.ts";
 import { normalizeEmail } from "../format/email.ts";
@@ -35,7 +36,9 @@ export function cleanUrl(raw: string | null | undefined): string | null {
     u.password = "";
     u.hash = "";
     for (const k of [...u.searchParams.keys()])
-      if (!/^(utm_[a-z]+|gclid|fbclid|gbraid|wbraid|li_fat_id|ttclid)$/.test(k))
+      if (
+        !/^(utm_[a-z_]+|gclid|fbclid|gbraid|wbraid|li_fat_id|ttclid)$/.test(k)
+      )
         u.searchParams.delete(k);
     return u.toString().slice(0, 500);
   } catch {
@@ -184,7 +187,7 @@ async function insertLead(
     const cookieFirst =
       priorTouches === 0 &&
       ftTime !== null &&
-      !!(ft?.utmSource || ft?.utmCampaign) &&
+      !!(ft?.utmSource || ft?.utmCampaign || ft?.utmContent || ft?.fbclid) &&
       (ft?.utmSource !== a?.utmSource || ft?.utmCampaign !== a?.utmCampaign);
 
     const [tp] = await sql`
@@ -194,7 +197,7 @@ async function insertLead(
                               utm_campaign_id, utm_ad_id,
                               landing_url, referrer, form_name, is_first_touch,
                               external_ref)
-      VALUES (${personId}, 'web_form', ${a?.utmSource ?? null},
+      VALUES (${personId}, 'web_form', ${resolveSource(a ?? {})},
               ${a?.utmMedium ?? null}, ${a?.utmCampaign ?? null},
               ${a?.utmContent ?? null}, ${a?.utmTerm ?? null},
               ${a?.gclid ?? null}, ${a?.fbclid ?? null},
@@ -212,11 +215,17 @@ async function insertLead(
       // client key cannot start with this text (no spaces allowed in a key).
       const [f] = await sql`
         INSERT INTO touchpoint (person_id, channel, occurred_at, utm_source,
-                                utm_medium, utm_campaign, is_first_touch,
+                                utm_medium, utm_campaign, utm_content, utm_term,
+                                utm_campaign_id, utm_ad_id, gclid, fbclid,
+                                landing_url, referrer, is_first_touch,
                                 external_ref)
         VALUES (${personId}, 'web_form', LEAST(${ftTime}::timestamptz, now()),
-                ${ft?.utmSource ?? null}, ${ft?.utmMedium ?? null},
-                ${ft?.utmCampaign ?? null}, true,
+                ${resolveSource(ft ?? {})}, ${ft?.utmMedium ?? null},
+                ${ft?.utmCampaign ?? null}, ${ft?.utmContent ?? null},
+                ${ft?.utmTerm ?? null}, ${ft?.utmId ?? null},
+                ${ft?.utmAdId ?? null}, ${ft?.gclid ?? null},
+                ${ft?.fbclid ?? null}, ${cleanUrl(ft?.landingUrl)},
+                ${cleanUrl(ft?.referrer)}, true,
                 ${`${COOKIE_TOUCH_REF} ${tp.id}`})
         RETURNING id`;
       firstId = f.id;
@@ -267,12 +276,13 @@ async function insertLead(
     // same course. Class code wins over course interest; unknown codes, and
     // classes the public schedule does not show (private, draft, cancelled,
     // completed), are ignored: the lead is still worth capturing.
-    const [cls] = input.createDeal && input.classCode
-      ? await sql`
+    const [cls] =
+      input.createDeal && input.classCode
+        ? await sql`
           SELECT id, course_id FROM class
           WHERE lower(code) = lower(${input.classCode})
             AND is_public AND status IN ('open', 'few_seats', 'full')`
-      : [];
+        : [];
     const [crs] =
       !cls && input.courseInterest
         ? await sql`

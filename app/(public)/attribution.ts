@@ -47,6 +47,10 @@ export type Touch = {
   utmCampaign: string | null;
   utmContent: string | null;
   utmTerm: string | null;
+  // Meta's {{campaign.id}} (utm_id) and an explicit ad id (utm_ad_id), stored
+  // as touchpoint.utm_campaign_id / utm_ad_id.
+  utmId: string | null;
+  utmAdId: string | null;
   gclid: string | null;
   fbclid: string | null;
   // O61. Google sends gbraid / wbraid instead of gclid for iOS clicks;
@@ -76,7 +80,9 @@ export function trimUrl(raw: string | null | undefined): string | null {
     u.password = "";
     u.hash = "";
     for (const k of [...u.searchParams.keys()])
-      if (!/^(utm_[a-z]+|gclid|fbclid|gbraid|wbraid|li_fat_id|ttclid)$/.test(k))
+      if (
+        !/^(utm_[a-z_]+|gclid|fbclid|gbraid|wbraid|li_fat_id|ttclid)$/.test(k)
+      )
         u.searchParams.delete(k);
     return u.toString().slice(0, 500);
   } catch {
@@ -110,6 +116,8 @@ export function touchFrom(
     utmCampaign: p("utm_campaign"),
     utmContent: p("utm_content"),
     utmTerm: p("utm_term"),
+    utmId: p("utm_id"),
+    utmAdId: p("utm_ad_id"),
     gclid: p("gclid"),
     fbclid: p("fbclid", 500),
     gbraid: p("gbraid"),
@@ -164,6 +172,8 @@ export function parseTouch(raw: string | null | undefined): Touch | null {
       utmCampaign: s("utmCampaign"),
       utmContent: s("utmContent"),
       utmTerm: s("utmTerm"),
+      utmId: s("utmId"),
+      utmAdId: s("utmAdId"),
       gclid: s("gclid"),
       fbclid: s("fbclid", 500),
       gbraid: s("gbraid"),
@@ -190,6 +200,8 @@ export const hasCampaign = (t: Touch): boolean =>
     t.utmCampaign ||
     t.utmContent ||
     t.utmTerm ||
+    t.utmId ||
+    t.utmAdId ||
     t.gclid ||
     t.fbclid ||
     t.gbraid ||
@@ -238,10 +250,8 @@ export function nextTouches(
   };
 }
 
-// What §8.2's `attribution` object wants. The route's schema takes the full
-// field set for the current touch but only utmSource, utmMedium, utmCampaign
-// and occurredAt inside `firstTouch`, so the rest of a stored first touch
-// stays in the cookie — see the open question in the change proposal.
+// What §8.2's `attribution` object wants: the full field set for the current
+// touch, and the whole of the first touch inside `firstTouch`.
 export function attributionPayload(
   first: Touch | null,
   last: Touch | null,
@@ -254,6 +264,8 @@ export function attributionPayload(
     utmCampaign: current.utmCampaign,
     utmContent: current.utmContent,
     utmTerm: current.utmTerm,
+    utmId: current.utmId,
+    utmAdId: current.utmAdId,
     gclid: current.gclid,
     fbclid: current.fbclid,
     gbraid: current.gbraid,
@@ -262,11 +274,21 @@ export function attributionPayload(
     ttclid: current.ttclid,
     landingUrl: current.landingUrl,
     referrer: current.referrer,
+    // The whole first touch, not just source/medium/campaign: the ad id in
+    // utm_content and the ad set in utm_term are what tie it to a Meta ad.
     firstTouch: first
       ? {
           utmSource: first.utmSource,
           utmMedium: first.utmMedium,
           utmCampaign: first.utmCampaign,
+          utmContent: first.utmContent,
+          utmTerm: first.utmTerm,
+          utmId: first.utmId,
+          utmAdId: first.utmAdId,
+          gclid: first.gclid,
+          fbclid: first.fbclid,
+          landingUrl: first.landingUrl,
+          referrer: first.referrer,
           occurredAt: first.occurredAt,
         }
       : null,
