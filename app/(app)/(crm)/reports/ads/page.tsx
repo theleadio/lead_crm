@@ -22,7 +22,14 @@ import {
 } from "@/lib/reports/funding";
 import { fundingFromLms } from "@/lib/reports/lms-funding";
 import { adSpendRows } from "@/lib/reports/ad-spend";
-import { mondayOf, weekBefore, weeklySummary } from "@/lib/reports/weekly";
+import { TabStrip } from "@/components/tab-strip";
+import {
+  mondayOf,
+  weekAfter,
+  weekBefore,
+  weeklySummary,
+  weekQuery,
+} from "@/lib/reports/weekly";
 import { CLASS_SIZES, SIZE_LABEL, SIZE_NOTE } from "@/lib/reports/class-size";
 import {
   byCampaign,
@@ -57,7 +64,9 @@ import {
   AdMatch,
   ByFirstTouchWeek,
   ByWeek,
+  SignupPeople,
   SignupsByClass,
+  SignupSources,
   SignupsPerAd,
   WeeklyCards,
 } from "./panels/weekly-summary";
@@ -94,6 +103,12 @@ export default async function AdsReportPage(props: PageProps<"/reports/ads">) {
   const searchParams = new URLSearchParams();
   for (const [key, value] of Object.entries(await props.searchParams))
     if (typeof value === "string") searchParams.set(key, value);
+
+  // Two tabs (owner, 19 Nov): Weekly answers the weekly question on one
+  // screen and is the default; Ad details is the full report as it was.
+  if (searchParams.get("tab") !== "details")
+    return <WeeklyTab user={user} searchParams={searchParams} />;
+
   const parsed = adsReportQuerySchema.safeParse(
     readAdsReportParams(searchParams),
   );
@@ -491,12 +506,10 @@ function Shell({
 }) {
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1.5">
-        <h1 className="text-xl font-semibold">Ads</h1>
-        <p className="text-ink-muted text-sm">{META_DEFINITION}</p>
-      </div>
+      <Header active="details" />
 
       <form method="get" className="flex flex-wrap items-end gap-3">
+        <input type="hidden" name="tab" value="details" />
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium">From</span>
           <DateField name="filter[from]" defaultValue={from} className="w-40" />
@@ -510,23 +523,7 @@ function Shell({
             stays shareable and needs no client JavaScript. */}
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium">Class size</span>
-          {/* The popup is drawn by the browser, not by us: it takes the
-              element's own background and colour scheme, so both are set
-              here. Inheriting `.dark` is not enough — Chrome renders the
-              option list light otherwise. */}
-          <select
-            name="filter[size]"
-            defaultValue={size}
-            className="border-line bg-surface-raised text-ink focus-visible:outline-focus-ring rounded-md border px-3 py-2 focus-visible:outline-2"
-            style={{ colorScheme: "dark" }}
-          >
-            <option value="">Every size</option>
-            {CLASS_SIZES.map((s) => (
-              <option key={s} value={s}>
-                {SIZE_LABEL[s]}
-              </option>
-            ))}
-          </select>
+          <SizeSelect size={size} />
         </label>
 
         <button
@@ -548,6 +545,151 @@ function Shell({
   );
 }
 
+// The popup is drawn by the browser, not by us: it takes the element's own
+// background and colour scheme, so both are set here. Inheriting `.dark` is
+// not enough — Chrome renders the option list light otherwise.
+function SizeSelect({ size }: { size: string }) {
+  return (
+    <select
+      name="filter[size]"
+      defaultValue={size}
+      aria-label="Class size"
+      className="border-line bg-surface-raised text-ink focus-visible:outline-focus-ring rounded-md border px-3 py-2 focus-visible:outline-2"
+      style={{ colorScheme: "dark" }}
+    >
+      <option value="">Every size</option>
+      {CLASS_SIZES.map((s) => (
+        <option key={s} value={s}>
+          {SIZE_LABEL[s]}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+const TABS = [
+  { id: "weekly", label: "Weekly" },
+  { id: "details", label: "Ad details" },
+] as const;
+
+function Header({ active }: { active: (typeof TABS)[number]["id"] }) {
+  return (
+    <>
+      <div className="flex flex-col gap-1.5">
+        <h1 className="text-xl font-semibold">Ads</h1>
+        <p className="text-ink-muted text-sm">{META_DEFINITION}</p>
+      </div>
+      <TabStrip tabs={[...TABS]} active={active} label="Report views" />
+    </>
+  );
+}
+
+const weekTitle = (from: string, to: string) => {
+  const f = (d: string, year: boolean) =>
+    new Date(`${d}T00:00:00Z`).toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      ...(year ? { year: "numeric" } : {}),
+      timeZone: "UTC",
+    });
+  return `${f(from, false)} – ${f(to, true)}`;
+};
+
+// The Weekly tab: one Monday-to-Sunday week (`?week=`, default the last full
+// one), and only the weekly summary is read, so it loads on its own.
+async function WeeklyTab({
+  user,
+  searchParams,
+}: {
+  user: NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>;
+  searchParams: URLSearchParams;
+}) {
+  const size = readAdsReportParams(searchParams).size ?? "";
+  const today = kualaLumpurDay();
+  const week = weekQuery(searchParams.get("week") ?? undefined, today);
+  const thisMonday = mondayOf(today);
+  const link = (monday: string) => {
+    const p = new URLSearchParams({ week: monday });
+    if (size) p.set("filter[size]", size);
+    return `?${p}`;
+  };
+
+  const body = await (async () => {
+    if (!week)
+      return (
+        <p role="alert" className="text-danger text-sm">
+          That week isn&apos;t valid or hasn&apos;t started yet. No counts are
+          shown.
+        </p>
+      );
+    const query = adsReportQuerySchema.parse({
+      ...week,
+      size: size || undefined,
+    });
+    const summary = await panel("weekly summary", () =>
+      weeklySummary(user, query),
+    );
+    if (!summary.ok) return <PanelError what="the weekly summary" />;
+    return (
+      <>
+        <WeeklyCards summary={summary.data} week={{ current: week.current }} />
+        <SignupsByClass summary={summary.data} compact />
+        <SignupSources summary={summary.data} />
+        <SignupPeople summary={summary.data} />
+        <a href="?tab=details" className="text-primary text-sm hover:underline">
+          Weekly trend, ad matching and campaign detail are under Ad details →
+        </a>
+      </>
+    );
+  })();
+
+  const monday = week?.from ?? weekBefore(thisMonday);
+  const navLink =
+    "border-line hover:bg-surface-raised focus-visible:outline-focus-ring rounded-md border px-3 py-1.5 focus-visible:outline-2";
+  return (
+    <div className="flex flex-col gap-6">
+      <Header active="weekly" />
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <nav aria-label="Weeks" className="flex items-center gap-2">
+          <a href={link(weekBefore(monday))} className={navLink}>
+            ‹ Previous week
+          </a>
+          <span className="px-1 font-semibold">
+            {week ? weekTitle(week.from, week.to) : "—"}
+          </span>
+          {monday < thisMonday && (
+            <a href={link(weekAfter(monday))} className={navLink}>
+              Next week ›
+            </a>
+          )}
+          {monday !== thisMonday && (
+            <a href={link(thisMonday)} className={navLink}>
+              This week so far
+            </a>
+          )}
+        </nav>
+        <form method="get" className="ml-auto flex items-center gap-2">
+          {week && <input type="hidden" name="week" value={week.from} />}
+          <SizeSelect size={size} />
+          <button
+            type="submit"
+            className="border-line hover:bg-surface-raised rounded-md border px-3 py-1.5"
+          >
+            Apply
+          </button>
+        </form>
+      </div>
+      {size && (
+        <p className="text-ink-muted text-sm">
+          Showing {SIZE_NOTE[size as keyof typeof SIZE_NOTE]}. Signups count
+          only these classes; ad spend still covers every campaign.
+        </p>
+      )}
+      {body}
+    </div>
+  );
+}
+
 // Quick ranges for the weekly summary. Links, not buttons: each is just a
 // URL, so it can be shared and works without client JavaScript. Weeks start
 // on Monday, Kuala Lumpur time, as everywhere on this screen.
@@ -561,7 +703,11 @@ function RangePresets({ size }: { size: string }) {
   let eightWeeks = monday;
   for (let i = 0; i < 7; i++) eightWeeks = weekBefore(eightWeeks);
   const href = (from: string, to: string) => {
-    const p = new URLSearchParams({ "filter[from]": from, "filter[to]": to });
+    const p = new URLSearchParams({
+      tab: "details",
+      "filter[from]": from,
+      "filter[to]": to,
+    });
     if (size) p.set("filter[size]", size);
     return `?${p}`;
   };
