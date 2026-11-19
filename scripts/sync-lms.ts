@@ -15,6 +15,7 @@
 //
 // ponytail: polls and diffs the whole LMS every cycle (hundreds of rows).
 // Switch to a Supabase Realtime / LISTEN trigger on the LMS if it grows.
+import { createHash } from "node:crypto";
 import postgres from "postgres";
 import { normalizePhoneE164 } from "../lib/format/phone.ts";
 import { lmsFundingType, seatSyncKey } from "../lib/import/lms-funding.ts";
@@ -26,9 +27,14 @@ import {
   cohortsOnCancelledClass,
   cancelCutOver,
   cutOverCancels,
+  goneSeatCancels,
+  MAX_GONE_CANCELS,
+  GONE_REASON,
+  GONE_TASK_REASON,
   importSeatsByKey,
   seatsToAdopt,
   type Cohort,
+  type MarkedSeat,
   type ImportClass,
   type ImportSeat,
 } from "../lib/import/lms-adopt.ts";
@@ -359,9 +365,15 @@ async function once() {
         await tx`SELECT DISTINCT order_id FROM salesprocess_payment WHERE order_id IS NOT NULL`
       ).map((r) => enrolmentIdFor(r.order_id))})`;
     // Seats an LMS enrollment adopts: the import's, plus ones staff added by hand.
-    const importOf = importSeatsByKey(
-      await seatsToAdopt(tx, importEnrols.map((e) => e.id), src.enrols.map((e) => e.id)),
-    );
+    const adoptable = await seatsToAdopt(tx, importEnrols.map((e) => e.id), src.enrols.map((e) => e.id));
+    const importOf = importSeatsByKey(adoptable);
+    const adoptById = new Map(adoptable.map((s) => [s.id, s]));
+    // CRM seats that carry the LMS's seat id (028): matched on it before
+    // person+class, so a seat the CRM made is never made a second time.
+    const marked = await tx<MarkedSeat[]>`
+      SELECT id, lms_enrollment_id, class_id, status FROM enrolment WHERE lms_enrollment_id IS NOT NULL`;
+    const crmIdOf = new Map(marked.map((s) => [s.lms_enrollment_id, s.id]));
+    const marks: [crm: string, lms: string][] = [];
     const matched = new Set<string>();
     const adopt: { id: string; status: string; completed_at: Date }[] = [];
     // Funding for seats the LMS adopts (import and hand-added seats keep their
@@ -384,7 +396,12 @@ async function once() {
       const classId = classOf.get(e.cohort_id) ?? e.cohort_id;
       const key = `${personId}|${classId}`;
       const finished = done.has(e.cohort_id);
-      const mine = haveEnrol.has(e.id) ? undefined : importOf.get(key);
+      const markedId = crmIdOf.get(e.id);
+      const mine = haveEnrol.has(e.id)
+        ? undefined
+        : markedId
+          ? adoptById.get(markedId)
+          : importOf.get(key);
       if (mine) {
         const d = adoptEnrolment(
           mine,
@@ -395,6 +412,7 @@ async function once() {
           bump("enrolment: refunded in SalesProcess", "same");
           continue;
         }
+        if (!matched.has(d.id)) marks.push([d.id, e.id]);
         matched.add(d.id);
         if (d.action === "update") adopt.push(d);
         // An empty LMS value never clears what staff set on the seat.
@@ -402,21 +420,25 @@ async function once() {
         bump("enrolment: adopted", d.action);
         continue;
       }
+      const id = markedId ?? e.id;
       const holder = active.get(key);
-      if (holder && holder !== e.id) {
+      if (holder && holder !== id) {
         warnings.push(
           `enrollment ${e.id}: person already enrolled in class (enrolment ${holder})`,
         );
         continue;
       }
-      active.set(key, e.id);
-      const seen = haveEnrol.get(e.id);
+      active.set(key, id);
+      marks.push([id, e.id]);
+      // Matched to the LMS this run, so the cut-over below never cancels it.
+      matched.add(id);
+      const seen = haveEnrol.get(id);
       if (seen === seatSyncKey(funding)) {
         bump("enrolment", "same");
         continue;
       }
       enrols.push({
-        id: e.id,
+        id,
         person_id: personId,
         class_id: classId,
         status: finished ? "completed" : "confirmed",
@@ -459,6 +481,62 @@ async function once() {
         RETURNING id`;
       bump("enrolment: adopted funding", changed.length ? "update" : "same");
     }
+    // Save the LMS seat id on every seat matched this run (a no-op once saved).
+    // A clash with another seat's id is a warning, not a failed sync.
+    if (marks.length)
+      try {
+        const saved = await tx.savepoint(
+          (s) => s`
+            UPDATE enrolment e SET lms_enrollment_id = m.lms
+            FROM unnest(${marks.map((m) => m[0])}::uuid[], ${marks.map((m) => m[1])}::uuid[]) AS m(crm, lms)
+            WHERE e.id = m.crm AND e.lms_enrollment_id IS DISTINCT FROM m.lms
+            RETURNING e.id`,
+        );
+        saved.forEach(() => bump("enrolment: LMS id saved", "update"));
+      } catch (err) {
+        if ((err as { code?: string }).code !== "23505") throw err;
+        warnings.push(`LMS seat ids not saved, two CRM seats claim one LMS seat: ${(err as Error).message}`);
+      }
+    // Seats the LMS removed, judged on the seats marked before this run, less
+    // the ones this run matched (a re-enrolled student keeps the seat) or cut over.
+    const gone = goneSeatCancels(
+      marked,
+      new Set(src.enrols.map((e) => e.id as string)),
+      ownedClassIds,
+      new Set([...matched, ...cutDone]),
+    );
+    if (gone.held) {
+      warnings.push(gone.held);
+      // One Ops task, not just a line in the Actions log (Shawn, #88). Keyed on
+      // the held seats, so the same set raises one task however many nights it
+      // stays; an empty LMS read raises one a day.
+      const heldIds = [...gone.heldIds].sort();
+      const key = heldIds.length
+        ? `lms-gone:${createHash("sha1").update(heldIds.join(",")).digest("hex").slice(0, 16)}`
+        : `lms-gone:empty:${kl_today}`;
+      const where = [
+        ...new Set(
+          marked
+            .filter((s) => heldIds.includes(s.id))
+            .map((s) => codeOf.get(s.class_id) ?? s.class_id),
+        ),
+      ].join(", ");
+      const notes = heldIds.length
+        ? `${heldIds.length} seats (${where}) are no longer in the LMS. The sync cancels at most ${MAX_GONE_CANCELS} at once, so it cancelled none. Check each one in the LMS and cancel the seats that were really removed.`
+        : "The LMS returned no seats at all, so the sync cancelled none. Check the LMS is up.";
+      // Assignee: the duty super_admin, same rule as dutySuperAdmin().
+      const raised = await tx`
+        INSERT INTO task (type, title, assigned_user_id, due_at, notes, source_key)
+        VALUES ('other', 'Check seats removed from the LMS',
+                (SELECT id FROM app_user WHERE role_code = 'super_admin' AND is_active
+                 ORDER BY created_at, id LIMIT 1),
+                now(), ${notes}, ${key})
+        ON CONFLICT (source_key) WHERE source_key IS NOT NULL DO NOTHING
+        RETURNING id`;
+      bump("task: check LMS removals", raised.length ? "insert" : "same");
+    }
+    const goneDone = await cancelCutOver(tx, gone.cancel, GONE_REASON, GONE_TASK_REASON);
+    goneDone.forEach(() => bump("enrolment: gone from LMS", "update"));
     for (const [value, n] of unknownFunding)
       warnings.push(
         `funding_type "${value}" is not a CRM value, left empty on ${n} seat(s); widen enrolment_funding_type_check to keep it`,

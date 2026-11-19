@@ -138,26 +138,70 @@ const CUT_OVER_TASK_REASON = `${CUT_OVER_REASON}. Check the LMS for this buyer u
 // statement. Its handler gives Ops a task per seat: refund, or the buyer is
 // in the LMS under another email (then a second person record holds the seat).
 // Returns the ids it cancelled; a seat no longer cancellable is skipped.
-export async function cancelCutOver(tx: Sql | TransactionSql, cut: string[]): Promise<string[]> {
+// Also used for seats gone from the LMS, with GONE_REASON.
+export async function cancelCutOver(
+  tx: Sql | TransactionSql,
+  cut: string[],
+  reason = CUT_OVER_REASON,
+  taskReason = CUT_OVER_TASK_REASON,
+): Promise<string[]> {
   if (!cut.length) return [];
   const rows = await tx`
     WITH old AS (
       SELECT id, status FROM enrolment
       WHERE id = ANY(${cut}) AND status = ANY(${CANCELLABLE_STATUSES}) FOR UPDATE
     ), done AS (
-      UPDATE enrolment e SET status = 'cancelled', cancelled_reason = ${CUT_OVER_REASON}
+      UPDATE enrolment e SET status = 'cancelled', cancelled_reason = ${reason}
       FROM old WHERE e.id = old.id RETURNING e.id, old.status AS was
     ), raised AS (
       INSERT INTO event_outbox (type, aggregate_type, aggregate_id, payload)
       SELECT 'EnrolmentCancelled', 'enrolment', id,
-             jsonb_build_object('enrolmentId', id, 'reason', ${CUT_OVER_TASK_REASON}::text)
+             jsonb_build_object('enrolmentId', id, 'reason', ${taskReason}::text)
       FROM done
     )
     INSERT INTO audit_log (user_id, action, entity, entity_id, before, after)
     SELECT NULL, 'update', 'enrolment', id, jsonb_build_object('status', was),
-           jsonb_build_object('status', 'cancelled', 'reason', ${CUT_OVER_REASON}::text, 'by', 'sync-lms')
+           jsonb_build_object('status', 'cancelled', 'reason', ${reason}::text, 'by', 'sync-lms')
     FROM done RETURNING entity_id`;
   return rows.map((r) => r.entity_id as string);
+}
+
+// Seats the LMS has removed (Jaman's point 9, Shawn's answer 3, 16 Nov 2026).
+// Only a seat the LMS confirmed (it has an lms_enrollment_id, 028), still
+// cancellable, in a class the LMS still has: a whole cohort gone from the LMS
+// is left to staff, like the cut-over. Nothing is cancelled when the LMS read
+// has no seats at all, or when more than MAX_GONE_CANCELS would go at once:
+// that looks like a bad read, not refunds, so it becomes a warning instead.
+export const MAX_GONE_CANCELS = 5;
+export const GONE_REASON = "Removed from the LMS";
+export const GONE_TASK_REASON = `${GONE_REASON}. Check with Ops whether to refund or move this buyer.`;
+export type MarkedSeat = { id: string; lms_enrollment_id: string; class_id: string; status: string };
+export function goneSeatCancels(
+  marked: MarkedSeat[],
+  lmsSeatIds: ReadonlySet<string>,
+  lmsClassIds: ReadonlySet<string>,
+  // Seats this run already settled: matched to an LMS seat (perhaps a new one,
+  // after Ops re-enrolled the student) or cancelled by the cut-over.
+  settled: ReadonlySet<string> = new Set(),
+): { cancel: string[]; held: string | null; heldIds: string[] } {
+  if (!lmsSeatIds.size)
+    return { cancel: [], held: "the LMS read returned no seats: no seat cancelled", heldIds: [] };
+  const cancel = marked
+    .filter(
+      (s) =>
+        !settled.has(s.id) &&
+        CANCELLABLE_STATUSES.includes(s.status) &&
+        lmsClassIds.has(s.class_id) &&
+        !lmsSeatIds.has(s.lms_enrollment_id),
+    )
+    .map((s) => s.id);
+  if (cancel.length > MAX_GONE_CANCELS)
+    return {
+      cancel: [],
+      held: `${cancel.length} seats are gone from the LMS, more than ${MAX_GONE_CANCELS} at once: none cancelled, check by hand`,
+      heldIds: cancel,
+    };
+  return { cancel, held: null, heldIds: [] };
 }
 
 // The status the LMS sync writes on a class, or null to leave it. The CRM owns
