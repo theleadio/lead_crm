@@ -1,6 +1,6 @@
 import { listClasses } from "@/lib/classes/service";
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { canWriteClass, permissionFor } from "@/lib/auth/permissions";
+import { permissionFor } from "@/lib/auth/permissions";
 import { listCourses } from "@/lib/courses/service";
 import { classListQuerySchema } from "@/lib/validation/class-query";
 import { courseListQuerySchema } from "@/lib/validation/course";
@@ -51,7 +51,6 @@ export default async function ClassesPage(props: PageProps<"/classes">) {
           isActive: c.isActive,
         })) ?? []
       }
-      canWrite={!!user && canWriteClass(user)}
     />
   );
 }

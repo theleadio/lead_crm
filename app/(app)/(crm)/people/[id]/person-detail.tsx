@@ -77,6 +77,7 @@ export function PersonDetailView({
   canReview,
   canCreateDeal,
   taskAccess,
+  whatsapp,
 }: {
   id: string;
   canWrite: boolean;
@@ -90,6 +91,9 @@ export function PersonDetailView({
   canCreateDeal: boolean;
   // §9.14: who may add a task here, or null for no Add task (§6 task row).
   taskAccess: { viewerId: string; assignedOnly: boolean } | null;
+  // §9.2 quick action: their WhatsApp thread in the inbox (threadId), one the
+  // viewer may start (threadId null), or null to hide the button.
+  whatsapp: { threadId: string | null } | null;
 }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
@@ -222,6 +226,14 @@ export function PersonDetailView({
                 viewerId={taskAccess.viewerId}
                 assignedOnly={taskAccess.assignedOnly}
               />
+            )}
+            {whatsapp?.threadId && (
+              <Button variant="outline" asChild>
+                <Link href={`/inbox?c=${whatsapp.threadId}`}>WhatsApp</Link>
+              </Button>
+            )}
+            {whatsapp && !whatsapp.threadId && (
+              <StartWhatsapp personId={p.id} onError={setToast} />
             )}
             {p.email && !p.email.includes("•") && (
               <Button variant="outline" asChild>
@@ -1076,5 +1088,43 @@ function ErasePerson({
         />
       </ConfirmDialog>
     </>
+  );
+}
+
+// Someone who never wrote to us: start their WhatsApp thread, then open it in
+// the inbox, where the first message is an approved template.
+function StartWhatsapp({
+  personId,
+  onError,
+}: {
+  personId: string;
+  onError: (message: string) => void;
+}) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  return (
+    <Button
+      variant="outline"
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        const res = await fetch(`/api/people/${personId}/whatsapp`, {
+          method: "POST",
+        }).catch(() => null);
+        const body = (await res?.json().catch(() => null)) as {
+          conversationId?: string;
+          error?: { message?: string };
+        } | null;
+        if (res?.ok && body?.conversationId)
+          return router.push(`/inbox?c=${body.conversationId}`);
+        setBusy(false);
+        onError(
+          body?.error?.message ??
+            "Couldn't open WhatsApp for this person. Try again.",
+        );
+      }}
+    >
+      {busy ? "Opening…" : "WhatsApp"}
+    </Button>
   );
 }

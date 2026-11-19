@@ -60,16 +60,12 @@ export function ClassesList({
   initial,
   initialPendingNotice,
   courses,
-  canWrite,
 }: {
   initial: ListResponse<ClassListItem> | null;
   // §9.0 links here with the notice filter already on, so the control has to
   // open set — otherwise the screen shows filtered rows under "all".
   initialPendingNotice: boolean;
   courses: CourseOption[];
-  // §6 course/class row: super_admin and operations. Hiding the controls is
-  // UX — the write routes keep their own checks.
-  canWrite: boolean;
 }) {
   const [when, setWhen] = useState<"upcoming" | "past">("upcoming");
   const [courseId, setCourseId] = useState("");
@@ -182,13 +178,7 @@ export function ClassesList({
 
   return (
     <div className="space-y-4">
-      <ListHeader title="Classes">
-        {canWrite && (
-          <Button asChild>
-            <Link href="/classes/new">Add class</Link>
-          </Button>
-        )}
-      </ListHeader>
+      <ListHeader title="Classes" />
 
       {/* design.pen "Tab Row": a pill group, active tab filled. Two views of
           one schedule, so tabs rather than another filter select (§9.8). */}
@@ -323,15 +313,8 @@ export function ClassesList({
                     <>
                       No class is scheduled. This screen lists the scheduled
                       runs of a course — each one takes enrolments and appears
-                      on the website when it is public.{" "}
-                      {canWrite && (
-                        <Link
-                          href="/classes/new"
-                          className="text-blue-ink font-semibold"
-                        >
-                          Add a class
-                        </Link>
-                      )}
+                      on the website when it is public. Classes are created in
+                      the LMS and arrive here on the nightly sync.
                     </>
                   )}
                 </EmptyRow>

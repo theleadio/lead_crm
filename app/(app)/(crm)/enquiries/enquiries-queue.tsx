@@ -286,7 +286,7 @@ export function EnquiriesQueue({
       <ListHeader title="Enquiries">
         {canEditSettings && (
           <Button asChild variant="outline">
-            <Link href="/settings/enquiries">Teams and categories</Link>
+            <Link href="/settings?tab=enquiries">Teams and categories</Link>
           </Button>
         )}
         {canCreate && (

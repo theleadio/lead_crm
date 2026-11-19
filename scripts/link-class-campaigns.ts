@@ -7,6 +7,7 @@
 //   npm run campaigns:link              dry run: counts only, nothing written
 //   npm run campaigns:link -- --apply
 //   npm run campaigns:link -- --list    also print class code and campaign name
+//   npm run campaigns:link -- --include-past   also classes started in the last 90 days
 //
 // CI logs are public: by default only counts are printed.
 import { autoLinkCampaigns } from "../lib/classes/campaigns.ts";
@@ -14,13 +15,18 @@ import { closeDb } from "../lib/sql.ts";
 
 const apply = process.argv.includes("--apply");
 const list = process.argv.includes("--list");
+// One-off backfill: also classes that started in the last 90 days.
+const includePast = process.argv.includes("--include-past");
 
 if (!process.env.DATABASE_URL) {
   console.error("DATABASE_URL is not set");
   process.exitCode = 2;
 } else {
   try {
-    const { links, stats } = await autoLinkCampaigns({ apply });
+    const { links, stats } = await autoLinkCampaigns({
+      apply,
+      includePastDays: includePast ? 90 : 0,
+    });
     if (list)
       for (const l of links) console.log(`  ${l.classCode} <- ${l.name}`);
     console.log(

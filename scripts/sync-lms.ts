@@ -343,21 +343,6 @@ async function once() {
           `LMS class ids not saved, two CRM classes claim one LMS cohort: ${(err as Error).message}`,
         );
       }
-    // Fill an empty class price from the LMS cohort, for /register. Only ever
-    // fills: a price staff set is the CRM's and is never overwritten. 0 or a
-    // missing price is "no price". ponytail: whether the LMS figure includes
-    // SST is open (review with Zhixuan); the sync copies it as given.
-    const priced = src.cohorts.filter(
-      (k) => k.price_cents > 0 && !onCancelled.has(k.id),
-    );
-    if (priced.length) {
-      const filled = await tx`
-        UPDATE class c SET price_myr = m.price
-        FROM unnest(${priced.map((k) => classOf.get(k.id)!)}::uuid[], ${priced.map((k) => k.price_cents / 100)}::numeric[]) AS m(id, price)
-        WHERE c.id = m.id AND c.price_myr IS NULL
-        RETURNING c.id`;
-      filled.forEach(() => bump("class: price filled", "update"));
-    }
 
     // person: match by email first (never overwrite an existing CRM person).
     const byId = ids(await tx`SELECT id FROM person`);

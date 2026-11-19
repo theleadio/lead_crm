@@ -5,7 +5,6 @@ import { FlashToast } from "@/components/flash-toast";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { navFor } from "@/lib/auth/nav";
 import { teamsOf } from "@/lib/enquiries/access";
-import { getSession } from "@/lib/auth/server";
 import { SignOutButton } from "./sign-out-button";
 import { Sidebar } from "./sidebar";
 import { SIDEBAR_COLLAPSED, SIDEBAR_COOKIE } from "./sidebar-state";
@@ -19,22 +18,8 @@ export default async function CrmLayout({
   children: React.ReactNode;
 }) {
   const user = await getCurrentUser();
-  if (!user) {
-    // Signed in to Supabase but no active staff account: a redirect to
-    // /sign-in would loop, because the proxy sees a valid session.
-    if (!(await getSession())) redirect("/sign-in");
-    return (
-      <main className="bg-surface text-ink flex min-h-screen flex-col items-center justify-center gap-3 p-6 text-center">
-        <h1 className="text-lg font-semibold">
-          Your login isn&apos;t linked to a staff account
-        </h1>
-        <p className="text-ink-muted text-sm">
-          Ask a super admin to link or reactivate your account.
-        </p>
-        <SignOutButton />
-      </main>
-    );
-  }
+  // No session, an expired one, or a deactivated account.
+  if (!user) redirect("/sign-in");
 
   const sidebarCollapsed =
     (await cookies()).get(SIDEBAR_COOKIE)?.value === SIDEBAR_COLLAPSED;

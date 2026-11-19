@@ -41,11 +41,12 @@ test("classCodeFor", () => {
 
 test("product map", () => {
   assert.equal(PRODUCT_COURSE["AI Vibe Coding 实战课 "], "lms-ai-vibe-coding");
+  assert.equal(PRODUCT_COURSE["AI Vibe Coding Mastery"], "lms-ai-vibe-coding");
   assert.equal(PRODUCT_COURSE["Unknown"], undefined);
   assert.equal(PRODUCT_COURSE[".05 LEAD - AI Operating System Certification"], "lms-ai-agents-foundation");
   assert.equal(PRODUCT_COURSE[".01 LEAD - (Penang) AI Agentic Automation Certification Landing Page"], "lms-ai-agentic-automation-certification");
   assert.equal(PRODUCT_COURSE[".04 LEAD - EN - AI for Data Science Landing Page"], "lms-ai-for-data-science-certification");
-  assert.equal(Object.keys(PRODUCT_COURSE).length, 15);
+  assert.equal(Object.keys(PRODUCT_COURSE).length, 16);
   assert.ok(ONLINE_COURSES.has("lms-ai-agents-online-workshop"));
 });
 

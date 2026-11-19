@@ -120,7 +120,9 @@ export default async function InboxPage(props: PageProps<"/inbox">) {
         ))}
       </nav>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(260px,360px)_1fr]">
+      {/* items-start: the chat panel keeps its own height, so a long list
+          doesn't push the reply box to the bottom of the page. */}
+      <div className="grid gap-4 lg:grid-cols-[minmax(260px,360px)_1fr] lg:items-start">
         <ConversationList
           items={items}
           selectedId={selectedId}
@@ -183,7 +185,7 @@ function ConversationList({
       </div>
     );
   return (
-    <ul className="border-line divide-line bg-surface-raised flex flex-col divide-y overflow-y-auto rounded-md border">
+    <ul className="border-line divide-line bg-surface-raised flex flex-col divide-y overflow-y-auto rounded-md border lg:max-h-[calc(100dvh-14rem)]">
       {items.map((i) => (
         <li key={i.id}>
           <Link
@@ -254,8 +256,10 @@ async function Thread({ c }: { c: ConversationDetail }) {
         </div>
       </header>
 
-      <ol className="flex flex-col gap-3 overflow-y-auto p-4">
-        {c.messages.map((m) => (
+      {/* Newest first in the markup + column-reverse: shows oldest at top
+          but opens scrolled to the latest message, with no script. */}
+      <ol className="flex max-h-[60vh] flex-col-reverse gap-3 overflow-y-auto p-4">
+        {[...c.messages].reverse().map((m) => (
           <li
             key={m.id}
             className={`max-w-[85%] rounded-md border px-4 py-2 text-sm ${m.direction === "in" ? "border-line bg-surface self-start" : "border-line bg-blue-soft self-end"}`}
@@ -329,19 +333,22 @@ async function Thread({ c }: { c: ConversationDetail }) {
               /\p{L}/u.test(c.person.fullName) ? c.person.fullName : "there"
             }
             windowOpen={c.replyWindow === "open"}
+            consentWarning={c.consentWarning}
           />
         )}
 
         <p className="text-ink-muted text-xs">
           {c.channel === "web_form"
             ? "Help-form messages can't be answered here yet: reply by email or phone until email replies are connected."
-            : c.replyWindow === "closed"
-              ? wati
-                ? "The free-reply window has closed: reply with an approved WATI template."
-                : "The free-reply window has closed: WhatsApp needs an approved template to reply."
-              : c.channel === "whatsapp" && watiFromEnv()
-                ? "Replies go out on WhatsApp from here."
-                : "Replies are sent from here once this channel is connected."}
+            : c.channel === "whatsapp" && c.messages.length === 0
+              ? "No messages yet: WhatsApp needs an approved template to start the chat."
+              : c.replyWindow === "closed"
+                ? wati
+                  ? "The free-reply window has closed: reply with an approved WATI template."
+                  : "The free-reply window has closed: WhatsApp needs an approved template to reply."
+                : c.channel === "whatsapp" && watiFromEnv()
+                  ? "Replies go out on WhatsApp from here."
+                  : "Replies are sent from here once this channel is connected."}
         </p>
       </div>
     </div>
