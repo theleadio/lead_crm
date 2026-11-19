@@ -59,6 +59,19 @@ test("classIdForCohort: a class made by hand must match the language; a SalesPro
   assert.equal(pick(cohort(), [], [imp({ guessed_language: true })]).id, "i-en");
 });
 
+test("classIdForCohort: a draft or cancelled class made by hand is adopted too; a cancelled one is then left alone", () => {
+  // Draft: Ops set the class up before the LMS cohort existed; the sync
+  // links it and never changes a draft's status (#87).
+  const draft = imp({ id: "hand", code: "ai-agents-2026-11-28", language: "zh", guessed_language: false, status: "draft" });
+  assert.equal(pick(cohort(), [], [draft]).id, "hand");
+  // Cancelled: mapped, so no second live class is made beside it, then its
+  // seats are left alone and the run warns "class cancelled in CRM" (Shawn, #89).
+  const gone = { ...draft, status: "cancelled" };
+  const id = pick(cohort(), [], [gone]).id;
+  assert.equal(id, "hand");
+  assert.deepEqual([...cohortsOnCancelledClass(new Map([["k1", id]]), [gone]).keys()], ["k1"]);
+});
+
 test("classIdForCohort: a cohort already in the CRM keeps its own id", () => {
   assert.equal(pick(cohort(), ["k1"], [imp()]).id, "k1");
 });
