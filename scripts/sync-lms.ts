@@ -22,6 +22,7 @@ import { ROOM_SEATS } from "../lib/classes/types.ts";
 import {
   adoptEnrolment,
   classIdForCohort,
+  syncClassStatus,
   cohortsOnCancelledClass,
   cancelCutOver,
   cutOverCancels,
@@ -196,7 +197,7 @@ async function once() {
       seats.set(e.cohort_id, (seats.get(e.cohort_id) ?? 0) + 1);
     const done = new Set<string>();
     const haveClass = await existing(
-      tx`SELECT id, code, start_date::text, end_date::text, language, (status = 'completed') FROM class`,
+      tx`SELECT id, code, start_date::text, end_date::text, language, status FROM class`,
     );
     const importClasses = await tx<ImportClass[]>`
       SELECT id, code, course_id, start_date::text AS start_date, language, status FROM class
@@ -234,6 +235,7 @@ async function once() {
       }
     }
     const classes: Record<string, unknown>[] = [];
+    const toComplete: string[] = [];
     for (const [i, k] of src.cohorts.entries()) {
       const cancelled = onCancelled.get(k.id);
       if (cancelled) {
@@ -244,18 +246,17 @@ async function once() {
       if (completed) done.add(k.id);
       const online = /online/i.test(k.slug);
       const lang = cohorts[i].language;
-      const status = completed ? "completed" : "open";
       const classId = classOf.get(k.id)!;
       const seen = haveClass.get(classId);
+      // [code, start, end, language, status]; status is the CRM's own (§12.1).
+      const was = seen ? (JSON.parse(seen) as string[]) : null;
+      const status = syncClassStatus(was?.[4] ?? null, completed);
+      if (was && status) toComplete.push(classId);
       if (
-        seen ===
-        JSON.stringify([
-          k.slug,
-          day(k.start_date),
-          day(k.end_date),
-          lang,
-          completed,
-        ])
+        was &&
+        !status &&
+        JSON.stringify(was.slice(0, 4)) ===
+          JSON.stringify([k.slug, day(k.start_date), day(k.end_date), lang])
       ) {
         bump("class", "same");
         continue;
@@ -275,7 +276,7 @@ async function once() {
         online_url: online ? (k.board_url ?? "https://thelead.io") : null,
         capacity: Math.max(seats.get(k.id) ?? 1, completed ? 1 : ROOM_SEATS),
         price_myr: k.price_cents != null ? k.price_cents / 100 : null,
-        status,
+        status: status ?? "open", // used on insert only; never in the update list
         notes: online
           ? "Imported from LMS."
           : "Imported from LMS. Venue address and city still TBC.",
@@ -286,8 +287,11 @@ async function once() {
       "start_date",
       "end_date",
       "language",
-      "status",
     ]);
+    // Guarded again in SQL: staff may have changed the status since the read.
+    if (toComplete.length)
+      await tx`UPDATE class SET status = 'completed'
+        WHERE id = ANY(${toComplete}) AND status IN ('open','few_seats','full')`;
 
     // person: match by email first (never overwrite an existing CRM person).
     const byId = ids(await tx`SELECT id FROM person`);
@@ -340,7 +344,7 @@ async function once() {
     // active-enrolment index: keep the first, warn about the rest.
     // The value side must follow seatSyncKey's order (lib/import/lms-funding.ts).
     const haveEnrol = await existing(
-      tx`SELECT id, price_paid_myr::float8, funding_type FROM enrolment`,
+      tx`SELECT id, funding_type FROM enrolment`,
     );
     const active = new Map(
       (
@@ -407,7 +411,7 @@ async function once() {
       }
       active.set(key, e.id);
       const seen = haveEnrol.get(e.id);
-      if (seen === seatSyncKey(e.amount_paid_cents / 100, funding)) {
+      if (seen === seatSyncKey(funding)) {
         bump("enrolment", "same");
         continue;
       }
@@ -417,7 +421,9 @@ async function once() {
         class_id: classId,
         status: finished ? "completed" : "confirmed",
         payer_type: e.funding_type === "hrdc" ? "company" : "self",
-        price_paid_myr: e.amount_paid_cents / 100,
+        // Every LMS seat has amount_paid_cents 0: that is "no price", not RM 0.
+        // Insert only; the price on an existing seat is the CRM's (Shawn, 16 Nov).
+        price_paid_myr: e.amount_paid_cents ? e.amount_paid_cents / 100 : null,
         funding_type: funding,
         completed_at: finished ? cohortEnd.get(e.cohort_id) : null,
         created_at: e.created_at,
@@ -439,7 +445,7 @@ async function once() {
 
     // A full class refuses the seat (no_seats): skip that row, not the whole sync.
     const codeOf = new Map(src.cohorts.map((k) => [classOf.get(k.id), k.slug]));
-    await upsert("enrolment", enrols, "id", ["price_paid_myr", "funding_type"], (row) => {
+    await upsert("enrolment", enrols, "id", ["funding_type"], (row) => {
       stats.enrolment[haveEnrol.has(row.id as string) ? "update" : "insert"]--;
       bump("enrolment: class full", "same");
       warnings.push(`enrolment refused, class full: ${codeOf.get(row.class_id as string) ?? "(unknown class)"}`);
