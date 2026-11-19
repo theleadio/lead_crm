@@ -306,7 +306,8 @@ async function once() {
         city: online ? null : "TBC",
         online_url: online ? (k.board_url ?? "https://thelead.io") : null,
         capacity: Math.max(seats.get(k.id) ?? 1, completed ? 1 : ROOM_SEATS),
-        price_myr: k.price_cents != null ? k.price_cents / 100 : null,
+        // 0 is "no price", not RM 0 (as for seats).
+        price_myr: k.price_cents ? k.price_cents / 100 : null,
         status: status ?? "open", // used on insert only; never in the update list
         notes: online
           ? "Imported from LMS."
@@ -343,6 +344,25 @@ async function once() {
           `LMS class ids not saved, two CRM classes claim one LMS cohort: ${(err as Error).message}`,
         );
       }
+    // Fill an empty class price from the LMS cohort, for /register. Only ever
+    // fills: a price staff set is never overwritten. 0 or missing is "no
+    // price". Whether the LMS figure includes SST is open (see the note in
+    // docs/superpowers/notes); it is copied as given. No cohort has a price
+    // yet (18 Nov), so today this changes nothing.
+    const priced = src.cohorts.filter(
+      (k) => k.price_cents > 0 && !onCancelled.has(k.id),
+    );
+    if (priced.length) {
+      const filled = await tx`
+        UPDATE class c SET price_myr = m.price
+        FROM unnest(
+          ${priced.map((k) => classOf.get(k.id)!)}::uuid[],
+          ${priced.map((k) => k.price_cents / 100)}::numeric[]
+        ) AS m(id, price)
+        WHERE c.id = m.id AND c.price_myr IS NULL
+        RETURNING c.id`;
+      filled.forEach(() => bump("class: price filled", "update"));
+    }
 
     // person: match by email first (never overwrite an existing CRM person).
     const byId = ids(await tx`SELECT id FROM person`);
