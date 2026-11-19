@@ -701,7 +701,7 @@ it("a first message opens an enquiry, uncategorised for the default team unless 
   assert.deepEqual([f.category, f.team], ["einvoice", "finance"]);
 });
 
-it("a new contact's first message is their first touch; a known person's adds none", async () => {
+it("a new contact's first message is their first touch; a known person with no source gets one, one with a source gets none", async () => {
   const wa = phone();
   await handle(inbound(wa));
   const [t] = await touchesOf(wa);
@@ -710,12 +710,25 @@ it("a new contact's first message is their first touch; a known person's adds no
     ["whatsapp", true, true],
   );
 
+  // A known person with no touchpoint says nothing about where they came
+  // from, so their first message is recorded (and is their first touch).
   const known = phone();
   await newPerson("Known", `+${known}`);
   await db()`UPDATE person SET phone_e164 = ${`+${known}`} WHERE phone = ${`+${known}`}`;
   await handle(inbound(known));
-  assert.equal((await touchesOf(known)).length, 0);
-  assert.equal((await enquiriesOf(known)).length, 1, "but still an enquiry");
+  const [k] = await touchesOf(known);
+  assert.deepEqual([k.channel, k.is_first_touch], ["whatsapp", true]);
+  assert.equal((await enquiriesOf(known)).length, 1, "and an enquiry");
+
+  // A person who already has a touch that says where they came from gets none.
+  const tagged = phone();
+  const taggedId = await newPerson("Tagged", `+${tagged}`);
+  await db()`UPDATE person SET phone_e164 = ${`+${tagged}`} WHERE phone = ${`+${tagged}`}`;
+  await db()`
+    INSERT INTO touchpoint (person_id, channel, utm_source, is_first_touch)
+    VALUES (${taggedId}, 'web_form', 'facebook', true)`;
+  await handle(inbound(tagged));
+  assert.equal((await touchesOf(tagged)).length, 1, "no second touch");
 });
 
 it("a message from a click-to-WhatsApp ad records the ad and click, and the enquiry is ctwa", async () => {
