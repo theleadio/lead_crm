@@ -16,6 +16,8 @@ import { db } from "../sql.ts";
 import type { Viewer } from "../auth/permissions.ts";
 import { kualaLumpurDay, type AdsReportQuery } from "../validation/report.ts";
 import {
+  campaignIdSql,
+  campaignJoinSql,
   campaignMapSql,
   daysInRange,
   firstCampaignSql,
@@ -578,12 +580,22 @@ const SELF_SOURCE_SQL = (sql: postgres.Sql) => sql`
 // and their name. Import and payment-link rows say nothing unless they carry
 // a UTM or click id, so they are skipped and the touch before them is used:
 // a bare import row never hides a known source (owner, 19 Nov). Joined onto
-// a signup CTE named `s`.
+// a signup CTE named `s`, in a query whose WITH has `campaignMapSql`.
+//
+// The campaign is the touch's own name unless that is only an id; failing
+// that, Meta's name for the campaign its ad or ad set belongs to. A
+// click-to-WhatsApp opt-in carries an ad id and no name, so without this the
+// opt-ins would be missing from the by-campaign table (owner, 19 Nov).
 const LAST_TOUCH_SQL = (sql: postgres.Sql) => sql`
   JOIN person pn ON pn.id = s.person_id
   LEFT JOIN LATERAL (
-    SELECT t.channel, t.utm_source, t.utm_campaign
+    SELECT t.channel, t.utm_source,
+           coalesce(CASE WHEN t.utm_campaign ~ '^[0-9]+$' THEN NULL
+                         ELSE t.utm_campaign END,
+                    cn.campaign_name, t.utm_campaign) AS utm_campaign
     FROM touchpoint t
+    ${campaignJoinSql(sql)}
+    LEFT JOIN campaign_name cn ON cn.campaign_id = ${campaignIdSql(sql)}
     WHERE t.person_id = s.person_id
       AND t.occurred_at <= s.at
       AND (t.channel NOT IN ('import', 'payment_link')

@@ -359,6 +359,10 @@ const SOURCE_TEXT: Record<SourceBucket, string> = {
 
 export function SignupSources({ summary }: { summary: WeeklySummary }) {
   const total = summary.totals.signups;
+  const named =
+    summary.campaigns.reduce((n, c) => n + c.signups, 0) +
+    summary.campaignsDropped;
+  const noCampaign = total - summary.bySource.none - named;
   const rows = SOURCE_BUCKETS.filter(
     (b) => summary.bySource[b] > 0 || b === "none",
   ).sort((a, b) =>
@@ -396,6 +400,13 @@ export function SignupSources({ summary }: { summary: WeeklySummary }) {
           </TableBody>
         </Table>
       </TableCard>
+      {summary.campaigns.length > 0 && (
+        <p className="text-ink-muted text-sm">
+          By campaign, from the same latest source.
+          {noCampaign > 0 &&
+            ` ${noCampaign} ${noCampaign === 1 ? "signup has" : "signups have"} a source but no campaign name, so they are not listed here.`}
+        </p>
+      )}
       {summary.campaigns.length > 0 && (
         <TableCard>
           <Table>

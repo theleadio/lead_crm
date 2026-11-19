@@ -140,6 +140,31 @@ it("a person with no recorded source counts as not matched", async () => {
   assert.ok(s.match.none >= 1);
 });
 
+it("a click-to-WhatsApp opt-in that carries only an ad id gets Meta's campaign name", async () => {
+  const v = await viewer();
+  const cls = await newClass();
+  const ad = `ad_${uid()}`;
+  const campaign = `9${String(Date.now()).padStart(14, "0")}`;
+  await db()`
+    INSERT INTO meta_ad_insight
+      (ad_id, day, account_id, campaign_id, campaign_name, adset_id,
+       adset_name, ad_name, currency, spend, impressions, clicks)
+    VALUES (${ad}, '2031-03-04', ${ACCOUNT}, ${campaign}, 'Named by Meta',
+            ${`set_${uid()}`}, 'Set', 'Opt-in ad', 'MYR', 10, 100, 5)`;
+  const p = await person();
+  await db()`
+    INSERT INTO touchpoint (person_id, channel, occurred_at, ctwa_clid, utm_ad_id)
+    VALUES (${p}, 'ctwa', '2031-03-05T02:00:00Z', ${`clid_${uid()}`}, ${ad})`;
+  await enrol(p, cls, "confirmed");
+
+  const s = await weeklySummary(v, RANGE);
+  const row = s.people.find((x) => x.personId === p);
+  assert.deepEqual(
+    [row?.source, row?.utmCampaign],
+    ["whatsapp_ad", "Named by Meta"],
+  );
+});
+
 it("a signup's source is its last touch before signing up, bare import rows skipped", async () => {
   const v = await viewer();
   const cls = await newClass();
