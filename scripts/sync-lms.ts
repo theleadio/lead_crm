@@ -346,9 +346,9 @@ async function once() {
       }
     // Fill an empty class price from the LMS cohort, for /register. Only ever
     // fills: a price staff set is never overwritten. 0 or missing is "no
-    // price". Whether the LMS figure includes SST is open (see the note in
-    // docs/superpowers/notes); it is copied as given. No cohort has a price
-    // yet (18 Nov), so today this changes nothing.
+    // price". Whether the LMS figure includes SST is open (docs/superpowers/
+    // notes/2026-11-18-register-price-and-sst-review.md); it is copied as
+    // given. No cohort has a price yet (19 Nov), so today this changes nothing.
     const priced = src.cohorts.filter(
       (k) => k.price_cents > 0 && !onCancelled.has(k.id),
     );
