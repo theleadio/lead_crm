@@ -104,6 +104,9 @@ try {
     for (const [reason, n] of [...counts].sort((a, b) => b[1] - a[1]))
       console.log(`  ${n}\t${reason}\t${REASON_TEXT[reason]}`);
 
+    // Earliest signup first: a person with two signups shares one sheet touch,
+    // and its copy must be dated before both.
+    toFix.sort((x, y) => x.at.getTime() - y.at.getTime());
     let added = 0;
     for (const f of toFix) {
       if (!apply) continue;
