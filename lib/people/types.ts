@@ -15,7 +15,7 @@ export function displayName(
 }
 
 export type Language = "en" | "zh";
-export type LifecycleStage = "lead" | "student" | "customer";
+export type LifecycleStage = "lead" | "student";
 
 export type PersonListItem = {
   id: string;

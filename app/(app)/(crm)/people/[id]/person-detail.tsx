@@ -191,13 +191,7 @@ export function PersonDetailView({
         meta={
           <>
             <Badge
-              variant={
-                p.stage === "customer"
-                  ? "default"
-                  : p.stage === "student"
-                    ? "secondary"
-                    : "outline"
-              }
+              variant={p.stage === "student" ? "secondary" : "outline"}
               className="capitalize"
             >
               {p.stage}

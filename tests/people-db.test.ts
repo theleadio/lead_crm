@@ -61,7 +61,8 @@ const all = (viewer: Viewer, f: object = {}) =>
   listPeople({ page: 1, limit: 100, ...f }, viewer);
 
 // Seed: person i is created i days ago; stage by i % 4 = lead, lead, student,
-// customer; no owner when i % 4 === 1.
+// student (seeded as a paying customer; "customer" is no longer a stage); no
+// owner when i % 4 === 1.
 
 it("list: paginates with a total (spec §7)", async () => {
   const first = await listPeople({ page: 1, limit: 25 }, admin);
@@ -259,13 +260,17 @@ it("detail: not_found vs forbidden", async () => {
 });
 
 it("detail: admin sees every panel; payment views are audit-logged", async () => {
-  // Seed person 3 is a customer owned by Wei Ping.
+  // Seed person 3 paid (a student) and is owned by Wei Ping.
   const id = await idOf("Nur Aisyah binti Ahmad");
   const before = await auditCount();
   const r = await getPersonDetail(id, admin);
   assert.equal(r.kind, "ok");
   if (r.kind !== "ok") return;
-  assert.equal(r.detail.person.stage, "customer");
+  assert.equal(
+    r.detail.person.stage,
+    "student",
+    "anyone who paid is a student",
+  );
   assert.ok(
     r.detail.deals?.length && r.detail.enrolments?.length && r.detail.enquiries,
   );
