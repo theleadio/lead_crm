@@ -10,20 +10,29 @@ export type ImportClass = {
   start_date: string;
   language: "en" | "zh";
   status: string;
+  // The SalesProcess import guesses "en" when an order names no language, so
+  // its classes match a cohort of either language; a class made by hand
+  // (false) must match the language. Unset counts as a guess.
+  guessed_language?: boolean;
 };
 
 const INACTIVE = ["cancelled", "refunded", "transferred"];
 
-// cohort → CRM class id: its own id if the CRM has it, else the import class it
-// adopted on an earlier run (code = slug), else the one import class of that
-// course and start date, else its own id (a new class).
+// cohort → CRM class id: the class that saved this cohort's LMS id (029), else
+// its own id if the CRM has it, else the CRM-made class it adopted on an
+// earlier run (code = slug), else the one CRM-made class of that course and
+// start date, else its own id (a new class). "importClasses" is every class the
+// CRM made, by the SalesProcess import or by hand (Shawn, 17 Nov 2026).
 export function classIdForCohort(
   cohort: Cohort,
   crmIds: Set<string>,
   importClasses: ImportClass[],
   cohorts: Cohort[],
   warnings: string[],
+  linked: ReadonlyMap<string, string> = new Map(), // LMS cohort id → CRM class id
 ): string {
+  const saved = linked.get(cohort.id);
+  if (saved) return saved;
   if (crmIds.has(cohort.id)) return cohort.id;
   const sameCourse = importClasses.filter((c) => c.course_id === cohort.course_id);
   // The upsert writes code = slug, so this still finds the class after the LMS moves the date.
@@ -32,17 +41,24 @@ export function classIdForCohort(
   const twins = cohorts.filter(
     (k) => k.id !== cohort.id && k.course_id === cohort.course_id && k.start_date === cohort.start_date,
   );
-  // Two cohorts must never adopt one class: skip classes another cohort holds by code, and
-  // with a twin cohort on the date, only the same language adopts.
+  // Two cohorts must never adopt one class: skip classes another cohort holds by code
+  // or by a saved LMS id, and with a twin cohort on the date, only the same language adopts.
   const held = new Set(cohorts.map((k) => k.slug));
-  const onDate = sameCourse.filter((c) => c.start_date === cohort.start_date && !held.has(c.code));
+  const linkedElsewhere = new Set([...linked].filter(([k]) => k !== cohort.id).map(([, id]) => id));
+  const onDate = sameCourse.filter(
+    (c) =>
+      c.start_date === cohort.start_date &&
+      !held.has(c.code) &&
+      !linkedElsewhere.has(c.id) &&
+      (c.guessed_language !== false || c.language === cohort.language),
+  );
   const candidates = twins.length ? onDate.filter((c) => c.language === cohort.language) : onDate;
   const found = twins.some((k) => k.language === cohort.language) && candidates.length
     ? "ambiguous"
     : pickClass(candidates, cohort.language);
   if (found === "ambiguous") {
     warnings.push(
-      `cohort ${cohort.slug}: SalesProcess classes ${candidates.map((c) => c.code).join(", ")} all match, none adopted`,
+      `cohort ${cohort.slug}: CRM classes ${candidates.map((c) => c.code).join(", ")} all match, none adopted`,
     );
     return cohort.id;
   }

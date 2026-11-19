@@ -32,6 +32,46 @@ const pick = (k: Cohort, crm: string[], classes: ImportClass[], cohorts = [k]) =
   return { id: classIdForCohort(k, new Set(crm), classes, cohorts, warnings), warnings };
 };
 
+test("classIdForCohort: a class that saved the cohort's LMS id wins over everything", () => {
+  const linked = new Map([["k1", "hand-made"]]);
+  const id = classIdForCohort(cohort(), new Set(["k1"]), [imp()], [cohort()], [], linked);
+  assert.equal(id, "hand-made");
+});
+
+test("classIdForCohort: a class linked to another cohort is never adopted again", () => {
+  // The CRM-made class keeps its own code now, so the saved LMS id is what holds it.
+  const linked = new Map([["k-other", "i-en"]]);
+  const id = classIdForCohort(cohort(), new Set(), [imp()], [cohort()], [], linked);
+  assert.equal(id, "k1");
+});
+
+test("classIdForCohort: a class made by hand is adopted like an import class", () => {
+  // The sync now passes every CRM-made class, not only SalesProcess ones.
+  const hand = imp({ id: "hand", code: "ai-agents-2026-11-28", language: "zh", guessed_language: false });
+  assert.deepEqual(pick(cohort(), [], [hand]), { id: "hand", warnings: [] });
+});
+
+test("classIdForCohort: a class made by hand must match the language; a SalesProcess one need not", () => {
+  // cohort() is zh. Staff chose "en" on purpose, so a zh cohort makes its own class.
+  const hand = imp({ id: "hand", code: "ai-agents-2026-11-28", guessed_language: false });
+  assert.equal(pick(cohort(), [], [hand]).id, "k1");
+  // The import may have guessed "en", so it is still adopted.
+  assert.equal(pick(cohort(), [], [imp({ guessed_language: true })]).id, "i-en");
+});
+
+test("classIdForCohort: a draft or cancelled class made by hand is adopted too; a cancelled one is then left alone", () => {
+  // Draft: Ops set the class up before the LMS cohort existed; the sync
+  // links it and never changes a draft's status (#87).
+  const draft = imp({ id: "hand", code: "ai-agents-2026-11-28", language: "zh", guessed_language: false, status: "draft" });
+  assert.equal(pick(cohort(), [], [draft]).id, "hand");
+  // Cancelled: mapped, so no second live class is made beside it, then its
+  // seats are left alone and the run warns "class cancelled in CRM" (Shawn, #89).
+  const gone = { ...draft, status: "cancelled" };
+  const id = pick(cohort(), [], [gone]).id;
+  assert.equal(id, "hand");
+  assert.deepEqual([...cohortsOnCancelledClass(new Map([["k1", id]]), [gone]).keys()], ["k1"]);
+});
+
 test("classIdForCohort: a cohort already in the CRM keeps its own id", () => {
   assert.equal(pick(cohort(), ["k1"], [imp()]).id, "k1");
 });
