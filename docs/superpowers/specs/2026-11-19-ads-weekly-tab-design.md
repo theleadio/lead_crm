@@ -43,7 +43,7 @@ URL: `/reports/ads`, optionally with `?week=YYYY-MM-DD`. Any day of the week wor
     - WhatsApp ad opt-in (`ctwa`)
     - Meta Lead Ads form
     - Website form
-    - Link with UTM
+    - Link with ad tracking
     - WhatsApp direct
     - Referral
     - Walk-in
@@ -52,8 +52,8 @@ URL: `/reports/ads`, optionally with `?week=YYYY-MM-DD`. Any day of the week wor
 
     Each source shows its count and share. "No source recorded" is shown in red.
 
-  - By `utm_source` / `utm_campaign`: the top 10, then an "Other campaigns" row.
-- **Each signup:** a list that starts closed. Columns are person (links to `/people/[id]`), class, source, utm_campaign and date.
+  - By ad source and campaign (the `utm_source` / `utm_campaign` fields, shown to staff as "Ad source" and "Campaign"): the top 10, then an "Other campaigns" row.
+- **Each signup:** a list that starts closed. Columns are person (links to `/people/[id]`), class, source, campaign and date.
 - Only `weeklySummary` is read, so the tab doesn't wait on the other 12 queries.
 
 ### Ad details tab

@@ -349,7 +349,7 @@ const SOURCE_TEXT: Record<SourceBucket, string> = {
   whatsapp_ad: "WhatsApp ad opt-in",
   lead_form: "Meta Lead Ads form",
   web_form: "Website form",
-  utm_link: "Link with UTM",
+  utm_link: "Link with ad tracking",
   whatsapp: "WhatsApp, direct",
   referral: "Referral",
   walk_in: "Walk-in",
@@ -372,7 +372,7 @@ export function SignupSources({ summary }: { summary: WeeklySummary }) {
     <PanelCard
       eyebrow="SOURCES"
       title="Where signups came from"
-      description="Each signup by the latest source the person had before signing up: a WhatsApp chat started from an ad, a Lead Ads form, a website form, a link carrying UTM tags. Import and payment-link rows with no UTM are skipped, so they never hide an earlier source. Ad details credits the first Meta touch instead, so its counts can differ."
+      description="Each signup by the latest source the person had before signing up: a WhatsApp chat started from an ad, a Lead Ads form, a website form, a link with ad tracking. Signups whose only record is an import or payment link, with no ad tracking, use the source before it. Ad details credits the first Meta touch instead, so its counts can differ."
     >
       <TableCard>
         <Table>
@@ -401,8 +401,8 @@ export function SignupSources({ summary }: { summary: WeeklySummary }) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>utm_source</TableHead>
-                <TableHead>utm_campaign</TableHead>
+                <TableHead>Ad source</TableHead>
+                <TableHead>Campaign</TableHead>
                 <TableHead>Signups</TableHead>
               </TableRow>
             </TableHeader>
@@ -447,7 +447,7 @@ export function SignupPeople({ summary }: { summary: WeeklySummary }) {
               <TableHead>Person</TableHead>
               <TableHead>Class</TableHead>
               <TableHead>Source</TableHead>
-              <TableHead>utm_campaign</TableHead>
+              <TableHead>Campaign</TableHead>
               <TableHead>Date</TableHead>
             </TableRow>
           </TableHeader>

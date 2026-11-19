@@ -97,20 +97,20 @@ details summary{cursor:pointer;font-weight:600}
 </section>
 
 <section class="panel">
-  <div><div class="eyebrow">SOURCES</div><div class="title">Where signups came from</div><div class="desc">Each signup by the latest source the person had before signing up. Import and payment-link rows with no UTM are skipped, so they never hide an earlier source. Ad details credits the first Meta touch instead, so its counts can differ.</div></div>
+  <div><div class="eyebrow">SOURCES</div><div class="title">Where signups came from</div><div class="desc">Each signup by the latest source the person had before signing up. Signups whose only record is an import or payment link, with no ad tracking, use the source before it. Ad details credits the first Meta touch instead, so its counts can differ.</div></div>
   <div class="wrap"><table>
     <thead><tr><th>Source</th><th class="n">Signups</th><th>Share</th></tr></thead>
     <tbody>
       <tr><td>WhatsApp ad opt-in</td><td class="n">10</td><td><span class="meter" style="width:48px"></span>24%</td></tr>
       <tr><td>Meta Lead Ads form</td><td class="n">6</td><td><span class="meter" style="width:28px"></span>14%</td></tr>
       <tr><td>Website form</td><td class="n">4</td><td><span class="meter" style="width:20px"></span>10%</td></tr>
-      <tr><td>Link with UTM</td><td class="n">2</td><td><span class="meter" style="width:10px"></span>5%</td></tr>
+      <tr><td>Link with ad tracking</td><td class="n">2</td><td><span class="meter" style="width:10px"></span>5%</td></tr>
       <tr><td>WhatsApp, direct</td><td class="n">2</td><td><span class="meter" style="width:10px"></span>5%</td></tr>
       <tr><td class="bad">No source recorded</td><td class="n">18</td><td><span class="meter" style="width:86px;background:var(--bad)"></span>43%</td></tr>
     </tbody>
   </table></div>
   <div class="wrap"><table>
-    <thead><tr><th>utm_source</th><th>utm_campaign</th><th class="n">Signups</th></tr></thead>
+    <thead><tr><th>Ad source</th><th>Campaign</th><th class="n">Signups</th></tr></thead>
     <tbody>
       <tr><td>facebook</td><td>sample-campaign-a</td><td class="n">7</td></tr>
       <tr><td>facebook</td><td>sample-campaign-b</td><td class="n">5</td></tr>
@@ -124,7 +124,7 @@ details summary{cursor:pointer;font-weight:600}
 <details class="panel">
   <summary>Each signup (42)</summary>
   <div class="wrap"><table>
-    <thead><tr><th>Person</th><th>Class</th><th>Source</th><th>utm_campaign</th><th>Date</th></tr></thead>
+    <thead><tr><th>Person</th><th>Class</th><th>Source</th><th>Campaign</th><th>Date</th></tr></thead>
     <tbody>
       <tr><td><a class="link" href="#">Person A</a></td><td>Sample Certification A · 14 Nov 2026</td><td>WhatsApp ad opt-in</td><td>sample-campaign-a</td><td>13 Nov</td></tr>
       <tr><td><a class="link" href="#">Person B</a></td><td>Sample Workshop C · 23 Nov 2026</td><td>Website form</td><td>sample-campaign-c</td><td>12 Nov</td></tr>
