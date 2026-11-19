@@ -11,8 +11,12 @@ import { ROLES, type Role } from "../lib/auth/permissions.ts";
 import { canRecordPayment } from "../lib/payments/service.ts";
 import { permissionFor } from "../lib/auth/permissions.ts";
 import { proofKeyFor } from "../lib/uploads/signer.ts";
+import { readFileSync } from "node:fs";
+import type { PaymentMatchResult } from "../lib/payments/match.ts";
+import { paymentMatchResponse } from "../lib/payments/write-response.ts";
 import {
   paymentManualSchema,
+  paymentMatchSchema,
   uploadSignSchema,
 } from "../lib/validation/payment.ts";
 
@@ -91,4 +95,83 @@ test("the manual route's If-Match header is a positive whole number", () => {
 test("the manual route refuses a body that is not a §9.12 payment", () => {
   for (const body of [null, {}, { enrolmentId: ENROLMENT }])
     assert.equal(paymentManualSchema.safeParse(body).success, false);
+});
+
+// POST /api/payments/:id/match — §11.3, §7.1. The body is the person and the
+// class, and nothing else: the amount and method are the payment row's own.
+const PERSON = "00000000-0000-4000-8000-000000000002";
+const CLASS = "00000000-0000-4000-8000-000000000003";
+
+test("the match route takes a person and a class and nothing else", () => {
+  assert.equal(
+    paymentMatchSchema.safeParse({ personId: PERSON, classId: CLASS }).success,
+    true,
+  );
+  for (const body of [
+    null,
+    {},
+    { personId: PERSON },
+    { personId: "not-an-id", classId: CLASS },
+    { personId: PERSON, classId: CLASS, amountMyr: "1" },
+  ])
+    assert.equal(
+      paymentMatchSchema.safeParse(body).success,
+      false,
+      JSON.stringify(body),
+    );
+});
+
+// Read, not imported: the route uses the "@/" alias, which only the bundler
+// resolves (as tests/public-register-db.test.ts reads its route).
+test("the match route answers 401 signed out, then checks the role, then the body", () => {
+  const src = readFileSync(
+    new URL("../app/api/payments/[id]/match/route.ts", import.meta.url),
+    "utf8",
+  );
+  const at = (s: string) => src.indexOf(s);
+  assert.ok(at('apiError(401, "unauthenticated"') > 0);
+  assert.ok(at("canRecordPayment(viewer)") > at("apiError(401"));
+  assert.ok(
+    at("paymentMatchSchema.safeParse") > at("canRecordPayment(viewer)"),
+  );
+  assert.ok(at("validationError(parsed.error)") > 0);
+});
+
+test("each match result has its status code and error code", async () => {
+  const viewer = { id: "u", role: "operations" as const };
+  const request = new Request("http://test/api/payments/x/match", {
+    method: "POST",
+  });
+  const cases: [PaymentMatchResult, number, string | null][] = [
+    [
+      {
+        kind: "ok",
+        match: {
+          paymentId: "p",
+          enrolmentId: "e",
+          classCode: "C1",
+          seatCreated: true,
+          status: "confirmed",
+        },
+      },
+      200,
+      null,
+    ],
+    [{ kind: "not_found" }, 404, "not_found"],
+    [{ kind: "already_matched" }, 409, "already_matched"],
+    [{ kind: "no_seats", classCode: "C1" }, 409, "no_seats"],
+    [{ kind: "not_unmatched" }, 422, "not_unmatched"],
+    [{ kind: "refunded" }, 422, "refunded"],
+    [{ kind: "class_cancelled", classCode: "C1" }, 422, "class_cancelled"],
+    [{ kind: "blocked_status", status: "waitlisted" }, 422, "blocked_status"],
+  ];
+  for (const [result, status, code] of cases) {
+    const res = await paymentMatchResponse(result, viewer, request);
+    assert.equal(res.status, status, result.kind);
+    const json = (await res.json()) as {
+      error?: { code: string; message: string };
+    };
+    assert.equal(json.error?.code ?? null, code, result.kind);
+    if (json.error) assert.doesNotMatch(json.error.message, /_/, "plain words");
+  }
 });

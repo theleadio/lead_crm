@@ -171,6 +171,29 @@ it("about: links to what the viewer may read, and hides what they may not", asyn
   assert.match(asOps.about?.detail ?? "", /^C-/);
 });
 
+it("a match_payment task is about its payment: the match screen for payment-write roles, no link for others", async () => {
+  const ops = await newUser("operations");
+  const sales = await newUser("sales");
+  const [pay] = await db()`
+    INSERT INTO payment (match_status, method, status, amount_myr, paid_at)
+    VALUES ('unmatched', 'stripe_card', 'succeeded', '1500.00', now())
+    RETURNING id`;
+  const [t] = await db()`
+    INSERT INTO task (type, title, payment_id, assigned_user_id, due_at)
+    VALUES ('match_payment', 'Match a Stripe payment', ${pay.id}, ${ops.id}, now())
+    RETURNING id`;
+  const about = async (viewer: Viewer) =>
+    (await list(viewer, { mine: "false", type: "match_payment" })).data.find(
+      (r) => r.id === t.id,
+    )!.about;
+  const forOps = await about(ops);
+  assert.equal(forOps?.href, `/payments/${pay.id}/match`);
+  assert.match(forOps?.label ?? "", /1,500\.00 Stripe payment/);
+  const forSales = await about(sales);
+  assert.equal(forSales?.href, null);
+  assert.equal(forSales?.label, forOps?.label);
+});
+
 it("a part-timer's task about a deal links to the person, no course", async () => {
   const pt = await newUser("part_time");
   const person = await newPerson("Deal Person");
@@ -314,7 +337,7 @@ it("a duplicate review or a payment match can't be ticked done; it closes where 
 
   for (const [id, says] of [
     [dup.id, /Not a duplicate/],
-    [match.id, /payment match screen/],
+    [match.id, /"Match payment"/],
   ] as const) {
     const r = await patch(sales, id, { action: "complete" });
     assert.equal(r.kind, "closes_elsewhere");

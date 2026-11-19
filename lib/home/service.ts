@@ -44,7 +44,7 @@ export async function myTasks(viewer: Viewer): Promise<HomeTasks> {
   const rows = await sql`
     SELECT t.id, t.type, t.title, t.due_at,
            (t.due_at < now()) AS is_overdue,
-           t.person_id, t.deal_id,
+           t.person_id, t.deal_id, t.payment_id,
            coalesce(p.full_name, dp.full_name) AS person_name
     FROM task t
     LEFT JOIN person p ON p.id = t.person_id
@@ -71,7 +71,12 @@ export async function myTasks(viewer: Viewer): Promise<HomeTasks> {
         ? `/people/${r.person_id}`
         : r.deal_id
           ? `/deals/${r.deal_id}`
-          : null,
+          : // §11.3: only payment-write roles open the match screen.
+            r.type === "match_payment" &&
+              r.payment_id &&
+              permissionFor(viewer, "payment", "write").allowed
+            ? `/payments/${r.payment_id}/match`
+            : null,
       dueAt: new Date(r.due_at).toISOString(),
       isOverdue: r.is_overdue,
     })),
@@ -247,8 +252,8 @@ async function classOptins(
 }
 
 // Spec §9.0 needs attention: one count per item, each gated on its own
-// permission, because no single role can act on all of them. The unmatched
-// payment count still waits on Shawn's Stripe webhook (§11.3).
+// permission, because no single role can act on all of them. Unmatched
+// payments come from the Stripe webhook (§11.3) and are for payment write.
 export async function needsAttention(
   viewer: Viewer,
 ): Promise<HomeNeedsAttention> {
@@ -258,12 +263,14 @@ export async function needsAttention(
   const mayReviewPeople = canReviewFlagged(viewer);
   // Notices are approved by super_admin and operations only (§7.1, §9.10).
   const mayApproveNotices = canWriteClass(viewer);
+  // Payments are matched by super_admin and operations only (§6 payment write).
+  const mayMatchPayments = permissionFor(viewer, "payment", "write").allowed;
   // Nothing this role can act on is a forbidden panel, not an empty one (§6).
-  if (!mayReviewPeople && !mayApproveNotices)
+  if (!mayReviewPeople && !mayApproveNotices && !mayMatchPayments)
     throw new PermissionError("person");
 
   const sql = db();
-  const [needsReview, pendingNotices] = await Promise.all([
+  const [needsReview, pendingNotices, unmatched] = await Promise.all([
     mayReviewPeople
       ? sql`SELECT count(*)::int AS n FROM person
             WHERE needs_review AND deleted_at IS NULL AND merged_into_id IS NULL`
@@ -278,10 +285,23 @@ export async function needsAttention(
             FROM class_notice n JOIN class c ON c.id = n.class_id
             WHERE n.status = 'pending' AND ${classWhenSql(sql, "upcoming")}`
       : null,
+    // A full refund leaves the payment unmatched but nothing to match
+    // (lead_sales #36 withdraws its task), so it isn't counted.
+    mayMatchPayments
+      ? sql`SELECT count(*)::int AS n, min(id::text) AS one FROM payment
+            WHERE match_status = 'unmatched'
+              AND status IN ('succeeded', 'partially_refunded')`
+      : null,
   ]);
 
   return {
     needsReview: needsReview ? (needsReview[0].n as number) : null,
     pendingNotices: pendingNotices ? (pendingNotices[0].n as number) : null,
+    unmatchedPayments: unmatched
+      ? {
+          count: unmatched[0].n as number,
+          paymentId: unmatched[0].n === 1 ? (unmatched[0].one as string) : null,
+        }
+      : null,
   };
 }

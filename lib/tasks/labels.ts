@@ -23,5 +23,5 @@ export const CLOSES_ELSEWHERE: Record<string, string> = {
   review_duplicate:
     'This task closes when the duplicate is settled: open the person and choose "Not a duplicate" or merge them.',
   match_payment:
-    "This task closes when the payment is matched to an enrolment on the payment match screen.",
+    'This task closes when the payment is matched: open it and use "Match payment". A payment refunded in full in Stripe closes it too.',
 };

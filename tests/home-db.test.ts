@@ -269,6 +269,41 @@ it("each needs-attention item is counted only for the roles that can act", async
   assert.equal(typeof forSales.needsReview, "number");
 });
 
+it("unmatched payments are counted for payment-write roles only; a full refund isn't counted", async () => {
+  const ops = await newUser("operations");
+  const admin = await newUser("super_admin");
+  const sales = await newUser("sales");
+  const base = (await needsAttention(ops)).unmatchedPayments?.count ?? 0;
+  const unmatched = async (status: string, refunded = "0") =>
+    (
+      await db()`
+        INSERT INTO payment (match_status, method, status, amount_myr,
+                             refunded_amount_myr, refunded_at, paid_at)
+        VALUES ('unmatched', 'stripe_card', ${status}, '100.00', ${refunded},
+                ${refunded === "0" ? null : db()`now()`}, now())
+        RETURNING id`
+    )[0].id as string;
+
+  await unmatched("refunded", "100.00");
+  assert.equal(
+    (await needsAttention(ops)).unmatchedPayments?.count,
+    base,
+    "zero stays zero",
+  );
+  assert.equal((await needsAttention(sales)).unmatchedPayments, null);
+
+  const one = await unmatched("succeeded");
+  if (base === 0)
+    assert.deepEqual((await needsAttention(ops)).unmatchedPayments, {
+      count: 1,
+      paymentId: one,
+    });
+  await unmatched("partially_refunded", "50.00");
+  const two = (await needsAttention(admin)).unmatchedPayments;
+  assert.equal(two?.count, base + 2);
+  assert.equal(two?.paymentId, null, "several open Tasks, not one screen");
+});
+
 // --- permissions -----------------------------------------------------------
 
 it("§6 decides which panels a role may read", async () => {

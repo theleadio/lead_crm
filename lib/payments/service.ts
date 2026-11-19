@@ -1,6 +1,12 @@
 import { writeAudit } from "../audit.ts";
 import { permissionFor, type Viewer } from "../auth/permissions.ts";
-import { SEAT_STATUSES } from "../classes/seats.ts";
+import {
+  BLOCKED_STATUSES,
+  SEAT_GUARD_EXEMPT,
+  holdsSeat,
+  isNoSeats,
+  seatsTaken,
+} from "../enrolments/service.ts";
 import { canChangeTo } from "../enrolments/status-rules.ts";
 import { isUuid } from "../people/service.ts";
 import { db, withTransaction } from "../sql.ts";
@@ -20,17 +26,9 @@ import type { RecordedPayment } from "./types.ts";
 // database, because the Stripe webhook must obey it too (§3). So nothing here
 // sums `amount_myr` or reads `price_paid_myr` (design 4).
 
-// §9.12: money cannot be recorded against an enrolment in one of these.
-const BLOCKED_STATUSES = ["cancelled", "refunded", "transferred"];
-
-// §12.1, as in `lib/enrolments/service.ts`: a cancelled or completed class is
-// exempt from the seat guard, so history can still be corrected. The 006
-// trigger exempts the same two.
-const SEAT_GUARD_EXEMPT = ["cancelled", "completed"];
-
-function holdsSeat(status: string): boolean {
-  return SEAT_STATUSES.includes(status);
-}
+// §9.12: money cannot be recorded against an enrolment in BLOCKED_STATUSES.
+// The seat rules (BLOCKED_STATUSES, SEAT_GUARD_EXEMPT, holdsSeat, seatsTaken,
+// isNoSeats) are lib/enrolments/service.ts's, shared with the payment match.
 
 export type PaymentWriteResult =
   | { kind: "ok"; payment: RecordedPayment }
@@ -57,18 +55,6 @@ export type PaymentWriteResult =
 function isDuplicateProof(e: unknown): boolean {
   const err = e as { code?: string; constraint_name?: string };
   return err.code === "23505" && err.constraint_name === "payment_proof_key_uq";
-}
-
-// Migration 006 raises `no_seats` (SQLSTATE P0001) on a write that oversells a
-// published class — for this route, confirming an enrolment whose reservation
-// had already run out.
-function isNoSeats(e: unknown): boolean {
-  return Boolean((e as { message?: string }).message?.includes("no_seats"));
-}
-
-async function seatsTaken(classId: string): Promise<number> {
-  const [row] = await db()`SELECT class_seats_taken(${classId}) AS taken`;
-  return row.taken as number;
 }
 
 async function classCodeOf(enrolmentId: string): Promise<string> {
