@@ -207,17 +207,21 @@ export type EnrolmentWriteResult =
 // §12.1: which statuses occupy a seat. A reservation whose hold has run out is
 // one of these by status but holds nothing, so moving it on is a fresh claim —
 // which is why the count below comes from the database, not from this list.
-function holdsSeat(status: string): boolean {
+export function holdsSeat(status: string): boolean {
   return SEAT_STATUSES.includes(status);
 }
 
 // §12.1: a cancelled or completed class is exempt from the seat guard, so
 // history can be imported and corrected. The 006 trigger exempts the same two.
-const SEAT_GUARD_EXEMPT = ["cancelled", "completed"];
+export const SEAT_GUARD_EXEMPT = ["cancelled", "completed"];
+
+// §9.12, §5: a seat in one of these is not live: it holds no place, takes no
+// money, and does not count toward the one-live-seat rule.
+export const BLOCKED_STATUSES = ["cancelled", "refunded", "transferred"];
 
 // The database's own count (migration 006), read under the class row lock, so
 // the friendly message is judged by the number that refuses an oversell.
-async function seatsTaken(classId: string): Promise<number> {
+export async function seatsTaken(classId: string): Promise<number> {
   const [row] = await db()`SELECT class_seats_taken(${classId}) AS taken`;
   return row.taken as number;
 }
@@ -226,7 +230,7 @@ async function seatsTaken(classId: string): Promise<number> {
 // a published class. Caught outside the transaction, as `merge-service.ts`
 // catches `merge_blocked:`, and answered with the same 409 as the friendly
 // check (design 3).
-function isNoSeats(e: unknown): boolean {
+export function isNoSeats(e: unknown): boolean {
   return Boolean((e as { message?: string }).message?.includes("no_seats"));
 }
 
@@ -241,7 +245,7 @@ function isDuplicate(e: unknown): boolean {
   );
 }
 
-async function liveEnrolmentId(
+export async function liveEnrolmentId(
   personId: string,
   classId: string,
 ): Promise<string | null> {
@@ -250,6 +254,24 @@ async function liveEnrolmentId(
     WHERE person_id = ${personId} AND class_id = ${classId}
       AND status NOT IN ('cancelled', 'refunded', 'transferred')`;
   return (row?.id as string) ?? null;
+}
+
+// §11.3 payment match: a confirmed seat at the class price snapshot (§12.7),
+// inside the caller's transaction, which holds the class lock and has checked
+// the seat guard. Here, not in lib/payments, which never touches the price
+// (O16 boundary, tests/payments-o16-boundary.test.ts).
+export async function insertConfirmedSeat(
+  personId: string,
+  classId: string,
+  createdBy: string,
+): Promise<string> {
+  const [row] = await db()`
+    INSERT INTO enrolment (person_id, class_id, status, price_paid_myr,
+                           created_by)
+    SELECT ${personId}, ${classId}, 'confirmed', price_myr, ${createdBy}
+    FROM class WHERE id = ${classId}
+    RETURNING id`;
+  return row.id as string;
 }
 
 async function classCode(classId: string): Promise<string> {

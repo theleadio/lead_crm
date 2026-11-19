@@ -1,11 +1,18 @@
 import Link from "next/link";
-import { BellRing, ChevronRight, Info, UserSearch } from "lucide-react";
+import {
+  BellRing,
+  ChevronRight,
+  CreditCard,
+  Info,
+  UserSearch,
+} from "lucide-react";
 import type { HomeNeedsAttention } from "@/lib/home/types";
 
 // Spec §9.0. One row per item, and an item a role cannot act on is absent
 // rather than zero: operations approves notices but only reads people, sales
-// is the other way round. Unmatched payments wait on the Stripe webhook
-// (§11.3), so they get no row that could only ever read zero.
+// is the other way round. Unmatched Stripe payments (§11.3) are for the
+// roles that record payments: one opens its match screen, several open Tasks
+// filtered to the match tasks.
 export function NeedsAttentionPanel({ data }: { data: HomeNeedsAttention }) {
   const rows = [
     data.needsReview === null
@@ -31,6 +38,18 @@ export function NeedsAttentionPanel({ data }: { data: HomeNeedsAttention }) {
           title: "Class notices to approve",
           hint: "Students are not told until you approve",
         },
+    data.unmatchedPayments === null
+      ? null
+      : {
+          key: "payments",
+          count: data.unmatchedPayments.count,
+          href: data.unmatchedPayments.paymentId
+            ? `/payments/${data.unmatchedPayments.paymentId}/match`
+            : "/tasks?filter[type]=match_payment&filter[mine]=false",
+          icon: <CreditCard className="size-4.5" />,
+          title: "Payments to match",
+          hint: "Paid online, but not tied to a student yet",
+        },
   ].filter((r): r is NonNullable<typeof r> => r !== null && r.count > 0);
 
   return (
@@ -46,8 +65,8 @@ export function NeedsAttentionPanel({ data }: { data: HomeNeedsAttention }) {
         <div className="border-line text-ink-muted border-t px-5 py-10 text-center text-sm">
           <p className="text-ink font-medium">Nothing needs attention.</p>
           <p className="mt-1">
-            Possible duplicates and class notices waiting for approval land
-            here.
+            Possible duplicates, class notices waiting for approval and payments
+            to match land here.
           </p>
         </div>
       ) : (

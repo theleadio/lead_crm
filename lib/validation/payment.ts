@@ -89,3 +89,13 @@ export type PaymentManualBody = z.output<typeof paymentManualSchema>;
 export const uploadSignSchema = z.object({ enrolmentId: uuid });
 
 export type UploadSignBody = z.output<typeof uploadSignSchema>;
+
+// Body for §11.3 `POST /api/payments/:id/match` (§7.1): the person the money
+// is from and the class it pays for. Nothing else is taken from the client:
+// the amount and method are the payment row's own.
+export const paymentMatchSchema = z.strictObject({
+  personId: uuid,
+  classId: uuid,
+});
+
+export type PaymentMatchBody = z.output<typeof paymentMatchSchema>;

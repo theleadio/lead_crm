@@ -5,6 +5,7 @@ import {
   requirePermission,
   type Viewer,
 } from "../auth/permissions.ts";
+import { formatMoneyMyr } from "../format/money.ts";
 import { displayName, type ListResponse } from "../people/types.ts";
 import { db } from "../sql.ts";
 import type { TaskListQuery } from "../validation/task.ts";
@@ -44,8 +45,10 @@ function selectRows(sql: postgres.Sql, where: Fragment, tail: Fragment) {
            t.deal_id, co.name_en AS course_name,
            coalesce(t.person_id, d.person_id, e.person_id) AS person_id,
            coalesce(p.full_name, dp.full_name, ep.full_name) AS person_name,
-           coalesce(p.phone, dp.phone, ep.phone) AS person_phone
+           coalesce(p.phone, dp.phone, ep.phone) AS person_phone,
+           t.payment_id, pay.amount_myr::text AS payment_amount
     FROM task t
+    LEFT JOIN payment pay ON pay.id = t.payment_id
     LEFT JOIN app_user u ON u.id = t.assigned_user_id
     LEFT JOIN person p ON p.id = t.person_id
     LEFT JOIN deal d ON d.id = t.deal_id
@@ -62,6 +65,16 @@ function selectRows(sql: postgres.Sql, where: Fragment, tail: Fragment) {
 // course or class name from a record they may not read is not shown. A
 // part-timer or marketing never lands on a 403 page from here.
 export function aboutFor(r: postgres.Row, viewer: Viewer): TaskAbout | null {
+  // §11.3: a match_payment task is about its payment, which has no person
+  // yet. Only payment-write roles get the link to the match screen.
+  if (r.type === "match_payment" && r.payment_id)
+    return {
+      label: `${formatMoneyMyr(r.payment_amount as string)} Stripe payment`,
+      detail: null,
+      href: permissionFor(viewer, "payment", "write").allowed
+        ? `/payments/${r.payment_id}/match`
+        : null,
+    };
   const can = (resource: "enrolment" | "deal" | "person") =>
     permissionFor(viewer, resource, "read").allowed;
   const enrolment = r.enrolment_id && can("enrolment");

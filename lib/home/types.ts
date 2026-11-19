@@ -84,4 +84,8 @@ export type HomeNeedsAttention = {
   needsReview: number | null;
   // Change notices waiting for approval on 9.10 (§5 `class_notice`).
   pendingNotices: number | null;
+  // §11.3 Stripe payments waiting to be matched (not refunded in full), for
+  // payment-write roles; `paymentId` when there is exactly one, so the row
+  // opens its match screen.
+  unmatchedPayments: { count: number; paymentId: string | null } | null;
 };

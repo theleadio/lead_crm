@@ -2,6 +2,7 @@ import { apiError, forbidden } from "../api/errors.ts";
 import type { Viewer } from "../auth/permissions.ts";
 import { enumLabel } from "../classes/types.ts";
 import { formatMegabytes, MAX_PROOF_BYTES } from "../uploads/verify.ts";
+import type { PaymentMatchResult } from "./match.ts";
 import type { PaymentWriteResult } from "./service.ts";
 
 // One place that turns a §9.12 save result into its §7 status code, as
@@ -85,5 +86,65 @@ function proofMessage(
       return "That file is empty. Attach the proof again.";
     case "unsupported_type":
       return "That file isn't an image or a PDF. Attach a photo of the slip or a PDF.";
+  }
+}
+
+// §11.3 `POST /api/payments/:id/match`. Each refusal says what to do next, and
+// the screen keeps the person and class picked (§13).
+export async function paymentMatchResponse(
+  result: PaymentMatchResult,
+  viewer: Viewer,
+  request: Request,
+): Promise<Response> {
+  switch (result.kind) {
+    case "ok":
+      return Response.json(result.match, { status: 200 });
+    case "forbidden":
+      return forbidden(viewer, request, {
+        what: "match payments",
+        resource: "payment",
+      });
+    case "not_found":
+      return apiError(
+        404,
+        "not_found",
+        "That payment, person or class doesn't exist any more. Reload and pick again.",
+      );
+    case "already_matched":
+      return apiError(
+        409,
+        "already_matched",
+        "This payment is already matched. Reload to see who it went to.",
+      );
+    case "not_unmatched":
+      return apiError(
+        422,
+        "not_unmatched",
+        "This isn't a Stripe payment waiting to be matched.",
+      );
+    case "refunded":
+      return apiError(
+        422,
+        "refunded",
+        "This payment was refunded in Stripe, so there's nothing to match.",
+      );
+    case "class_cancelled":
+      return apiError(
+        422,
+        "class_cancelled",
+        `${result.classCode} is cancelled. Pick the class the student is coming to, or refund the payment in Stripe.`,
+      );
+    case "no_seats":
+      return apiError(
+        409,
+        "no_seats",
+        `${result.classCode} is full. Pick another class, or free a seat in it first.`,
+      );
+    case "blocked_status":
+      return apiError(
+        422,
+        "blocked_status",
+        `This student's place in that class is ${enumLabel(result.status).toLowerCase()}, so it can't be confirmed. Change it on the enrolment first, or pick another class.`,
+      );
   }
 }
