@@ -60,7 +60,7 @@ type PersonRow = {
   company_id: string | null;
   company_name: string | null;
   company_name_given: string | null;
-  stage: "lead" | "student" | "customer";
+  stage: "lead" | "student";
 };
 
 function selectPerson(sql: postgres.Sql) {
