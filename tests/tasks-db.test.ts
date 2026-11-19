@@ -179,8 +179,9 @@ it("a match_payment task is about its payment: the match screen for payment-writ
     VALUES ('unmatched', 'stripe_card', 'succeeded', '1500.00', now())
     RETURNING id`;
   const [t] = await db()`
-    INSERT INTO task (type, title, payment_id, assigned_user_id, due_at)
-    VALUES ('match_payment', 'Match a Stripe payment', ${pay.id}, ${ops.id}, now())
+    INSERT INTO task (type, title, payment_id, assigned_user_id, due_at, notes)
+    VALUES ('match_payment', 'Match a Stripe payment', ${pay.id}, ${ops.id}, now(),
+            ${"Why: the enrolment is cancelled.\nPayer: Alice Tan, alice@lead.test.\nStripe metadata: none"})
     RETURNING id`;
   const about = async (viewer: Viewer) =>
     (await list(viewer, { mine: "false", type: "match_payment" })).data.find(
@@ -189,6 +190,12 @@ it("a match_payment task is about its payment: the match screen for payment-writ
   const forOps = await about(ops);
   assert.equal(forOps?.href, `/payments/${pay.id}/match`);
   assert.match(forOps?.label ?? "", /1,500\.00 Stripe payment/);
+  assert.match(
+    forOps?.detail ?? "",
+    /^Alice Tan · paid /,
+    "who and when, no email",
+  );
+  assert.doesNotMatch(forOps?.detail ?? "", /@/);
   const forSales = await about(sales);
   assert.equal(forSales?.href, null);
   assert.equal(forSales?.label, forOps?.label);

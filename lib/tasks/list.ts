@@ -5,6 +5,7 @@ import {
   requirePermission,
   type Viewer,
 } from "../auth/permissions.ts";
+import { formatDateTime } from "../format/date.ts";
 import { formatMoneyMyr } from "../format/money.ts";
 import { displayName, type ListResponse } from "../people/types.ts";
 import { db } from "../sql.ts";
@@ -46,7 +47,8 @@ function selectRows(sql: postgres.Sql, where: Fragment, tail: Fragment) {
            coalesce(t.person_id, d.person_id, e.person_id) AS person_id,
            coalesce(p.full_name, dp.full_name, ep.full_name) AS person_name,
            coalesce(p.phone, dp.phone, ep.phone) AS person_phone,
-           t.payment_id, pay.amount_myr::text AS payment_amount
+           t.payment_id, pay.amount_myr::text AS payment_amount,
+           pay.paid_at AS payment_paid_at
     FROM task t
     LEFT JOIN payment pay ON pay.id = t.payment_id
     LEFT JOIN app_user u ON u.id = t.assigned_user_id
@@ -61,6 +63,16 @@ function selectRows(sql: postgres.Sql, where: Fragment, tail: Fragment) {
     ${tail}`;
 }
 
+// The payer's name from the match task's notes, which lead_sales writes as
+// "Payer: <name>, <email>." (recordUnmatched). The email is left out.
+// shortcut: parses another repo's text; a payer column on the task or
+// payment would replace it if the wording ever changes.
+export function payerName(notes: string | null): string | null {
+  const m = /^Payer: (.+?), [^,]*\.?$/m.exec(notes ?? "");
+  const name = m?.[1].trim();
+  return name && name !== "no name" ? name : null;
+}
+
 // Design 6: the link goes to the first record the viewer may open, and a
 // course or class name from a record they may not read is not shown. A
 // part-timer or marketing never lands on a 403 page from here.
@@ -70,7 +82,16 @@ export function aboutFor(r: postgres.Row, viewer: Viewer): TaskAbout | null {
   if (r.type === "match_payment" && r.payment_id)
     return {
       label: `${formatMoneyMyr(r.payment_amount as string)} Stripe payment`,
-      detail: null,
+      // Tells several match tasks apart: who paid (as told to Stripe) and when.
+      detail:
+        [
+          payerName(r.notes as string | null),
+          r.payment_paid_at
+            ? `paid ${formatDateTime(r.payment_paid_at as Date)}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" · ") || null,
       href: permissionFor(viewer, "payment", "write").allowed
         ? `/payments/${r.payment_id}/match`
         : null,
