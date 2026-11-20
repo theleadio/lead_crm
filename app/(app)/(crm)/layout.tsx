@@ -4,7 +4,6 @@ import { Search } from "lucide-react";
 import { FlashToast } from "@/components/flash-toast";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { navFor } from "@/lib/auth/nav";
-import { teamsOf } from "@/lib/enquiries/access";
 import { SignOutButton } from "./sign-out-button";
 import { Sidebar } from "./sidebar";
 import { SIDEBAR_COLLAPSED, SIDEBAR_COOKIE } from "./sidebar-state";
@@ -23,13 +22,14 @@ export default async function CrmLayout({
 
   const sidebarCollapsed =
     (await cookies()).get(SIDEBAR_COOKIE)?.value === SIDEBAR_COLLAPSED;
-  // A team member sees Inbox and Enquiries whatever their role (019).
-  const inTeam = (await teamsOf(user.id)).length > 0;
 
   return (
     <div className="bg-surface flex min-h-screen gap-4 p-4">
       <Sidebar
-        items={navFor(user, inTeam)}
+        items={
+          // A team member sees Inbox and Enquiries whatever their role (019).
+          navFor(user, user.inTeam)
+        }
         initialCollapsed={sidebarCollapsed}
       />
       <div className="flex min-w-0 flex-1 flex-col gap-4">
