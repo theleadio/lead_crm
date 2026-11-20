@@ -281,19 +281,20 @@ export function syncClassStatus(
 // has no price, so the CRM can't tell a free one from a paid one. A free class
 // would add its whole bulk import to Weekly and make every attendee a Student.
 // Its participants still sync as people (leads); only the course, its classes
-// and their seats are skipped. Add a new free course here by its LMS name.
-export const SKIPPED_LMS_COURSES = ["Vibe Coding Masterclass"];
+// and their seats are skipped. Keyed on the LMS course id (also the CRM course
+// id), not the name, so renaming the course in the LMS can't bring it back.
+export const SKIPPED_LMS_COURSES: readonly string[] = [
+  "69817a25-88f7-40c7-814a-810dda4bdbc2", // Vibe Coding Masterclass
+];
 
-// LMS rows as postgres reads them (courses.name, cohorts.course_id, enrollments.cohort_id).
+// LMS rows as postgres reads them (courses.id, cohorts.course_id, enrollments.cohort_id).
 type LmsRead = { courses: Row[]; cohorts: Row[]; enrols: Row[] };
 export function withoutSkippedCourses<S extends LmsRead>(
   src: S,
   skip: readonly string[] = SKIPPED_LMS_COURSES,
 ): S {
-  const names = new Set(skip.map((n) => n.trim().toLowerCase()));
-  const courses = src.courses.filter(
-    (c) => !names.has(c.name.trim().toLowerCase()),
-  );
+  const skipped = new Set(skip);
+  const courses = src.courses.filter((c) => !skipped.has(c.id));
   const kept = new Set(courses.map((c) => c.id));
   const cohorts = src.cohorts.filter((k) => kept.has(k.course_id));
   const cohortIds = new Set(cohorts.map((k) => k.id));
