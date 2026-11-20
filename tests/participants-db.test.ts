@@ -176,3 +176,26 @@ it("a label with no class is listed, then counted once someone maps it", async (
   });
   assert.equal(again.unmappedLabels, 0);
 });
+
+it("a Source typed in after the first sync is recorded, dated before the signup", async () => {
+  const date = day(10);
+  await newClass(date);
+  const r = row({ classes: labelFor(date), latestClassDate: date });
+  // First sync: the sheet's Source column is still empty.
+  await syncParticipants({ rows: [r], mode: "sync", dryRun: false });
+  // Later Ops fill it in.
+  await syncParticipants({
+    rows: [{ ...r, source: "Referral" }],
+    mode: "sync",
+    dryRun: false,
+  });
+  const rows = await db()`
+    SELECT t.utm_source, t.occurred_at <= e.first_seen_at AS before_signup
+    FROM touchpoint t
+    JOIN person p ON p.id = t.person_id
+    JOIN participant_entry e ON e.person_id = p.id
+    WHERE p.email_norm = ${r.email.toLowerCase()}
+      AND t.form_name = 'participant-sheet' AND t.utm_source LIKE 'self:%'`;
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].before_signup, true);
+});

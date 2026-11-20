@@ -24,6 +24,7 @@
     "ads:sync": "node --env-file-if-exists=.env.local scripts/sync-meta-ads.ts",
     "campaigns:link": "node --env-file-if-exists=.env.local scripts/link-class-campaigns.ts",
     "participants:map": "node --env-file-if-exists=.env.local scripts/map-participant-label.ts",
+    "signups:source": "node --env-file-if-exists=.env.local scripts/backfill-signup-source.ts",
     "wati:ctwa": "node --env-file-if-exists=.env.local scripts/sync-wati-ctwa.ts",
     "reservations:expire": "node --env-file-if-exists=.env.local scripts/expire-reservations.ts"
   },

@@ -30,7 +30,7 @@ export const scheduleQuerySchema = z.object({
 });
 export type ScheduleQuery = z.infer<typeof scheduleQuerySchema>;
 
-const attributionSchema = z.object({
+export const attributionSchema = z.object({
   utmSource: text(200),
   utmMedium: text(200),
   utmCampaign: text(200),
@@ -51,6 +51,14 @@ const attributionSchema = z.object({
       utmSource: text(200),
       utmMedium: text(200),
       utmCampaign: text(200),
+      utmContent: text(200),
+      utmTerm: text(200),
+      utmId: text(200),
+      utmAdId: text(200),
+      gclid: text(200),
+      fbclid: text(500),
+      landingUrl: text(2000),
+      referrer: text(2000),
       occurredAt: text(40),
     })
     .nullish(),
