@@ -1,8 +1,14 @@
-import type { Sql, TransactionSql } from "postgres";
+import type { Row, Sql, TransactionSql } from "postgres";
 import { CANCELLABLE_STATUSES } from "../classes/seats.ts";
 import { pickClass } from "./salesprocess-enrolments.ts";
 
-export type Cohort = { id: string; slug: string; course_id: string; start_date: string; language: "en" | "zh" };
+export type Cohort = {
+  id: string;
+  slug: string;
+  course_id: string;
+  start_date: string;
+  language: "en" | "zh";
+};
 export type ImportClass = {
   id: string;
   code: string;
@@ -34,17 +40,24 @@ export function classIdForCohort(
   const saved = linked.get(cohort.id);
   if (saved) return saved;
   if (crmIds.has(cohort.id)) return cohort.id;
-  const sameCourse = importClasses.filter((c) => c.course_id === cohort.course_id);
+  const sameCourse = importClasses.filter(
+    (c) => c.course_id === cohort.course_id,
+  );
   // The upsert writes code = slug, so this still finds the class after the LMS moves the date.
   const adopted = sameCourse.find((c) => c.code === cohort.slug);
   if (adopted) return adopted.id;
   const twins = cohorts.filter(
-    (k) => k.id !== cohort.id && k.course_id === cohort.course_id && k.start_date === cohort.start_date,
+    (k) =>
+      k.id !== cohort.id &&
+      k.course_id === cohort.course_id &&
+      k.start_date === cohort.start_date,
   );
   // Two cohorts must never adopt one class: skip classes another cohort holds by code
   // or by a saved LMS id, and with a twin cohort on the date, only the same language adopts.
   const held = new Set(cohorts.map((k) => k.slug));
-  const linkedElsewhere = new Set([...linked].filter(([k]) => k !== cohort.id).map(([, id]) => id));
+  const linkedElsewhere = new Set(
+    [...linked].filter(([k]) => k !== cohort.id).map(([, id]) => id),
+  );
   const onDate = sameCourse.filter(
     (c) =>
       c.start_date === cohort.start_date &&
@@ -52,10 +65,13 @@ export function classIdForCohort(
       !linkedElsewhere.has(c.id) &&
       (c.guessed_language !== false || c.language === cohort.language),
   );
-  const candidates = twins.length ? onDate.filter((c) => c.language === cohort.language) : onDate;
-  const found = twins.some((k) => k.language === cohort.language) && candidates.length
-    ? "ambiguous"
-    : pickClass(candidates, cohort.language);
+  const candidates = twins.length
+    ? onDate.filter((c) => c.language === cohort.language)
+    : onDate;
+  const found =
+    twins.some((k) => k.language === cohort.language) && candidates.length
+      ? "ambiguous"
+      : pickClass(candidates, cohort.language);
   if (found === "ambiguous") {
     warnings.push(
       `cohort ${cohort.slug}: CRM classes ${candidates.map((c) => c.code).join(", ")} all match, none adopted`,
@@ -71,13 +87,22 @@ export function cohortsOnCancelledClass(
   classOf: Map<string, string>,
   importClasses: ImportClass[],
 ): Map<string, ImportClass> {
-  const cancelled = new Map(importClasses.filter((c) => c.status === "cancelled").map((c) => [c.id, c]));
+  const cancelled = new Map(
+    importClasses.filter((c) => c.status === "cancelled").map((c) => [c.id, c]),
+  );
   return new Map(
-    [...classOf].filter(([, id]) => cancelled.has(id)).map(([k, id]) => [k, cancelled.get(id)!]),
+    [...classOf]
+      .filter(([, id]) => cancelled.has(id))
+      .map(([k, id]) => [k, cancelled.get(id)!]),
   );
 }
 
-export type ImportSeat = { id: string; person_id: string; class_id: string; status: string };
+export type ImportSeat = {
+  id: string;
+  person_id: string;
+  class_id: string;
+  status: string;
+};
 
 // CRM seats an LMS enrollment can adopt: the SalesProcess import's (refunded
 // ones included, so a refund is not undone), plus any active seat staff added
@@ -114,12 +139,21 @@ export type Adoption =
 // What an LMS enrollment does to the import seat of its person and class.
 // endedOn: the cohort end date once the class has finished, else null.
 // matched: import seats already adopted this run.
-export function adoptEnrolment(seat: ImportSeat, endedOn: Date | null, matched: ReadonlySet<string>): Adoption {
+export function adoptEnrolment(
+  seat: ImportSeat,
+  endedOn: Date | null,
+  matched: ReadonlySet<string>,
+): Adoption {
   // A SalesProcess refund wins: the seat does not come back while Ops catches up in the LMS.
   if (seat.status === "refunded") return { action: "skip-refunded" };
   // Only confirmed moves, and only forward; a status staff set stays.
   if (endedOn && seat.status === "confirmed" && !matched.has(seat.id))
-    return { action: "update", id: seat.id, status: "completed", completed_at: endedOn };
+    return {
+      action: "update",
+      id: seat.id,
+      status: "completed",
+      completed_at: endedOn,
+    };
   return { action: "same", id: seat.id };
 }
 
@@ -191,7 +225,12 @@ export async function cancelCutOver(
 export const MAX_GONE_CANCELS = 5;
 export const GONE_REASON = "Removed from the LMS";
 export const GONE_TASK_REASON = `${GONE_REASON}. Check with Ops whether to refund or move this buyer.`;
-export type MarkedSeat = { id: string; lms_enrollment_id: string; class_id: string; status: string };
+export type MarkedSeat = {
+  id: string;
+  lms_enrollment_id: string;
+  class_id: string;
+  status: string;
+};
 export function goneSeatCancels(
   marked: MarkedSeat[],
   lmsSeatIds: ReadonlySet<string>,
@@ -201,7 +240,11 @@ export function goneSeatCancels(
   settled: ReadonlySet<string> = new Set(),
 ): { cancel: string[]; held: string | null; heldIds: string[] } {
   if (!lmsSeatIds.size)
-    return { cancel: [], held: "the LMS read returned no seats: no seat cancelled", heldIds: [] };
+    return {
+      cancel: [],
+      held: "the LMS read returned no seats: no seat cancelled",
+      heldIds: [],
+    };
   const cancel = marked
     .filter(
       (s) =>
@@ -226,7 +269,35 @@ export function goneSeatCancels(
 // published status. Draft and cancelled are staff's, and the seat trigger
 // (006) keeps open/few_seats/full in step with the seats.
 const PUBLISHED = ["open", "few_seats", "full"];
-export function syncClassStatus(current: string | null, ended: boolean): string | null {
+export function syncClassStatus(
+  current: string | null,
+  ended: boolean,
+): string | null {
   if (current === null) return ended ? "completed" : "open";
   return ended && PUBLISHED.includes(current) ? "completed" : null;
+}
+
+// Free LMS courses the sync leaves out (Shawn, 20 Nov 2026): every LMS class
+// has no price, so the CRM can't tell a free one from a paid one. A free class
+// would add its whole bulk import to Weekly and make every attendee a Student.
+// Its participants still sync as people (leads); only the course, its classes
+// and their seats are skipped. Keyed on the LMS course id (also the CRM course
+// id), not the name, so renaming the course in the LMS can't bring it back.
+export const SKIPPED_LMS_COURSES: readonly string[] = [
+  "69817a25-88f7-40c7-814a-810dda4bdbc2", // Vibe Coding Masterclass
+];
+
+// LMS rows as postgres reads them (courses.id, cohorts.course_id, enrollments.cohort_id).
+type LmsRead = { courses: Row[]; cohorts: Row[]; enrols: Row[] };
+export function withoutSkippedCourses<S extends LmsRead>(
+  src: S,
+  skip: readonly string[] = SKIPPED_LMS_COURSES,
+): S {
+  const skipped = new Set(skip);
+  const courses = src.courses.filter((c) => !skipped.has(c.id));
+  const kept = new Set(courses.map((c) => c.id));
+  const cohorts = src.cohorts.filter((k) => kept.has(k.course_id));
+  const cohortIds = new Set(cohorts.map((k) => k.id));
+  const enrols = src.enrols.filter((e) => cohortIds.has(e.cohort_id));
+  return { ...src, courses, cohorts, enrols } as S;
 }
