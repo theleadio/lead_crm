@@ -3,6 +3,12 @@ import { db } from "../sql.ts";
 // Pulls daily ad-level numbers from the Meta Marketing API (insights edge) into
 // meta_ad_insight (migration 014). Server-only: the token never leaves here.
 
+// The Graph API version every Meta call here uses: META_GRAPH_VERSION, else
+// v23.0. Shared with the Conversions API (lib/meta/capi.ts).
+export const graphVersion = (
+  env: Record<string, string | undefined> = process.env,
+) => env.META_GRAPH_VERSION || "v23.0";
+
 export type InsightRow = {
   adId: string;
   day: string;
@@ -93,7 +99,7 @@ export async function fetchInsights(opts: {
   const account = process.env.META_AD_ACCOUNT_ID;
   if (!token || !account)
     throw new Error("META_ACCESS_TOKEN and META_AD_ACCOUNT_ID must be set");
-  const version = process.env.META_GRAPH_VERSION || "v23.0";
+  const version = graphVersion();
   const until = opts.now ?? new Date();
   const since = opts.since
     ? new Date(`${opts.since}T00:00:00Z`)
@@ -182,7 +188,7 @@ export async function fetchUrlTags(opts: {
   const account = process.env.META_AD_ACCOUNT_ID;
   if (!token || !account)
     throw new Error("META_ACCESS_TOKEN and META_AD_ACCOUNT_ID must be set");
-  const version = process.env.META_GRAPH_VERSION || "v23.0";
+  const version = graphVersion();
   const act = account.startsWith("act_") ? account : `act_${account}`;
 
   const q = new URLSearchParams({

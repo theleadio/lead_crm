@@ -7,7 +7,8 @@
 # so Actions minutes are free; the job limit is 6 hours.
 #
 # Secrets (repo Settings > Secrets and variables > Actions): DATABASE_URL,
-# LMS_DATABASE_URL, META_ACCESS_TOKEN, META_AD_ACCOUNT_ID,
+# LMS_DATABASE_URL, META_ACCESS_TOKEN, META_AD_ACCOUNT_ID, META_CAPI_TOKEN,
+# META_DATASET_ID (the dataset linked to the WhatsApp account), META_WABA_ID,
 # SALESPROCESS_API_TOKEN, SALESPROCESS_LOCATION_ID, WATI_API_HOST,
 # WATI_API_TOKEN.
 #
@@ -59,6 +60,23 @@ jobs:
         env:
           WATI_API_HOST: ${{ secrets.WATI_API_HOST }}
           WATI_API_TOKEN: ${{ secrets.WATI_API_TOKEN }}
+
+  # After wati-ctwa, so last night's opt-ins go out in the same run.
+  meta-capi:
+    needs: wati-ctwa
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - run: npm ci --ignore-scripts
+      - run: node --import=./scripts/ci-errors.mjs scripts/send-meta-capi.ts --apply --live
+        env:
+          META_CAPI_TOKEN: ${{ secrets.META_CAPI_TOKEN }}
+          META_DATASET_ID: ${{ secrets.META_DATASET_ID }}
+          META_WABA_ID: ${{ secrets.META_WABA_ID }}
 
   lms:
     runs-on: ubuntu-latest
