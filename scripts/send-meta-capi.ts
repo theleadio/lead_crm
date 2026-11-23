@@ -10,6 +10,11 @@
 // Needs DATABASE_URL, META_DATASET_ID, META_CAPI_TOKEN, META_WABA_ID (the
 // WhatsApp Business Account id the ads click to). Logs print counts only.
 // Test sends keep their own ledger, so they never block a later live send.
+//
+// Not scheduled: run it by hand until Events Manager > Test events shows the
+// test events arriving. Only then add a nightly `--apply --live` step to
+// .github/workflows/daily-sync.yml (after wati-ctwa), with META_CAPI_TOKEN,
+// META_DATASET_ID and META_WABA_ID as Actions secrets.
 import { closeDb } from "../lib/sql.ts";
 import {
   SOURCE,
