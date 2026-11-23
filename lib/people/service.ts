@@ -124,7 +124,7 @@ type ListRow = {
   created_at: Date;
   owner_id: string | null;
   owner_name: string | null;
-  stage: "lead" | "student" | "customer";
+  stage: "lead" | "student";
   tags: string[];
 };
 

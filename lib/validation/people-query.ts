@@ -23,7 +23,7 @@ export const PEOPLE_SORTS = [
 // Spec §7 list conventions: ?q=&page=&limit=&filter[...]. Default limit 25, max 100.
 export const peopleFiltersSchema = z.object({
   q: z.string().trim().max(200).optional(),
-  stage: z.enum(["lead", "student", "customer"]).optional(),
+  stage: z.enum(["lead", "student"]).optional(),
   language: z.enum(["en", "zh"]).optional(),
   needsReview: bool,
   owner: z.string().max(100).optional(),

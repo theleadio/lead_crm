@@ -48,7 +48,6 @@ const STAGE_VARIANT: Record<
 > = {
   lead: "outline",
   student: "secondary",
-  customer: "default",
 };
 
 type LoadState =
@@ -284,7 +283,6 @@ export function PeopleList({
           options={[
             ["lead", "Lead"],
             ["student", "Student"],
-            ["customer", "Customer"],
           ]}
         />
         <FilterSelect
