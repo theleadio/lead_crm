@@ -35,19 +35,27 @@ function withEnv(bucket: string | undefined, fn: () => Promise<void>) {
   });
 }
 
-test("no bucket name throws instead of returning a URL", () =>
+test("no bucket name falls back to payment-proofs", () =>
   withEnv(undefined, async () => {
-    await assert.rejects(
-      () => signUpload("some-enrolment/some-key"),
-      (err: unknown) => {
-        assert.ok(
-          err instanceof UploadConfigError,
-          `expected UploadConfigError, got ${String(err)}`,
-        );
-        assert.match((err as Error).message, /PAYMENT_PROOF_BUCKET/);
-        return true;
-      },
-    );
+    // A missing service key is what makes signing throw here, so the test
+    // never reaches the network. The bucket alone no longer does.
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    try {
+      await assert.rejects(
+        () => signUpload("some-enrolment/some-key"),
+        (err: unknown) => {
+          assert.ok(
+            err instanceof UploadConfigError,
+            `expected UploadConfigError, got ${String(err)}`,
+          );
+          assert.match((err as Error).message, /SUPABASE_SERVICE_ROLE_KEY/);
+          return true;
+        },
+      );
+    } finally {
+      if (key !== undefined) process.env.SUPABASE_SERVICE_ROLE_KEY = key;
+    }
   }));
 
 // design 2: the key is minted on the server and prefixed with the enrolment,

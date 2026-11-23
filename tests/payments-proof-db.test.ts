@@ -10,10 +10,11 @@ import { enrol, it, newClass, newCourse, newUser, pay } from "./seed.ts";
 after(closeDb);
 
 // The gate and the audit row are what this file checks, not the object store.
-// Unsetting the bucket makes signing throw on purpose, so a read that got past
-// the gate is visible as a rejection whether or not a bucket exists on the
-// machine running these tests.
-delete process.env.PAYMENT_PROOF_BUCKET;
+// Unsetting the service key makes signing throw on purpose, so a read that got
+// past the gate is visible as a rejection whether or not a bucket exists on
+// the machine running these tests. (The bucket name has a default, so
+// unsetting it no longer does this.)
+delete process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const views = async (paymentId: string) =>
   await db()`

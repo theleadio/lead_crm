@@ -28,10 +28,13 @@ const globalForStorage = globalThis as unknown as {
   __leadStorage?: SupabaseClient;
 };
 
+// The bucket name is not a secret, so it has a default: the one the deploy
+// checklist and .env.example name. PAYMENT_PROOF_BUCKET still overrides it,
+// and the Supabase URL and service key below still fail loudly when unset.
+const DEFAULT_PAYMENT_PROOF_BUCKET = "payment-proofs";
+
 function bucketName(): string {
-  const bucket = process.env.PAYMENT_PROOF_BUCKET;
-  if (!bucket) throw new UploadConfigError("PAYMENT_PROOF_BUCKET");
-  return bucket;
+  return process.env.PAYMENT_PROOF_BUCKET || DEFAULT_PAYMENT_PROOF_BUCKET;
 }
 
 // Cached on globalThis so dev hot-reload doesn't build a client per request,
