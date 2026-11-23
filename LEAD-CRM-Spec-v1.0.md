@@ -1,11 +1,12 @@
-# LEAD CRM — Software Specification v1.25
+# LEAD CRM — Software Specification v1.26
 
-_Last updated 29 Oct 2026 · Owner: Shawn_
+_Last updated 23 Nov 2026 · Owner: Shawn_
 
 ## Changelog
 
 | Version | Date | Changes |
 | --- | --- | --- |
+| v1.26 | 23 Nov 2026 | The `customer` lifecycle stage is dropped (Zixuan's PR #108; drafted for Shawn's proofreading). A person is `student` with an enrolment in confirmed or later **or** at least one succeeded payment on their enrolments or deals, and `lead` otherwise (§12.3). Why: most students paid through SalesProcess or came from the LMS, which leave no CRM payment row, so `customer` only said which system took the money. `lifecycle_stage` enum is now lead, student (§5). `GET /api/people` refuses `stage=customer` with 400. Computed on read, so no migration. |
 | v1.25 | 29 Oct 2026 | O61 decided and built (proposal `docs/superpowers/notes/2026-10-29-click-id-capture-proposal.md`, migration 013): `touchpoint` gains `gbraid`, `wbraid`, `li_fat_id`, `ttclid` (§5); §8.2 `attribution` takes `gbraid`, `wbraid`, `liFatId`, `ttclid` (200 characters each); the O14 rule keeps them in URLs (§8.2, §10.2). `firstTouch` unchanged. Whether click ids count as functional data stays with the PDPA review (§10.2). |
 | v1.24 | 26 Oct 2026 | O39 (Cloudflare Turnstile, by the fallback), O42 (no outside caller yet), O44 (no automatic stage move) and O60 (the Netlify address) decided 27 Oct. Decisions of 27 Oct from the review of Zixuan's PRs #6, #11 and #12 (§10.3, §10.5, O60): fixed consent wording in both languages and a checkbox state that survives a failed submit; website enquiry `formName` values; class names by page language, so the §8.1 feed returns `courseNameEn` and `courseNameZh`; `<html lang>` per language; formal 您 and no unconfirmed promises in the Chinese copy; new O60 (canonical address). From Zixuan's §10.4 planning: Zixuan writes the Stripe Checkout call (`createCheckoutSession()` in `lib/payments/checkout.ts`, shared with `POST /api/deals/:id/checkout-link`) and Shawn reviews it and writes the webhook, against a session contract written into §8.3 (amount from the class record, MYR, `deal_id` / `enrolment_id` / `class_id` metadata, `expires_at` = `seat_reserved_until`, URLs from server configuration, one idempotency key per enrolment, timeout, no secrets in logs); `POST /api/public/register` takes an optional `locale` (`en` or `zh`, default `en`) used only for the success and cancel URLs; go-live gate: no live payment before the `checkout.session.completed` webhook exists (§15.2); O43 reworded. |
 | v1.23 | 19 Oct 2026 | From the review of Zixuan's PR #6 (public schedule page): server code in this app reads the §8.1 feed through `readSchedule(env, query)` (`lib/public/schedule.ts`), not over HTTP to its own site, with a 5-second statement timeout and a typed query (§8.1); O38 reworded: the page keeps its own 5-minute cache tagged `public-schedule`, so a class edit refreshes the page with `revalidateTag("public-schedule")` (Zixuan's note) instead of a host purge, while the API feed's edge cache is separate (§8.1, §11.1); new O52, the open pair task left behind when a defect flag is fixed (§7.1, §12.2). |
@@ -233,7 +234,7 @@ APP_USER ||--o{ DEAL : owns
 | Enum                    | Values                                                                                                                      |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `language`              | en, zh                                                                                                                      |
-| `lifecycle_stage`       | lead, student, customer (computed, Section 12)                                                                              |
+| `lifecycle_stage`       | lead, student (computed, Section 12)                                                                                        |
 | `deal_pipeline`         | individual, corporate                                                                                                       |
 | `deal_stage_individual` | new, engaged, qualified, checkout_sent, won, lost                                                                           |
 | `deal_stage_corporate`  | new, discovery, proposal_sent, funding, won, lost                                                                           |
@@ -995,13 +996,14 @@ On every person create, any route:
 
 ### 12.3 Lifecycle stage (computed, never stored as truth)
 
-| Stage    | Condition                       |
-| -------- | ------------------------------- |
-| customer | ≥1 succeeded payment            |
-| student  | enrolment in confirmed or later |
-| lead     | everything else                 |
+| Stage   | Condition                                                                                                                                                       |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| student | an enrolment in confirmed or later (confirmed, onboarded, attended, completed, no_show), **or** ≥1 payment with status `succeeded` on the person's enrolments or non-deleted deals |
+| lead    | everything else                                                                                                                                                 |
 
-Shown as badge, recomputed on read. May cache for query speed, but function is source of truth.
+Shown as badge, recomputed on read. May cache for query speed, but function is source of truth. The rule lives in one place, `stageSql()` in `lib/people/lifecycle.ts`.
+
+**No `customer` stage (v1.26).** Until v1.25 a person with ≥1 succeeded payment was `customer`. Most real students paid through SalesProcess or came from the LMS, which leave no row in the CRM's `payment` table, so they read as `student` while Stripe and manual payers read as `customer`: the split said which system took the money, not anything about the person. Anyone who paid is now a `student`, including someone who paid but has no confirmed seat yet. The people list filter takes `stage=lead` or `stage=student`; `stage=customer` is a 400.
 
 ### 12.4 Enrolment state machine
 
