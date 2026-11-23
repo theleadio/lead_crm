@@ -120,6 +120,10 @@ export function ClassForm({
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
+  // Fields the LMS sync owns on this class (lib/classes/lms-lock.ts).
+  const locked = new Set(existing?.lmsLocked ?? []);
+  const lmsHint = "Managed in the LMS";
+
   const needsVenue = form.mode !== "online";
   const needsLink = form.mode !== "in_person";
 
@@ -218,6 +222,17 @@ export function ClassForm({
         </div>
       )}
 
+      {locked.size > 0 && (
+        <p className="text-ink-muted text-sm">
+          This class comes from the LMS. Change its{" "}
+          {locked.has("code")
+            ? "code, dates and language"
+            : "dates and language"}{" "}
+          in the LMS; the nightly sync brings the change here. Everything else
+          is edited here.
+        </p>
+      )}
+
       <form
         noValidate
         className="space-y-3"
@@ -244,10 +259,16 @@ export function ClassForm({
               />
             )}
           </Field>
-          <Field label="Class code" required error={fieldErrors.code}>
+          <Field
+            label="Class code"
+            required
+            error={fieldErrors.code}
+            hint={locked.has("code") ? lmsHint : undefined}
+          >
             {(id) => (
               <Input
                 id={id}
+                disabled={locked.has("code")}
                 value={form.code}
                 placeholder="e.g. AIA-2610-EN"
                 onChange={(e) => set("code", e.target.value)}
@@ -257,21 +278,33 @@ export function ClassForm({
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Start date" required error={fieldErrors.startDate}>
+          <Field
+            label="Start date"
+            required
+            error={fieldErrors.startDate}
+            hint={locked.has("startDate") ? lmsHint : undefined}
+          >
             {(id) => (
               <DateField
                 required
                 id={id}
+                disabled={locked.has("startDate")}
                 value={form.startDate}
                 onChange={(v) => set("startDate", v)}
               />
             )}
           </Field>
-          <Field label="End date" required error={fieldErrors.endDate}>
+          <Field
+            label="End date"
+            required
+            error={fieldErrors.endDate}
+            hint={locked.has("endDate") ? lmsHint : undefined}
+          >
             {(id) => (
               <DateField
                 required
                 id={id}
+                disabled={locked.has("endDate")}
                 value={form.endDate}
                 onChange={(v) => set("endDate", v)}
               />
@@ -300,10 +333,16 @@ export function ClassForm({
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Language" required error={fieldErrors.language}>
+          <Field
+            label="Language"
+            required
+            error={fieldErrors.language}
+            hint={locked.has("language") ? lmsHint : undefined}
+          >
             {(id) => (
               <Select
                 id={id}
+                disabled={locked.has("language")}
                 value={form.language}
                 onChange={(v) => set("language", v)}
                 options={[
@@ -482,11 +521,13 @@ function Field({
   label,
   required,
   error,
+  hint,
   children,
 }: {
   label: string;
   required?: boolean;
   error?: string;
+  hint?: string;
   children: (id: string) => React.ReactNode;
 }) {
   const id = `class-${label.toLowerCase().replace(/[^a-z]+/g, "-")}`;
@@ -497,6 +538,7 @@ function Field({
         {required && <span className="text-danger"> *</span>}
       </label>
       {children(id)}
+      {hint && !error && <p className="text-ink-muted text-xs">{hint}</p>}
       {error && (
         <p role="alert" className="text-danger text-sm">
           {error}
@@ -511,9 +553,11 @@ function Select({
   value,
   onChange,
   options,
+  disabled,
 }: {
   id: string;
   value: string;
+  disabled?: boolean;
   onChange: (value: string) => void;
   options: [string, string][];
 }) {
@@ -521,8 +565,9 @@ function Select({
     <select
       id={id}
       value={value}
+      disabled={disabled}
       onChange={(e) => onChange(e.target.value)}
-      className="border-line-strong bg-surface-sunken text-ink focus-visible:outline-focus-ring h-9 w-full rounded-sm border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+      className="border-line-strong bg-surface-sunken text-ink focus-visible:outline-focus-ring h-9 w-full rounded-sm border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
     >
       {options.map(([v, text]) => (
         <option key={v} value={v}>

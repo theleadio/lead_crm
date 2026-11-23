@@ -16,6 +16,11 @@ import type {
   ClassUpdate,
 } from "../validation/class.ts";
 import {
+  lmsLockedChanges,
+  lmsLockedFields,
+  type LmsLockedField,
+} from "./lms-lock.ts";
+import {
   hasNoticeWorthyChange,
   noticeWorthyChanges,
   upsertPendingNotice,
@@ -137,6 +142,8 @@ export type ClassRecord = ClassListItem & {
   fewSeatsThreshold: number;
   priceMyr: string | null;
   hrdcClaimable: boolean;
+  // Fields the LMS sync owns on this class; the edit form shows them read-only.
+  lmsLocked: LmsLockedField[];
 };
 
 export async function getClass(
@@ -155,6 +162,7 @@ export async function getClass(
            c.language, c.mode, c.venue_name, c.venue_address, c.city,
            c.online_url, c.capacity, c.few_seats_threshold, c.price_myr,
            c.hrdc_claimable, c.status, c.is_public, c.version,
+           c.lms_cohort_id,
            ${seatCountSql(sql, false)} AS confirmed_count,
            ${seatCountSql(sql, true)} AS reserved_count
     FROM class c JOIN course co ON co.id = c.course_id
@@ -167,6 +175,10 @@ export async function getClass(
     fewSeatsThreshold: r.few_seats_threshold as number,
     priceMyr: r.price_myr as string | null,
     hrdcClaimable: r.hrdc_claimable as boolean,
+    lmsLocked: lmsLockedFields({
+      id: r.id as string,
+      lms_cohort_id: r.lms_cohort_id as string | null,
+    }),
   };
 }
 
@@ -178,6 +190,9 @@ export type ClassWriteResult =
   // The code is taken (§5 unique): name the holder, so nobody makes a second
   // record for a class that already exists.
   | { kind: "duplicate"; code: string; holder: string }
+  // The LMS sync owns these fields on this class (lms-lock.ts): change them in
+  // the LMS, or the next nightly sync puts the old value back.
+  | { kind: "lms_owned"; fields: LmsLockedField[] }
   // §9.9: capacity may never drop under the seats already taken (§12.1).
   | { kind: "capacity_below_seats"; taken: number }
   // §7.1: the edit touches a notice field on a class with students and the
@@ -384,6 +399,20 @@ export async function updateClass(
     const [before] = await sql`SELECT * FROM class WHERE id = ${id} FOR UPDATE`;
     if (!before) return { kind: "not_found" };
     if (Number(before.version) !== ifMatch) return { kind: "stale" };
+
+    const lmsOwned = lmsLockedChanges(
+      lmsLockedFields(
+        before as unknown as { id: string; lms_cohort_id: string | null },
+      ),
+      patch,
+      {
+        code: before.code,
+        startDate: before.start_date,
+        endDate: before.end_date,
+        language: before.language,
+      },
+    );
+    if (lmsOwned.length) return { kind: "lms_owned", fields: lmsOwned };
 
     if (patch.code !== undefined) {
       const holder = await codeHolder(patch.code, id);

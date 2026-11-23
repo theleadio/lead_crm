@@ -1,5 +1,6 @@
 import { apiError, forbidden } from "../api/errors.ts";
 import type { Viewer } from "../auth/permissions.ts";
+import { LMS_LOCKED_LABELS } from "./lms-lock.ts";
 import type { ClassWriteResult } from "./service.ts";
 
 // One place that turns a class write result into its §7 status code, shared
@@ -62,6 +63,17 @@ export async function classWriteResponse(
         "duplicate_code",
         `Class code ${result.code} already belongs to another class. Edit that one instead.`,
         { fields: { code: "Already used by another class" } },
+      );
+    case "lms_owned":
+      return apiError(
+        422,
+        "lms_owned",
+        `This class is managed in the LMS. Change its ${result.fields.map((f) => LMS_LOCKED_LABELS[f]).join(", ")} there; the nightly sync brings the change here. Nothing was saved.`,
+        {
+          fields: Object.fromEntries(
+            result.fields.map((f) => [f, "Change this in the LMS"]),
+          ),
+        },
       );
     case "capacity_below_seats":
       return apiError(
