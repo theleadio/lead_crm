@@ -1005,6 +1005,8 @@ Shown as badge, recomputed on read. May cache for query speed, but function is s
 
 **No `customer` stage (v1.26).** Until v1.25 a person with ≥1 succeeded payment was `customer`. Most real students paid through SalesProcess or came from the LMS, which leave no row in the CRM's `payment` table, so they read as `student` while Stripe and manual payers read as `customer`: the split said which system took the money, not anything about the person. Anyone who paid is now a `student`, including someone who paid but has no confirmed seat yet. The people list filter takes `stage=lead` or `stage=student`; `stage=customer` is a 400.
 
+**Refunds (decided 23 Nov 2026).** Only payments with status `succeeded` count. A partially refunded or refunded payment does not, so a person whose only evidence of paying is such a payment, with no enrolment in confirmed or later, is a `lead`. This is deliberately not the `payment_net` definition of §12.7; O25 is about revenue, not stage.
+
 ### 12.4 Enrolment state machine
 
 ```
