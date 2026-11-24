@@ -10,6 +10,15 @@ type Sql = postgres.Sql;
 
 const globalForSql = globalThis as unknown as { __leadSql?: Sql };
 
+// The transaction pooler (6543) allows hundreds of clients, so a serverless
+// function may use a few: with one, every Promise.all on a page (the ads
+// report fires thirteen reads) ran one query at a time. The session pooler
+// stays at one.
+export function poolSize(url: string, serverless: boolean): number {
+  if (!serverless) return 5;
+  return url.includes(":6543") ? 4 : 1;
+}
+
 function root(): Sql {
   if (!globalForSql.__leadSql) {
     const url = process.env.DATABASE_URL;
@@ -22,7 +31,7 @@ function root(): Sql {
       // shared by every server. A serverless function (Netlify runs on
       // Lambda) gets one connection, and idle ones are released, so warm
       // functions don't hold the pool: "max clients reached in session mode".
-      max: process.env.AWS_LAMBDA_FUNCTION_NAME ? 1 : 5,
+      max: poolSize(url, Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME)),
       idle_timeout: 20,
       // Supabase's pooler (port 6543, transaction mode) drops prepared
       // statements between queries: Postgres 26000, "prepared statement ...

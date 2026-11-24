@@ -699,6 +699,18 @@ export async function weeklySummary(
 
   const prev = previousWindow(q);
 
+  // The participant sheet does not depend on the main reads, so it starts
+  // now and overlaps them instead of waiting its turn. If its tables are not
+  // there yet (migration 026 not applied) or the read fails, the report is
+  // drawn without it.
+  const sheetRead = Promise.all([
+    sheetRows(sql, q, from),
+    sheetStatus(sql, q, from),
+  ]).catch((err) => {
+    console.error("[ads report] participant sheet failed", err);
+    return null;
+  });
+
   const [mainSignups, pending, spend, links, previousSpend] = await Promise.all(
     [
       sql`
@@ -801,21 +813,10 @@ export async function weeklySummary(
     ],
   );
 
-  // The participant sheet. If its tables are not there yet (migration 026 not
-  // applied) or the read fails, the report is drawn without it.
-  let sheet: Record<string, any>[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
-  let status: Awaited<ReturnType<typeof sheetStatus>> = {
-    unmapped: [],
-    lastSeen: null,
-  };
-  try {
-    [sheet, status] = await Promise.all([
-      sheetRows(sql, q, from),
-      sheetStatus(sql, q, from),
-    ]);
-  } catch (err) {
-    console.error("[ads report] participant sheet failed", err);
-  }
+  const [sheet, status] = (await sheetRead) ?? [
+    [] as Record<string, any>[], // eslint-disable-line @typescript-eslint/no-explicit-any
+    { unmapped: [], lastSeen: null } as Awaited<ReturnType<typeof sheetStatus>>,
+  ];
   // A person with a paid SalesProcess order for the class's course already
   // counts there (orders carry a course, not a class).
   const ordered = new Set(
