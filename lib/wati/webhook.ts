@@ -269,7 +269,7 @@ async function saveMessage(
       await asideFromMessage("ad touchpoint", () =>
         saveCtwaTouch(str(e.waId) ?? "", str(e.senderName), ad, at),
       );
-    else if (added && person.created)
+    else if (added)
       await asideFromMessage("touchpoint", () =>
         recordWhatsAppTouch(personId, at, e),
       );
@@ -296,19 +296,31 @@ async function asideFromMessage(what: string, fn: () => Promise<unknown>) {
 
 // ---- Attribution -----------------------------------------------------------------
 
-// A person this message created, with no ad behind it: `whatsapp` as their
-// first touch. (An ad's `ctwa` touch is saveCtwaTouch's, recorded first.)
+// A customer's message with no ad behind it: a `whatsapp` touch, unless the
+// person already has one that says where they came from. A person made by an
+// import or the sheet holds only a bare `import` row, which says nothing, so
+// their first direct message is still recorded (it was skipped for anyone who
+// already had a touchpoint, leaving them "no source" on the Weekly tab). An
+// ad's `ctwa` touch is saveCtwaTouch's, recorded first.
 async function recordWhatsAppTouch(personId: string, at: Date, e: WatiEvent) {
   const sql = db();
-  const [{ n }] = await sql`
-    SELECT count(*)::int AS n FROM touchpoint WHERE person_id = ${personId}`;
-  if (n > 0) return;
+  const [{ n, known }] = await sql`
+    SELECT count(*)::int AS n,
+           count(*) FILTER (
+             WHERE channel NOT IN ('import', 'payment_link')
+                OR utm_source IS NOT NULL OR utm_campaign IS NOT NULL
+                OR fbclid IS NOT NULL OR ctwa_clid IS NOT NULL
+                OR gclid IS NOT NULL)::int AS known
+    FROM touchpoint WHERE person_id = ${personId}`;
+  if (known > 0) return;
   const [tp] = await sql`
     INSERT INTO touchpoint (person_id, channel, occurred_at, is_first_touch,
                             external_ref)
-    VALUES (${personId}, 'whatsapp', ${at}, true,
+    VALUES (${personId}, 'whatsapp', ${at}, ${n === 0},
             ${`wati:${str(e.whatsappMessageId) ?? str(e.id)}`})
+    ON CONFLICT DO NOTHING
     RETURNING id`;
+  if (!tp) return; // this message was already recorded
   // §12.9: a touchpoint counts as activity.
   await sql`
     UPDATE person

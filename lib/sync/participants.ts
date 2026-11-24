@@ -562,14 +562,28 @@ async function createPerson(p: Prepared): Promise<{ id: string }> {
   });
 }
 
-// A source the sheet gives for a person already in the CRM. One sheet
-// touchpoint per person; touchpoints are append-only, so a later answer does
-// not replace the first.
+// A source the sheet gives for a person already in the CRM, or one filled in
+// after the person's first sync (the sheet row had no Source then, so the
+// touch made by createPerson carries none). One answer per person:
+// touchpoints are append-only, so a later change does not replace the first.
+//
+// The touch is dated at the person's earliest sheet row, not now: the Weekly
+// tab only reads touches from before the signup, and a source Ops typed in a
+// week later would otherwise never count. The external_ref carries the source
+// so it does not collide with createPerson's empty `sheet:<id>` touch.
 async function recordSource(personId: string, source: string): Promise<void> {
+  const value = `self:${source}`;
   await db()`
-    INSERT INTO touchpoint (person_id, channel, utm_source, form_name,
-                            is_first_touch, external_ref)
-    VALUES (${personId}, 'import', ${`self:${source}`}, 'participant-sheet',
-            false, ${`sheet:${personId}`})
+    INSERT INTO touchpoint (person_id, channel, occurred_at, utm_source,
+                            form_name, is_first_touch, external_ref)
+    SELECT ${personId}, 'import',
+           LEAST(now(), coalesce((SELECT min(first_seen_at) FROM participant_entry
+                                  WHERE person_id = ${personId}), now())),
+           ${value}, 'participant-sheet', false,
+           ${`sheet:${personId}:${source}`}
+    WHERE NOT EXISTS (SELECT 1 FROM touchpoint
+                      WHERE person_id = ${personId}
+                        AND form_name = 'participant-sheet'
+                        AND utm_source LIKE 'self:%')
     ON CONFLICT DO NOTHING`;
 }
