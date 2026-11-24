@@ -347,3 +347,59 @@ it("drain: a handler that fails after writing tasks has them rolled back (savepo
   assert.equal(r.failed, 1);
   assert.equal((await tasksOf(ids)).length, 0);
 });
+
+// ---- ClassNoticeApproved ---------------------------------------------------
+
+it("ClassNoticeApproved: one send-the-notice task per notice, listing the students coming with the message; twice is still one", async () => {
+  const cls = await newClass();
+  await enrol(cls, "confirmed", { name: "Coming Confirmed" });
+  await enrol(cls, "onboarded", { name: "Coming Onboarded" });
+  await enrol(cls, "attended", { name: "Coming Attended" });
+  await enrol(cls, "reserved", { name: "Not Reserved" });
+  await enrol(cls, "payment_pending", { name: "Not Pending" });
+  const [n] = await db()`
+    INSERT INTO class_notice (class_id, changed_fields, message_en, message_zh)
+    VALUES (${cls}, ${db().json({})}, 'Moved to Friday', '改到星期五')
+    RETURNING id`;
+  const e1 = event("ClassNoticeApproved", { noticeId: n.id, classId: cls });
+  await handlers.ClassNoticeApproved!(e1);
+  await handlers.ClassNoticeApproved!(e1);
+  const t = await db()`
+    SELECT title, notes, person_id, enrolment_id, assigned_user_id
+    FROM task WHERE source_key = ${`${e1.id}:notice`}`;
+  assert.equal(t.length, 1);
+  assert.equal(t[0].person_id, null);
+  assert.equal(t[0].enrolment_id, null);
+  assert.match(t[0].title, /send the approved notice to 3 students/);
+  assert.match(t[0].notes, /Coming Confirmed/);
+  assert.match(t[0].notes, /Coming Onboarded/);
+  assert.match(t[0].notes, /Coming Attended/);
+  assert.doesNotMatch(t[0].notes, /Not Reserved|Not Pending/);
+  assert.match(t[0].notes, /Moved to Friday[\s\S]*改到星期五/);
+});
+
+it("ClassNoticeApproved: no task when nobody is coming", async () => {
+  const cls = await newClass();
+  await enrol(cls, "reserved");
+  const [n] = await db()`
+    INSERT INTO class_notice (class_id, changed_fields, message_en)
+    VALUES (${cls}, ${db().json({})}, 'Moved')
+    RETURNING id`;
+  const e1 = event("ClassNoticeApproved", { noticeId: n.id, classId: cls });
+  await handlers.ClassNoticeApproved!(e1);
+  const t =
+    await db()`SELECT 1 FROM task WHERE source_key = ${`${e1.id}:notice`}`;
+  assert.equal(t.length, 0);
+});
+
+it("ClassNoticeApproved: a notice that does not exist fails, so the drain retries it", async () => {
+  await assert.rejects(
+    handlers.ClassNoticeApproved!(
+      event("ClassNoticeApproved", {
+        noticeId: crypto.randomUUID(),
+        classId: await newClass(),
+      }),
+    ),
+    /not found/,
+  );
+});

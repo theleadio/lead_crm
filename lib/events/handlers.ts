@@ -27,6 +27,7 @@ const classCancelled = z.object({
   reason: z.string(),
   enrolmentIds: z.array(uuid),
 });
+const classNoticeApproved = z.object({ noticeId: uuid, classId: uuid });
 const classChanged = z.object({
   classId: uuid,
   changedFields: z.record(z.string(), z.unknown()),
@@ -40,7 +41,7 @@ const classChanged = z.object({
 async function opsTask(
   key: string,
   title: string,
-  enrolment: postgres.Row,
+  enrolment: postgres.Row | { id: null; person_id: null },
   notes: string,
 ) {
   // Assigned to the duty super_admin (O37): Home's "My tasks" lists only
@@ -110,6 +111,52 @@ export function makeHandlers(
         else if (r.checkout_session_id) sessions.add(r.checkout_session_id);
       }
       for (const s of sessions) await ports.expireCheckoutSession(s);
+    },
+
+    // Stopgap until lead_sales has a "Class notice approved (each student)"
+    // Resend trigger: ONE "send the notice" task per approved notice, listing
+    // the students who are actually coming (same group as the notice's
+    // recipient_count, RECIPIENT_STATUSES in lib/classes/service.ts) with the
+    // language each should get. Drop this handler once that trigger is live.
+    // The notice stays 'approved'; `sent_at` is for the real sender.
+    ClassNoticeApproved: async (e) => {
+      const p = classNoticeApproved.parse(e.payload);
+      const [notice] = await db()`
+        SELECT n.message_en, n.message_zh, c.code
+        FROM class_notice n JOIN class c ON c.id = n.class_id
+        WHERE n.id = ${p.noticeId} AND n.class_id = ${p.classId}`;
+      if (!notice) throw new Error(`class_notice ${p.noticeId} not found`);
+      const students = await db()`
+        SELECT p.full_name, p.preferred_language, p.email,
+               coalesce(p.whatsapp_e164, p.phone_e164, p.phone) AS phone
+        FROM enrolment e JOIN person p ON p.id = e.person_id
+        WHERE e.class_id = ${p.classId}
+          AND e.status IN ('confirmed', 'onboarded', 'attended')
+        ORDER BY p.full_name, e.id`;
+      if (students.length === 0) return; // nobody to tell
+      const list = students
+        .map(
+          (s) =>
+            `- ${s.full_name} (${String(s.preferred_language).toUpperCase()})` +
+            [s.email, s.phone]
+              .filter(Boolean)
+              .map((x) => ` · ${x}`)
+              .join(""),
+        )
+        .join("\n");
+      const messages = [
+        notice.message_en && `EN:\n${notice.message_en}`,
+        notice.message_zh && `ZH:\n${notice.message_zh}`,
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+      await opsTask(
+        `${e.id}:notice`,
+        `Class ${notice.code} changed: send the approved notice to ${students.length} student${students.length === 1 ? "" : "s"}`,
+        { id: null, person_id: null },
+        `No email channel yet; send this by hand, once, in each student's language.\n\n` +
+          `Students (${students.length}):\n${list}\n\n${messages}`,
+      );
     },
 
     // "Clears the schedule cache": no schedule cache exists yet (the public
