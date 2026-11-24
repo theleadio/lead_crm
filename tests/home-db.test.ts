@@ -474,6 +474,32 @@ it("two forms for one workshop make one card; a person on both counts once", asy
   assert.equal(found[0].language, "en");
 });
 
+// After the GHL switch-off (14 Dec) workshop ads send people to the CRM's
+// own form (POST /api/public/leads, formName named like the GHL form), which
+// records a web_form touchpoint. Those count too, merged with GHL ones.
+it("a CRM web form registration counts, merged with the GHL form", async () => {
+  const user = await newUser("marketing");
+  const title = uniqueTitle();
+  const form = workshopForm(title, 6);
+  const [a, b] = [await newPerson(), await newPerson()];
+  await signUp(form, a);
+  await db()`
+    INSERT INTO touchpoint (person_id, channel, form_name, utm_source)
+    VALUES (${b}, 'web_form', ${workshopForm(title, 6, { prefix: "" })}, 'tiktok')`;
+  await db()`
+    INSERT INTO touchpoint (person_id, channel, form_name)
+    VALUES (${a}, 'web_form', ${form})`;
+  await db()`
+    INSERT INTO touchpoint (person_id, channel, form_name)
+    VALUES (${await newPerson()}, 'web_form', 'enquiry')`;
+
+  const found = (await upcomingWorkshops(user)).filter(
+    (w) => w.title === title,
+  );
+  assert.equal(found.length, 1);
+  assert.equal(found[0].signups, 2);
+});
+
 it("a lead campaign without a registration no longer counts", async () => {
   const user = await newUser("marketing");
   const title = uniqueTitle();
