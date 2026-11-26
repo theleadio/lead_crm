@@ -179,16 +179,39 @@ type WatiContact = {
   lastUpdated?: string | null;
 };
 
-function watiGet(path: string): Promise<Record<string, unknown>> {
+// WATI answers 401/429/5xx on some calls in the middle of a long run (the
+// 11 Nov-sized sync makes thousands of back-to-back calls and failed on a 401
+// 26 Nov although the token was valid), so those are retried with backoff.
+// A 401 that persists through every retry still fails, with a clear message.
+const RETRY_STATUSES = new Set([401, 429, 500, 502, 503, 504]);
+export const watiRetry = { attempts: 5, baseMs: 2_000 };
+
+async function watiGet(path: string): Promise<Record<string, unknown>> {
   const host = process.env.WATI_API_HOST?.replace(/\/$/, "");
   const tok = process.env.WATI_API_TOKEN;
   if (!host || !tok) throw new Error("WATI_API_HOST / WATI_API_TOKEN are not set");
   const auth = tok.startsWith("Bearer") ? tok : `Bearer ${tok}`;
-  return fetch(`${host}${path}`, { headers: { Authorization: auth } }).then(
-    async (res) => {
-      if (!res.ok) throw new Error(`WATI ${path.split("?")[0]}: HTTP ${res.status}`);
-      return (await res.json()) as Record<string, unknown>;
-    },
+  const where = path.split("?")[0];
+  let last = "";
+  for (let attempt = 1; attempt <= watiRetry.attempts; attempt++) {
+    if (attempt > 1)
+      await new Promise((r) =>
+        setTimeout(r, watiRetry.baseMs * 2 ** (attempt - 2)),
+      );
+    try {
+      const res = await fetch(`${host}${path}`, { headers: { Authorization: auth } });
+      if (res.ok) return (await res.json()) as Record<string, unknown>;
+      if (!RETRY_STATUSES.has(res.status))
+        throw new Error(`WATI ${where}: HTTP ${res.status}`);
+      last = `HTTP ${res.status}`;
+    } catch (err) {
+      if (err instanceof Error && err.message.startsWith("WATI ")) throw err;
+      last = err instanceof Error ? err.message : String(err); // network error
+    }
+  }
+  throw new Error(
+    `WATI ${where}: ${last} after ${watiRetry.attempts} attempts` +
+      (last === "HTTP 401" ? " (WATI_API_TOKEN is being rejected: check it in WATI)" : ""),
   );
 }
 
